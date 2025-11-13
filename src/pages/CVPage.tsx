@@ -178,10 +178,10 @@ const CVPage: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex gap-4 mt-6">
-                  <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-primary transition-colors">
+                  <a href="https://github.com/Adjoum" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-primary transition-colors">
                     <Github size={24} />
                   </a>
-                  <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-primary transition-colors">
+                  <a href="https://www.linkedin.com/in/koffi-wilfried-adjoumani/" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-primary transition-colors">
                     <Linkedin size={24} />
                   </a>
                 </div>
