@@ -45,6 +45,16 @@ body {
   background: linear-gradient(180deg, var(--secondary), var(--accent));
 }
 
+/* Masquer la scrollbar */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Curseur personnalisé */
 .custom-cursor {
   width: 40px;
