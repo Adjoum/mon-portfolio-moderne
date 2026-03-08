@@ -22,7 +22,7 @@ export function useVisitTracker() {
       }
 
       // Géolocalisation via IP (gratuit, sans clé API)
-      /*try {
+      try {
         const geo = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(3000) })
         if(geo.ok) {
           const data = await geo.json()
@@ -31,21 +31,7 @@ export function useVisitTracker() {
         }
       } catch {
         // silencieux si l'API est indisponible
-      }  */
-      
-      // Remplace le bloc try/catch géo par :
-    try {
-    const geo = await fetch('https://ipwho.is/', {
-        signal: AbortSignal.timeout(3000)
-    })
-    if(geo.ok) {
-        const data = await geo.json()
-        payload.country = data.country || null
-        payload.city    = data.city   || null
-    }
-    } catch {
-    // silencieux
-    }
+      }  
 
       await supabase.from('visits').insert(payload)
     }

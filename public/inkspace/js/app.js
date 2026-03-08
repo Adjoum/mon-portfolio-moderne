@@ -61,7 +61,9 @@ const App = {
       if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)) UI.confirmText();
       if(e.key==='Escape') document.getElementById('text-box').style.display='none';
     });
-    document.getElementById('text-confirm').onclick = () => UI.confirmText();
+    //document.getElementById('text-confirm').onclick = () => UI.confirmText();
+    const _tc = document.getElementById('text-confirm');
+    if(_tc) _tc.onclick = () => UI.confirmText();
 
     // Clic global ferme menus
     document.addEventListener('click', e => {
@@ -575,5 +577,9 @@ const App = {
     this.render();
     this.pushUndo();
     this.scheduleSave();
+    // À la toute fin, après l'initialisation
+    
   },
+  
 };
+

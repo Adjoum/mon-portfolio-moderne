@@ -285,31 +285,6 @@ const Tools = {
     const SHAPE_TOOLS = ['line','arrow','dblarrow','rect','rect-fill','circle','circle-fill',
       'triangle','diamond','parallelogram','pentagon','hexagon','star','cube','prism','cylinder'];
 
-    /*if(this._currentObj) {
-      if(this._currentObj.eraser) {
-        this._applyEraser(this._currentObj.points);
-      } else if(SHAPE_TOOLS.includes(this.current)) {
-        // Shape : finaliser avec les coordonnées exactes de mouseup
-        const final = this._buildShapeObj(this._startX, this._startY, wx, wy);
-        if(final && (Math.abs(wx - this._startX) > 3 || Math.abs(wy - this._startY) > 3)) {
-          Scene.add(final);
-        }
-      } else {
-        // Tracé libre : ajouter seulement si assez de points
-        if(this._currentObj.points && this._currentObj.points.length > 1) {
-          Scene.add(this._currentObj);
-        } else if(this._currentObj.points && this._currentObj.points.length === 1) {
-          // Simple clic → petit point
-          this._currentObj.points.push({x: wx+1, y: wy+1});
-          Scene.add(this._currentObj);
-        }
-      }
-    }
-
-    this._currentObj = null;
-    App.render();
-    App.pushUndo(); App.scheduleSave();  */
-
     if(this._currentObj) {
       if(this._currentObj.eraser) {
         this._applyEraser(this._currentObj.points);
@@ -407,40 +382,6 @@ const Tools = {
   // ════════════════════════════════════════════
   //  SELECTION
   // ════════════════════════════════════════════
-  /*_startSelect(e, wx, wy) {
-    const { sx, sy } = this._screen(e);
-
-    // Double-clic → éditer le texte
-    if(e.detail === 2) {
-      const hits = Scene.hitTest(wx, wy, 8/Viewport.zoom);
-      const textObj = hits.find(o => o.type === 'text');
-      if(textObj) {
-        this._editTextObject(textObj);
-        return;
-      }
-    }
-
-    const hits = Scene.hitTest(wx, wy, 8/Viewport.zoom);
-    if(hits.length) {
-      const topObj = hits[0];
-      if(!this._selectedIds.has(topObj.id)) {
-        this._selectedIds = new Set([topObj.id]);
-      }
-      this._isDraggingSelection = true;
-      this._dragOffsets = [];
-      this._selectedIds.forEach(id => {
-        const o = Scene.objects.find(obj => obj.id === id);
-        if(o) {
-          const c = getCenter(o);
-          if(c) this._dragOffsets.push({ id, dx: c.cx - wx, dy: c.cy - wy });
-        }
-      });
-    } else {
-      this._selectedIds = new Set();
-      this._selBoxStart = { sx, sy, wx, wy };
-    }
-    App.render();
-  },  */
 
   _startSelect(e, wx, wy) {
     const { sx, sy } = this._screen(e);
@@ -449,7 +390,9 @@ const Tools = {
     if(e.detail === 2) {
       const hits = Scene.hitTest(wx, wy, 8/Viewport.zoom);
       const textObj = hits.find(o => o.type === 'text');
-      if(textObj) { this._editTextObject(textObj); return; }
+      if(textObj) { this._editTextObject(textObj); return; };
+      const codeObj = hits.find(o => o.type === 'code');
+      if(codeObj) { openCodeModal(codeObj); return; }
     }
 
     // Vérifier d'abord si on clique sur une poignée de resize
@@ -854,6 +797,7 @@ function shiftObject(o, dx, dy) {
   if(o.type==='graph-node') { o.x+=dx; o.y+=dy; return; }
   if(o.type==='bezier') { ['p0','p1','p2','p3'].forEach(k=>{o[k].x+=dx;o[k].y+=dy;}); return; }
   if(o.type==='image') { o.x+=dx; o.y+=dy; return; }
+  if(o.type==='code')  { o.x+=dx; o.y+=dy; return; } 
   if('x1' in o) { o.x1+=dx; o.x2+=dx; o.y1+=dy; o.y2+=dy; return; }
   if('x' in o) { o.x+=dx; o.y+=dy; }
 }

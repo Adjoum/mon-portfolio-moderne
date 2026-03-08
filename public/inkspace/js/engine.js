@@ -131,6 +131,8 @@ function objectHitTest(o, wx, wy, margin) {
     case 'graph-node': return dist(o.x,o.y,wx,wy) <= (o.r||20) + margin;
     case 'graph-edge': return lineHitTest(o.x1,o.y1,o.x2,o.y2, wx,wy, margin);
     case 'angle':    return lineHitTest(o.x1,o.y1,o.x,o.y, wx,wy, margin) || lineHitTest(o.x,o.y,o.x2,o.y2, wx,wy, margin);
+    case 'code': return wx >= o.x && wx <= o.x + (o.w||520) 
+                 && wy >= o.y && wy <= o.y + (o.h||200);
     default: return false;
   }
 }

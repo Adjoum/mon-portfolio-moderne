@@ -61,15 +61,16 @@ const UI = {
     const el = document.getElementById('hover-tooltip');
     if(el) el.style.display = 'none';
   },
+  
   _getTooltipText(o) {
     const labels = {
       path:`✏️ Tracé libre\nOutil: ${o.tool||'pen'}\nCouleur: ${o.color}\nTaille: ${o.size}px`,
       line:`— Ligne droite\nCouleur: ${o.color}`,
       arrow:`→ Flèche\nCouleur: ${o.color}`,
       dblarrow:`↔ Double flèche`,
-      rect:`▭ Rectangle\nDimension: ${Math.abs((o.x2-o.x1)).toFixed(0)}×${Math.abs((o.y2-o.y1)).toFixed(0)}`,
-      'rect-fill':`▬ Rectangle plein\nDimension: ${Math.abs((o.x2-o.x1)).toFixed(0)}×${Math.abs((o.y2-o.y1)).toFixed(0)}`,
-      circle:`○ Ellipse\nRx: ${(Math.abs(o.x2-o.x1)/2).toFixed(0)}  Ry: ${(Math.abs(o.y2-o.y1)/2).toFixed(0)}`,
+      rect:`▭ Rectangle\nDimension: ${Math.abs((o.x2-o.x1)||0).toFixed(0)}×${Math.abs((o.y2-o.y1)||0).toFixed(0)}`,
+      'rect-fill':`▬ Rectangle plein\nDimension: ${Math.abs((o.x2-o.x1)||0).toFixed(0)}×${Math.abs((o.y2-o.y1)||0).toFixed(0)}`,
+      circle:`○ Ellipse\nRx: ${(Math.abs((o.x2-o.x1)||0)/2).toFixed(0)}  Ry: ${(Math.abs((o.y2-o.y1)||0)/2).toFixed(0)}`,
       'circle-fill':`● Cercle plein`,
       triangle:`△ Triangle`,
       diamond:`◇ Losange`,
@@ -85,11 +86,14 @@ const UI = {
       formula:`fx Formule: ${(o.raw||'').slice(0,30)}`,
       sticker:`😊 Sticker: ${o.text}`,
       image:`🖼 Image (${(o.w||0).toFixed(0)}×${(o.h||0).toFixed(0)})`,
-      'graph-node':`⬤ Nœud graphe: ${o.label}\nPosition: (${o.x.toFixed(0)}, ${o.y.toFixed(0)})`,
+      'graph-node':`⬤ Nœud graphe: ${o.label||'?'}\nPosition: (${(o.x||0).toFixed(0)}, ${(o.y||0).toFixed(0)})`,
       'graph-edge':`→ Arête\n${o.directed?'Orientée':'Non orientée'}${o.weight!=null?' | Poids: '+o.weight:''}`,
       angle:`∠ Angle: ${o.degreeValue?.toFixed(2)||'?'}°`,
+      // ── Nouveaux types ──
+      code: `</> Code: ${o.title||'Sans titre'}\nLangage: ${o.lang||'pseudo'}`,
     };
-    return labels[o.type] || o.type;
+    // Guard finale — évite le crash si type inconnu ou props manquantes
+    return labels[o.type] || `📦 ${o.type||'Objet'}`;
   },
 
   // ── Curseur gomme ──

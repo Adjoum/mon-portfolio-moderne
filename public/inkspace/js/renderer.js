@@ -104,6 +104,7 @@ const Renderer = {
       case 'graph-node': this.drawGraphNode(ctx, o); break;
       case 'graph-edge': this.drawGraphEdge(ctx, o); break;
       case 'angle':      this.drawAngle(ctx, o); break;
+      case 'code': this.drawCode(ctx, o); break;
     }
 
     // Highlight sélection
@@ -363,6 +364,35 @@ const Renderer = {
       ctx.fillText(o.label, o.x, o.y);
       ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     }
+    // ── Overlay traversée de graphe ──
+    if(o._gt_state) {
+    const GT = { queued:'#ffd166', visiting:'#ff6b9d', visited:'#06d6a0', path:'#6c63ff' };
+    const col = GT[o._gt_state];
+    if(col) {
+        const r = o.r || 20;
+        // Halo externe pulsant
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, r + 7, 0, Math.PI*2);
+        ctx.fillStyle = col + '44';
+        ctx.fill();
+        // Cercle coloré
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, r, 0, Math.PI*2);
+        ctx.fillStyle = col + 'cc';
+        ctx.fill();
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        // Label lisible sur fond coloré
+        ctx.fillStyle = '#111';
+        ctx.font = `700 ${r * 0.85}px Cabinet Grotesk, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(o.label || '', o.x, o.y);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+    }
+    }
   },
 
   drawGraphEdge(ctx, o) {
@@ -377,6 +407,7 @@ const Renderer = {
       ctx.beginPath(); ctx.arc(o.x1+r*1.5,o.y1-r*1.5,r,0,Math.PI*2); ctx.stroke();
       return;
     }
+
 
     // Raccourcir pour ne pas traverser les nœuds
     const nr = (o.nodeRadius||20) + 3;
@@ -400,6 +431,31 @@ const Renderer = {
       ctx.fillStyle=o.color||'#333';
       ctx.font='bold 11px DM Mono, monospace';
       ctx.textAlign='center'; ctx.fillText(o.weight,mx,my+2); ctx.textAlign='left';
+    }
+
+   
+    // ── Couleurs de traversée arête ──
+    if(o._gt_edge_state) {
+    const col = o._gt_edge_state === 'path' ? '#6c63ff' : '#ff6b9d';
+    ctx.save();
+    ctx.strokeStyle = col;
+    ctx.lineWidth = (o.size || 2) * 3;
+    ctx.globalAlpha = 0.65;
+    ctx.lineCap = 'round';
+
+    if(o.curved) {
+        const mx = (sx+ex)/2 + dy*0.2, my = (sy+ey)/2 - dx*0.2;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.quadraticCurveTo(mx, my, ex, ey);
+        ctx.stroke();
+    } else {
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+    }
+    ctx.restore();
     }
   },
 
@@ -431,28 +487,6 @@ const Renderer = {
   },
 
   // ─── Sélection ───
-  /*drawSelectionHandle(ctx, o) {
-    const bb = getBoundingBox(o);
-    if(!bb) return;
-    ctx.save();
-    ctx.strokeStyle = '#6c63ff';
-    ctx.lineWidth = 1.5 / Viewport.zoom;
-    ctx.setLineDash([5/Viewport.zoom, 3/Viewport.zoom]);
-    const pad = 8 / Viewport.zoom;
-    ctx.strokeRect(bb.x-pad, bb.y-pad, bb.w+pad*2, bb.h+pad*2);
-    ctx.setLineDash([]);
-
-    // Poignées
-    ctx.fillStyle = '#fff';
-    ctx.strokeStyle = '#6c63ff';
-    ctx.lineWidth = 1.5/Viewport.zoom;
-    const hs = 6/Viewport.zoom;
-    [[bb.x-pad,bb.y-pad],[bb.x+bb.w/2,bb.y-pad],[bb.x+bb.w+pad,bb.y-pad],
-     [bb.x-pad,bb.y+bb.h+pad],[bb.x+bb.w+pad,bb.y+bb.h+pad]].forEach(([hx,hy])=>{
-      ctx.fillRect(hx-hs/2,hy-hs/2,hs,hs); ctx.strokeRect(hx-hs/2,hy-hs/2,hs,hs);
-    });
-    ctx.restore();
-  },   */
   drawSelectionHandle(ctx, o) {
     const bb = getBoundingBox(o);
     if(!bb) return;
@@ -493,7 +527,108 @@ const Renderer = {
     }
     ctx.restore();
   },
+
+
+  drawCode(ctx, o) {
+    const fs     = 12.5;
+    const lh     = fs * 1.65;
+    const lines  = (o.code || '').split('\n');
+    const pad    = 14;
+    const titleH = 32;
+    const gutterW = 36;
+
+    // Calcul dimensions
+    ctx.font = `${fs}px 'DM Mono', monospace`;
+    const maxLineW = Math.max(...lines.map(l => ctx.measureText(l).width), 100);
+    const W = gutterW + maxLineW + pad * 2 + 20;
+    const H = titleH + lines.length * lh + pad * 2;
+
+    o.w = W; o.h = H; // pour hit test
+
+    ctx.save();
+
+    // Fond principal
+    const bg = ctx.createLinearGradient(o.x, o.y, o.x, o.y + H);
+    bg.addColorStop(0, '#16162a');
+    bg.addColorStop(1, '#0f0f1e');
+    ctx.fillStyle = bg;
+    roundRect(ctx, o.x, o.y, W, H, 12);
+    ctx.fill();
+
+    // Bordure accent
+    ctx.strokeStyle = '#6c63ff55';
+    ctx.lineWidth = 1.5 / Viewport.zoom;
+    roundRect(ctx, o.x, o.y, W, H, 12);
+    ctx.stroke();
+
+    // Barre de titre
+    const titleBg = ctx.createLinearGradient(o.x, o.y, o.x + W, o.y);
+    titleBg.addColorStop(0, '#6c63ff33');
+    titleBg.addColorStop(1, '#ff6b9d22');
+    ctx.fillStyle = titleBg;
+    roundRectTop(ctx, o.x, o.y, W, titleH, 12);
+    ctx.fill();
+
+    // Pastilles macOS
+    const dots = ['#ff5f57','#febc2e','#28c840'];
+    dots.forEach((c, i) => {
+      ctx.beginPath();
+      ctx.arc(o.x + 14 + i * 18, o.y + titleH/2, 5/Viewport.zoom * Viewport.zoom, 0, Math.PI*2);
+      ctx.fillStyle = c;
+      ctx.fill();
+    });
+
+    // Titre + langage
+    ctx.fillStyle = '#aaaacc';
+    ctx.font = `600 ${fs}px 'DM Mono', monospace`;
+    ctx.fillText(o.title || 'Code', o.x + 68, o.y + titleH/2 + 4);
+    ctx.fillStyle = '#6c63ff99';
+    ctx.font = `${fs * 0.85}px 'DM Mono', monospace`;
+    const langLabel = {pseudo:'PSEUDO', python:'PY', javascript:'JS', 'text/x-csrc':'C', 'text/x-c++src':'C++', 'text/x-java':'JAVA', pascal:'PAS'}[o.lang] || 'CODE';
+    ctx.fillText(langLabel, o.x + W - 40, o.y + titleH/2 + 4);
+
+    // Séparateur titre / code
+    ctx.fillStyle = '#6c63ff33';
+    ctx.fillRect(o.x, o.y + titleH, W, 1);
+
+    // Gouttière numéros de ligne
+    ctx.fillStyle = '#13131f';
+    ctx.fillRect(o.x, o.y + titleH + 1, gutterW, H - titleH - 1);
+    ctx.fillStyle = '#6c63ff22';
+    ctx.fillRect(o.x + gutterW, o.y + titleH + 1, 1, H - titleH - 1);
+
+    // Lignes de code avec coloration syntaxique simplifiée
+    const COLORS = {
+      keyword: '#ff6b9d', string: '#06d6a0', number: '#ffd166',
+      comment: '#555577', operator: '#6c63ff', default: '#c8c8e8'
+    };
+
+    lines.forEach((line, i) => {
+      const y = o.y + titleH + pad + i * lh + fs;
+
+      // Numéro de ligne
+      ctx.fillStyle = '#444466';
+      ctx.font = `${fs * 0.85}px 'DM Mono', monospace`;
+      ctx.textAlign = 'right';
+      ctx.fillText(i + 1, o.x + gutterW - 6, y);
+      ctx.textAlign = 'left';
+
+      // Coloration syntaxique token par token
+      let cx2 = o.x + gutterW + pad;
+      const tokens = tokenizeCodeLine(line, o.lang);
+      tokens.forEach(tok => {
+        ctx.fillStyle = COLORS[tok.type] || COLORS.default;
+        ctx.font = `${tok.type === 'keyword' ? '600' : '400'} ${fs}px 'DM Mono', monospace`;
+        ctx.fillText(tok.text, cx2, y);
+        cx2 += ctx.measureText(tok.text).width;
+      });
+    });
+
+    ctx.restore();
+    o.textWidth = W;
+  },
 };
+
 
 // ── Bounding box d'un objet ──
 function getBoundingBox(o) {
@@ -515,6 +650,8 @@ function getBoundingBox(o) {
       return {x:o.x,y:o.y,w:o.w||100,h:o.h||100};
     case 'graph-node':
       return {x:o.x-(o.r||20),y:o.y-(o.r||20),w:(o.r||20)*2,h:(o.r||20)*2};
+    case 'code':
+      return { x: o.x, y: o.y, w: o.w || 520, h: o.h || 200 };
     default: return null;
   }
 }
@@ -580,4 +717,90 @@ function latexToText(s) {
     .replace(/\^2/g,'²').replace(/\^3/g,'³')
     .replace(/\\\{/g,'{').replace(/\\\}/g,'}')
     .replace(/\\[a-z]+/g,'');
+}
+
+
+// ── Arrondi partiel (coins haut seulement) ──
+function roundRectTop(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h);
+  ctx.lineTo(x, y + h);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+// ── Tokeniseur de coloration syntaxique ──
+function tokenizeCodeLine(line, lang) {
+  const tokens = [];
+  const keywords = {
+    pseudo: /\b(SI|SINON|POUR|FAIRE|TANT QUE|RÉPÉTER|JUSQU'À|RETOURNER|FONCTION|PROCÉDURE|DÉBUT|FIN|ALGORITHME|VARIABLES|LIRE|ÉCRIRE|VRAI|FAUX|NIL|TABLEAU|SELON|CAS|ET|OU|NON)\b/g,
+    python: /\b(def|class|if|elif|else|for|while|return|import|from|in|not|and|or|True|False|None|print|range|len|lambda|yield|with|as|try|except|finally)\b/g,
+    javascript: /\b(function|const|let|var|if|else|for|while|return|class|import|export|from|new|this|true|false|null|undefined|typeof|async|await|of|in)\b/g,
+    'text/x-csrc': /\b(int|float|char|void|if|else|for|while|return|struct|typedef|include|define|printf|scanf|main|double|long|short|unsigned)\b/g,
+    'text/x-java': /\b(public|private|class|void|int|if|else|for|while|return|new|static|import|String|boolean|true|false|null|this|extends|implements)\b/g,
+    pascal: /\b(BEGIN|END|VAR|PROGRAM|IF|THEN|ELSE|FOR|TO|DO|WHILE|REPEAT|UNTIL|FUNCTION|PROCEDURE|INTEGER|REAL|BOOLEAN|CHAR|ARRAY|OF|WRITELN|READLN)\b/gi,
+  };
+
+  // Commentaires
+  if(line.trim().startsWith('//') || line.trim().startsWith('--') || line.trim().startsWith('#')) {
+    return [{ text: line, type: 'comment' }];
+  }
+
+  // Simple tokenisation
+  let remaining = line;
+  let pos = 0;
+
+  while(pos < line.length) {
+    // String
+    if(line[pos] === '"' || line[pos] === "'") {
+      const q = line[pos];
+      let end = line.indexOf(q, pos + 1);
+      if(end === -1) end = line.length - 1;
+      tokens.push({ text: line.slice(pos, end + 1), type: 'string' });
+      pos = end + 1; continue;
+    }
+    // Nombre
+    if(/\d/.test(line[pos])) {
+      let end = pos;
+      while(end < line.length && /[\d.]/.test(line[end])) end++;
+      tokens.push({ text: line.slice(pos, end), type: 'number' });
+      pos = end; continue;
+    }
+    // Mot
+    if(/[a-zA-ZÀ-ÿ_]/.test(line[pos])) {
+      let end = pos;
+      while(end < line.length && /[a-zA-ZÀ-ÿ_0-9]/.test(line[end])) end++;
+      const word = line.slice(pos, end);
+      const kwRe = keywords[lang] || keywords['pseudo'];
+      kwRe.lastIndex = 0;
+      const isKw = new RegExp(`^(${Object.values(keywords).map(r=>r.source.slice(3,-3)).join('|')})$`, 'i').test(word);
+      tokens.push({ text: word, type: isKw ? 'keyword' : 'default' });
+      pos = end; continue;
+    }
+    // Opérateur
+    if(/[+\-*\/=<>≤≥≠←→:!&|]/.test(line[pos])) {
+      tokens.push({ text: line[pos], type: 'operator' });
+      pos++; continue;
+    }
+    tokens.push({ text: line[pos], type: 'default' });
+    pos++;
+  }
+  return tokens.length ? tokens : [{ text: line, type: 'default' }];
 }

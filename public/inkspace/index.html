@@ -6,7 +6,21 @@
 <title>Adjoumani — Premium Whiteboard</title>
 <link rel="stylesheet" href="css/styles.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/pascal/pascal.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/mode/simple.min.js"></script>
 </head>
+
+
 <body data-theme="dark">
 
 <!-- ═══ SPLASH ═══ -->
@@ -24,17 +38,7 @@
     <div class="logo" onclick="UI.openCmd()">Ink<span style="background:linear-gradient(135deg,#ff6b9d,#00d4aa);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Space</span></div>
     <div id="ws-tabs"></div>
     <button id="btn-add-ws" onclick="App.newWorkspace()" title="Nouveau tableau (Ctrl+T)"><i class="fa fa-plus"></i></button>
-    <!-- <div class="h-right">
-      <div id="save-pill"><span id="save-dot"></span><span id="save-text">Sauvegardé</span></div>
-      <button class="hbtn" onclick="togglePanel('ai-panel')"><i class="fa fa-wand-magic-sparkles" style="color:#ff6b9d"></i> IA</button>
-      <button class="hbtn" onclick="togglePanel('graph-panel')"><i class="fa fa-diagram-project"></i> Graphes</button>
-      <button class="hbtn" onclick="togglePanel('tmpl-panel')"><i class="fa fa-layer-group"></i> Templates</button>
-      <button class="hbtn" onclick="togglePanel('theme-panel')"><i class="fa fa-palette"></i></button>
-      <button class="hbtn" onclick="togglePanel('doc-panel')"><i class="fa fa-book-open"></i> Aide</button>
-      <button class="hbtn" onclick="UI.openShare()"><i class="fa fa-share-nodes"></i></button>
-      <button class="hbtn" onclick="App.startPresentation()"><i class="fa fa-display"></i></button>
-      <button class="hbtn accent" onclick="App.exportPNG()"><i class="fa fa-download"></i> Export</button>
-    </div>   -->
+    
     <div class="h-right">
       <div id="save-pill"><span id="save-dot"></span><span id="save-text">Sauvegardé</span></div>
       <button class="hbtn hide-xs" onclick="togglePanel('ai-panel')"><i class="fa fa-wand-magic-sparkles" style="color:#ff6b9d"></i> <span>IA</span></button>
@@ -106,12 +110,23 @@
       <button class="tbtn" id="tool-formula" data-tool="formula" data-tip="Formule (F)"  onclick="Tools.set('formula')" style="font-size:11px;font-weight:700">fx</button>
       <button class="tbtn" id="tool-image"   data-tool="image"   data-tip="Image (I)"    onclick="UI.triggerImageUpload()"><i class="fa fa-image"></i></button>
       <button class="tbtn" id="tool-sticker" data-tool="sticker" data-tip="Sticker"      onclick="Tools.set('sticker')"><i class="fa fa-face-smile"></i></button>
+      <button class="tbtn" id="tool-code" onclick="openCodeModal(null)" title="Éditeur de code (K)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+        </svg>
+      </button>
       <div class="t-sep"></div>
 
       <div class="t-label">GRAPHE</div>
       <button class="tbtn" id="tool-graph-node" data-tool="graph-node" data-tip="Nœud de graphe" onclick="Tools.set('graph-node')"><i class="fa fa-circle-dot"></i></button>
       <button class="tbtn" id="tool-graph-edge" data-tool="graph-edge" data-tip="Arête"           onclick="Tools.set('graph-edge')"><i class="fa fa-diagram-project"></i></button>
       <button class="tbtn" id="tool-angle"      data-tool="angle"      data-tip="Angle (Q)"       onclick="Tools.set('angle')" style="font-size:14px">∠</button>
+      <button class="tbtn" id="tool-graph-run" onclick="GraphTraversal.openPanel()" title="Traversée de graphe (Ctrl+R)">
+       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+        <path d="M6.34 6.34l2.12 2.12M15.54 15.54l2.12 2.12"/>
+       </svg>
+      </button>
       <div class="t-sep"></div>
 
       <div class="t-label">NAVIGUER</div>
@@ -188,23 +203,7 @@
       <div id="formula-box">
         <h4>✦ Formule Mathématique</h4>
         <div class="fx-preview" id="fx-preview">Prévisualisation...</div>
-        <!-- <div class="fx-chips">
-          <span class="fx-chip" onclick="fxIns('\\frac{a}{b}')">a/b</span>
-          <span class="fx-chip" onclick="fxIns('\\sqrt{x}')">√x</span>
-          <span class="fx-chip" onclick="fxIns('\\sum_{i=0}^{n}')">∑</span>
-          <span class="fx-chip" onclick="fxIns('\\int_{a}^{b}')">∫</span>
-          <span class="fx-chip" onclick="fxIns('\\hat{p}')">p̂</span>
-          <span class="fx-chip" onclick="fxIns('\\bar{x}')">x̄</span>
-          <span class="fx-chip" onclick="fxIns('\\alpha')">α</span>
-          <span class="fx-chip" onclick="fxIns('\\beta')">β</span>
-          <span class="fx-chip" onclick="fxIns('\\sigma^2')">σ²</span>
-          <span class="fx-chip" onclick="fxIns('\\mu')">μ</span>
-          <span class="fx-chip" onclick="fxIns('\\infty')">∞</span>
-          <span class="fx-chip" onclick="fxIns('\\pm')">±</span>
-          <span class="fx-chip" onclick="fxIns('\\leq')">≤</span>
-          <span class="fx-chip" onclick="fxIns('\\neq')">≠</span>
-          <span class="fx-chip" onclick="fxIns('\\approx')">≈</span>
-        </div> -->
+        
         <div class="fx-chips">
           <!-- Fractions & racines -->
           <span class="fx-chip" onclick="fxIns('\\frac{a}{b}')">a/b</span>
@@ -552,18 +551,6 @@
 <div id="minimap"><canvas id="minimap-c" width="135" height="84"></canvas><div id="minimap-label">MINIMAP</div></div>
 
 <!-- ═══ CONTEXT MENU ═══ -->
-<!-- <div id="ctx-menu">
-  <div class="ctx-item" onclick="App.undo()"><i class="fa fa-rotate-left"></i> Annuler<span class="ctx-key">Ctrl+Z</span></div>
-  <div class="ctx-item" onclick="App.redo()"><i class="fa fa-rotate-right"></i> Refaire<span class="ctx-key">Ctrl+Y</span></div>
-  <div class="ctx-sep"></div>
-  <div class="ctx-item" onclick="Tools._selectAll()"><i class="fa fa-object-group"></i> Tout sélectionner<span class="ctx-key">Ctrl+A</span></div>
-  <div class="ctx-item" onclick="Tools.deleteSelected()"><i class="fa fa-trash-can"></i> Supprimer sélection<span class="ctx-key">Del</span></div>
-  <div class="ctx-sep"></div>
-  <div class="ctx-item" onclick="App.exportPNG()"><i class="fa fa-download"></i> Exporter PNG<span class="ctx-key">Ctrl+E</span></div>
-  <div class="ctx-item" onclick="App.printCanvas()"><i class="fa fa-print"></i> Imprimer</div>
-  <div class="ctx-sep"></div>
-  <div class="ctx-item danger" onclick="App.clearCanvas()"><i class="fa fa-trash"></i> Effacer tout</div>
-</div>   -->
 <div id="ctx-menu">
   <div class="ctx-item" onclick="App.undo()"><i class="fa fa-rotate-left"></i> Annuler<span class="ctx-key">Ctrl+Z</span></div>
   <div class="ctx-item" onclick="App.redo()"><i class="fa fa-rotate-right"></i> Refaire<span class="ctx-key">Ctrl+Y</span></div>
@@ -635,6 +622,124 @@
 
 <!-- ═══ IMAGE UPLOAD ═══ -->
 <input type="file" id="img-upload" accept="image/*" style="display:none" onchange="handleImgUpload(event)">
+
+
+<!-- ═══ CODE EDITOR MODAL ═══ -->
+<div id="code-modal" style="display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;">
+  <div style="width:min(820px,96vw);background:var(--surface);border:1px solid var(--border2);border-radius:18px;overflow:hidden;box-shadow:0 32px 80px rgba(0,0,0,.9);display:flex;flex-direction:column;max-height:90vh;">
+    
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface2);flex-shrink:0;">
+      <!-- Pastilles macOS -->
+      <div style="width:12px;height:12px;border-radius:50%;background:#ff5f57;cursor:pointer" onclick="closeCodeModal()"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#febc2e"></div>
+      <div style="width:12px;height:12px;border-radius:50%;background:#28c840"></div>
+      
+      <!-- Sélecteur de langage -->
+      <select id="code-lang" onchange="updateCodeLang()" style="margin-left:12px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:4px 10px;font-size:12px;font-family:var(--mono);cursor:pointer;outline:none;">
+        <option value="pseudo">Pseudo-code</option>
+        <option value="python">Python</option>
+        <option value="javascript">JavaScript</option>
+        <option value="text/x-csrc">C</option>
+        <option value="text/x-c++src">C++</option>
+        <option value="text/x-java">Java</option>
+        <option value="pascal">Pascal</option>
+      </select>
+
+      <!-- Titre -->
+      <input id="code-title" placeholder="Titre de l'algorithme..." style="flex:1;background:transparent;border:none;outline:none;color:var(--text);font-family:var(--mono);font-size:13px;padding:4px 8px;">
+
+      <!-- Actions -->
+      <div style="display:flex;gap:6px;margin-left:auto">
+        <button onclick="insertCodeToCanvas()" style="padding:6px 14px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:#fff;font-size:12px;font-family:var(--font);font-weight:600;cursor:pointer;">
+          ✦ Insérer sur le canvas
+        </button>
+        <button onclick="closeCodeModal()" style="padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text2);font-size:12px;cursor:pointer;">✕</button>
+      </div>
+    </div>
+
+    <!-- Numérotation + éditeur -->
+    <div style="flex:1;overflow:hidden;display:flex;min-height:0;">
+      <textarea id="code-editor-ta" style="display:none"></textarea>
+      <div id="code-cm-wrapper" style="flex:1;overflow:auto;font-size:13.5px;"></div>
+    </div>
+
+    <!-- Footer : raccourcis -->
+    <div style="padding:8px 16px;border-top:1px solid var(--border);background:var(--surface2);display:flex;gap:16px;font-size:11px;color:var(--text2);font-family:var(--mono);flex-shrink:0;">
+      <span><kbd style="background:var(--surface3);padding:1px 5px;border-radius:4px;border:1px solid var(--border)">Ctrl+Enter</kbd> Insérer</span>
+      <span><kbd style="background:var(--surface3);padding:1px 5px;border-radius:4px;border:1px solid var(--border)">Esc</kbd> Fermer</span>
+      <span><kbd style="background:var(--surface3);padding:1px 5px;border-radius:4px;border:1px solid var(--border)">Tab</kbd> Indenter</span>
+      <span id="code-cursor-pos" style="margin-left:auto">Ln 1, Col 1</span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══ GRAPH TRAVERSAL PANEL ═══ -->
+<!-- <div id="graph-traversal-panel" style="display:none;position:fixed;top:60px;right:10px;width:280px;background:var(--surface);border:1px solid var(--border2);border-radius:16px;z-index:500;box-shadow:var(--shadow);overflow:hidden;">   -->
+<div id="graph-traversal-panel" style="display:none;position:fixed;top:60px;right:10px;width:min(280px,95vw);background:var(--surface);border:1px solid var(--border2);border-radius:16px;z-index:500;box-shadow:var(--shadow);overflow:hidden;max-height:calc(100vh - 70px);overflow-y:auto;">  
+  <!-- Header -->
+  <div style="padding:12px 14px;background:linear-gradient(135deg,#6c63ff22,#ff6b9d11);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:16px">⚡</span>
+      <span style="font-weight:700;font-size:13px;color:var(--text)">Traversée de Graphe</span>
+    </div>
+    <button onclick="GraphTraversal.closePanel()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;">✕</button>
+  </div>
+
+  <div style="padding:14px;display:flex;flex-direction:column;gap:10px;">
+
+    <!-- Algorithme -->
+    <div>
+      <label style="font-size:11px;color:var(--text2);font-weight:600;letter-spacing:.05em;text-transform:uppercase;">Algorithme</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">
+        <button id="gt-btn-bfs"     onclick="GraphTraversal.setAlgo('BFS')"      class="gt-algo-btn gt-active">BFS</button>
+        <button id="gt-btn-dfs"     onclick="GraphTraversal.setAlgo('DFS')"      class="gt-algo-btn">DFS</button>
+        <button id="gt-btn-dijkstra" onclick="GraphTraversal.setAlgo('DIJKSTRA')" class="gt-algo-btn">Dijkstra</button>
+        <button id="gt-btn-bellman"  onclick="GraphTraversal.setAlgo('BELLMAN')"  class="gt-algo-btn">Bellman-Ford</button>
+      </div>
+    </div>
+
+    <!-- Nœud source / destination -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div>
+        <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;">Source</label>
+        <select id="gt-source" style="width:100%;margin-top:4px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:12px;font-family:var(--mono);outline:none;cursor:pointer;"></select>
+      </div>
+      <div id="gt-dest-wrap">
+        <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;">Destination</label>
+        <select id="gt-dest" style="width:100%;margin-top:4px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:12px;font-family:var(--mono);outline:none;cursor:pointer;"></select>
+      </div>
+    </div>
+
+    <!-- Vitesse -->
+    <div>
+      <label style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;">
+        Vitesse — <span id="gt-speed-val">600</span>ms
+      </label>
+      <input type="range" id="gt-speed" min="100" max="2000" value="600" step="100"
+        oninput="document.getElementById('gt-speed-val').textContent=this.value"
+        style="width:100%;margin-top:4px;accent-color:var(--accent);">
+    </div>
+
+    <!-- Boutons contrôle -->
+    <div style="display:flex;gap:6px;">
+      <button id="gt-play"  onclick="GraphTraversal.play()"  style="flex:1;padding:9px;background:linear-gradient(135deg,#6c63ff,#ff6b9d);border:none;border-radius:10px;color:#fff;font-weight:700;font-size:13px;cursor:pointer;transition:all .15s;">▶ Lancer</button>
+      <button id="gt-pause" onclick="GraphTraversal.pause()" style="padding:9px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);cursor:pointer;font-size:13px;" title="Pause">⏸</button>
+      <button id="gt-reset" onclick="GraphTraversal.reset()" style="padding:9px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);cursor:pointer;font-size:13px;" title="Reset">↺</button>
+    </div>
+
+    <!-- Log étapes -->
+    <div id="gt-log" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;min-height:80px;max-height:160px;overflow-y:auto;font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.7;"></div>
+
+    <!-- Résultat chemin -->
+    <div id="gt-result" style="display:none;background:#6c63ff11;border:1px solid #6c63ff44;border-radius:10px;padding:10px;font-family:var(--mono);font-size:11px;color:var(--text);">
+      <div style="font-weight:700;color:#6c63ff;margin-bottom:4px;">📍 Chemin trouvé</div>
+      <div id="gt-result-path"></div>
+      <div id="gt-result-cost" style="color:var(--text2);margin-top:3px;"></div>
+    </div>
+  </div>
+</div>
 
 <!-- ═══ SCRIPTS (ordre important) ═══ -->
 <script src="js/engine.js"></script>
@@ -1196,6 +1301,600 @@ function updateCtxMenuForSelection() {
   });
 }
 
+
+// ══════════════════════════════════════════════════
+//  ÉDITEUR DE CODE / PSEUDO-CODE
+// ══════════════════════════════════════════════════
+
+let _codeMirror = null;
+const PSEUDO_KEYWORDS = ['SI','SINON','FIN SI','POUR','FAIRE','TANT QUE','FIN POUR',
+  'RÉPÉTER','JUSQU\'À','RETOURNER','FONCTION','PROCÉDURE','DÉBUT','FIN','ALGORITHME',
+  'VARIABLES','CONSTANTES','LIRE','ÉCRIRE','ET','OU','NON','VRAI','FAUX','NIL',
+  'TABLEAU','DE','À','PAS','SELON','CAS','SINON','FIN SELON',
+  'if','else','for','while','do','return','function','class','import',
+  'def','print','range','len','in','not','and','or','True','False','None'];
+
+// Mode pseudo-code custom pour CodeMirror
+CodeMirror.defineSimpleMode('pseudo', {
+  start: [
+    { regex: /\/\/.*$/,                        token: 'comment' },
+    { regex: /\/\*[\s\S]*?\*\//,               token: 'comment' },
+    { regex: /"(?:[^\\]|\\.)*?"/,              token: 'string'  },
+    { regex: /'(?:[^\\]|\\.)*?'/,              token: 'string'  },
+    { regex: /\b(?:SI|SINON|POUR|TANT QUE|RÉPÉTER|JUSQU'À|RETOURNER|FONCTION|PROCÉDURE|DÉBUT|FIN|ALGORITHME|VARIABLES|LIRE|ÉCRIRE|VRAI|FAUX|NIL|TABLEAU|SELON|CAS|if|else|for|while|do|return|function|class|def|True|False|None|import|print|and|or|not|in)\b/, token: 'keyword' },
+    { regex: /\b\d+\.?\d*\b/,                 token: 'number'  },
+    { regex: /[+\-*\/←→=<>≤≥≠:]/,            token: 'operator'},
+  ],
+  meta: { lineComment: '//' }
+});
+
+function openCodeModal(existingObj) {
+  const modal = document.getElementById('code-modal');
+  modal.style.display = 'flex';
+
+  requestAnimationFrame(() => {  // ← ajouter ce wrapper
+    if(!_codeMirror) {
+      const wrapper = document.getElementById('code-cm-wrapper');
+      _codeMirror = CodeMirror(wrapper, {
+        value: existingObj?.code || getCodeTemplate('pseudo'),
+        mode: 'pseudo',
+        theme: 'dracula',
+        lineNumbers: true,
+        autoCloseBrackets: true,
+        matchBrackets: true,
+        indentUnit: 4,
+        tabSize: 4,
+        indentWithTabs: false,
+        lineWrapping: false,
+        autofocus: true,
+        extraKeys: {
+          'Ctrl-Enter': insertCodeToCanvas,
+          'Escape': closeCodeModal,
+          'Tab': cm => cm.replaceSelection('    '),
+        }
+      });
+
+      _codeMirror.on('cursorActivity', cm => {
+        const cur = cm.getCursor();
+        document.getElementById('code-cursor-pos').textContent =
+          `Ln ${cur.line+1}, Col ${cur.ch+1}`;
+      });
+    }
+
+    if(existingObj) {
+      _codeMirror.setValue(existingObj.code || '');
+      document.getElementById('code-lang').value  = existingObj.lang  || 'pseudo';
+      document.getElementById('code-title').value = existingObj.title || '';
+      modal.dataset.editingId = existingObj.id;
+      updateCodeLang();
+    } else {
+      delete modal.dataset.editingId;
+    }
+
+    setTimeout(() => _codeMirror.refresh(), 50);
+  });  // ← fermer le requestAnimationFrame
+}
+
+function closeCodeModal() {
+  document.getElementById('code-modal').style.display = 'none';
+}
+
+function updateCodeLang() {
+  const lang = document.getElementById('code-lang').value;
+  if(!_codeMirror) return;
+  const modeMap = {
+    'pseudo':'pseudo', 'python':'python', 'javascript':'javascript',
+    'text/x-csrc':'text/x-csrc', 'text/x-c++src':'text/x-c++src',
+    'text/x-java':'text/x-java', 'pascal':'pascal'
+  };
+  // Si champ vide, mettre le template
+  if(!_codeMirror.getValue().trim()) {
+    _codeMirror.setValue(getCodeTemplate(lang));
+  }
+  _codeMirror.setOption('mode', modeMap[lang] || 'pseudo');
+}
+
+function getCodeTemplate(lang) {
+  const tpl = {
+    pseudo: `ALGORITHME TriSelection
+VARIABLES
+  A : TABLEAU[1..n] DE ENTIER
+  i, j, min_idx : ENTIER
+
+DÉBUT
+  POUR i ← 1 À n-1 FAIRE
+    min_idx ← i
+    POUR j ← i+1 À n FAIRE
+      SI A[j] < A[min_idx] ALORS
+        min_idx ← j
+      FIN SI
+    FIN POUR
+    // Échanger A[i] et A[min_idx]
+    temp ← A[i]
+    A[i] ← A[min_idx]
+    A[min_idx] ← temp
+  FIN POUR
+FIN`,
+    python: `def tri_selection(A):
+    n = len(A)
+    for i in range(n - 1):
+        min_idx = i
+        for j in range(i + 1, n):
+            if A[j] < A[min_idx]:
+                min_idx = j
+        A[i], A[min_idx] = A[min_idx], A[i]
+    return A`,
+    javascript: `function triSelection(A) {
+  const n = A.length;
+  for (let i = 0; i < n - 1; i++) {
+    let minIdx = i;
+    for (let j = i + 1; j < n; j++) {
+      if (A[j] < A[minIdx]) minIdx = j;
+    }
+    [A[i], A[minIdx]] = [A[minIdx], A[i]];
+  }
+  return A;
+}`,
+    'text/x-csrc': `#include <stdio.h>
+
+void tri_selection(int A[], int n) {
+    for (int i = 0; i < n - 1; i++) {
+        int min_idx = i;
+        for (int j = i + 1; j < n; j++) {
+            if (A[j] < A[min_idx])
+                min_idx = j;
+        }
+        int temp = A[i];
+        A[i] = A[min_idx];
+        A[min_idx] = temp;
+    }
+}`,
+    'text/x-java': `public class TriSelection {
+    public static void triSelection(int[] A) {
+        int n = A.length;
+        for (int i = 0; i < n - 1; i++) {
+            int minIdx = i;
+            for (int j = i + 1; j < n; j++) {
+                if (A[j] < A[minIdx]) minIdx = j;
+            }
+            int temp = A[i];
+            A[i] = A[minIdx];
+            A[minIdx] = temp;
+        }
+    }
+}`,
+    pascal: `PROGRAM TriSelection;
+VAR A : ARRAY[1..10] OF INTEGER;
+    i, j, min_idx, temp : INTEGER;
+BEGIN
+  FOR i := 1 TO 9 DO BEGIN
+    min_idx := i;
+    FOR j := i+1 TO 10 DO
+      IF A[j] < A[min_idx] THEN min_idx := j;
+    temp := A[i]; A[i] := A[min_idx]; A[min_idx] := temp;
+  END;
+END.`
+  };
+  return tpl[lang] || tpl['pseudo'];
+}
+
+function insertCodeToCanvas() {
+  if(!_codeMirror) return;
+  const code  = _codeMirror.getValue();
+  const lang  = document.getElementById('code-lang').value;
+  const title = document.getElementById('code-title').value || 'Code';
+  const modal = document.getElementById('code-modal');
+  const editingId = modal.dataset.editingId ? parseInt(modal.dataset.editingId) : null;
+
+  if(editingId) {
+    const obj = Scene.objects.find(o => o.id === editingId);
+    if(obj) { obj.code = code; obj.lang = lang; obj.title = title; }
+    delete modal.dataset.editingId;
+  } else {
+    // Placer au centre du viewport
+    const cx = (window.innerWidth/2  - Viewport.panX) / Viewport.zoom;
+    const cy = (window.innerHeight/2 - Viewport.panY) / Viewport.zoom;
+    Scene.add({
+      type: 'code', x: cx - 200, y: cy - 100,
+      code, lang, title,
+      color: '#6c63ff', opacity: 1,
+      w: 520, // largeur indicative pour hit test
+    });
+  }
+
+  closeCodeModal();
+  App.render(); App.pushUndo(); App.scheduleSave();
+}
+
+
+// ══════════════════════════════════════════════════
+//  GRAPH TRAVERSAL ENGINE
+//  BFS, DFS, Dijkstra, Bellman-Ford
+//  Visualisation étape par étape sur le canvas
+// ══════════════════════════════════════════════════
+const GraphTraversal = {
+  algo:     'BFS',
+  source:   null,
+  dest:     null,
+  speed:    600,
+  _timer:   null,
+  _paused:  false,
+  _steps:   [],   // liste des étapes à rejouer
+  _stepIdx: 0,
+
+  // Couleurs des états
+  COLORS: {
+    unvisited:  null,           // couleur originale
+    queued:     '#ffd166',      // jaune = dans la file/pile
+    visiting:   '#ff6b9d',      // rose  = en cours de visite
+    visited:    '#06d6a0',      // vert  = visité
+    path:       '#6c63ff',      // violet = chemin final
+    edge_active:'#ff6b9d',      // arête traversée
+    edge_path:  '#6c63ff',      // arête du chemin final
+  },
+
+  openPanel() {
+    this.reset();
+    this.refreshNodeList();
+    document.getElementById('graph-traversal-panel').style.display = 'block';
+  },
+
+  closePanel() {
+    this.reset();
+    document.getElementById('graph-traversal-panel').style.display = 'none';
+  },
+
+  setAlgo(a) {
+    this.algo = a;
+    document.querySelectorAll('.gt-algo-btn').forEach(b => b.classList.remove('gt-active'));
+    document.getElementById(`gt-btn-${a.toLowerCase()}`).classList.add('gt-active');
+    // Dijkstra et Bellman ont besoin d'une destination
+    const needDest = a === 'DIJKSTRA' || a === 'BELLMAN';
+    document.getElementById('gt-dest-wrap').style.opacity = needDest ? '1' : '0.4';
+  },
+
+  refreshNodeList() {
+    const nodes = Scene.objects.filter(o => o.type === 'graph-node');
+    const src = document.getElementById('gt-source');
+    const dst = document.getElementById('gt-dest');
+
+    if(nodes.length === 0) {
+        src.innerHTML = '<option value="">— Dessine un graphe d\'abord —</option>';
+        dst.innerHTML = '<option value="">— Dessine un graphe d\'abord —</option>';
+        this._log('⚠️ Aucun nœud. Utilise l\'outil Graphe pour dessiner des nœuds.', '#ff6b9d');
+        return;
+    }
+
+    src.innerHTML = nodes.map(n =>
+        `<option value="${n.id}">${n.label || 'Node '+n.id}</option>`
+    ).join('');
+    dst.innerHTML = nodes.map(n =>
+        `<option value="${n.id}">${n.label || 'Node '+n.id}</option>`
+    ).join('');
+    if(nodes.length > 1) dst.selectedIndex = 1;
+
+    // ✅ Limiter à 5 visible max, scroll natif du navigateur
+    const visibleCount = Math.min(nodes.length, 5);
+    src.size = visibleCount;
+    dst.size = visibleCount;
+
+    this._log(`✅ ${nodes.length} nœud(s) chargé(s)`, '#06d6a0');
+    },
+  
+  _getGraph() {
+    const nodes = Scene.objects.filter(o => o.type === 'graph-node');
+    const edges = Scene.objects.filter(o => o.type === 'graph-edge');
+    const adj = {};
+    nodes.forEach(n => adj[n.id] = []);
+    edges.forEach(e => {
+        // ✅ fromId/toId car c'est ce que tools.js utilise
+        const from = e.fromId;
+        const to   = e.toId;
+        const w    = parseFloat(e.weight) || 1;
+        if(adj[from] !== undefined)
+        adj[from].push({ to, edgeId: e.id, weight: w });
+        if(!e.directed && adj[to] !== undefined)
+        adj[to].push({ to: from, edgeId: e.id, weight: w });
+    });
+    return { nodes, edges, adj };
+    },
+
+  _log(msg, color='var(--text2)') {
+    const log = document.getElementById('gt-log');
+    log.innerHTML += `<div style="color:${color}">${msg}</div>`;
+    log.scrollTop = log.scrollHeight;
+  },
+
+  _clearLog() {
+    document.getElementById('gt-log').innerHTML = '';
+    document.getElementById('gt-result').style.display = 'none';
+  },
+
+  _applyStep(step) {
+    if(step.nodeId !== undefined) {
+      const o = Scene.objects.find(n => n.id === step.nodeId);
+      if(o) o._gt_state = step.state;
+    }
+    if(step.edgeId !== undefined) {
+      const o = Scene.objects.find(e => e.id === step.edgeId);
+      if(o) o._gt_edge_state = step.state;
+    }
+    App.render();
+  },
+
+  // ── Construire les étapes BFS ──
+  _buildBFS(srcId) {
+    const { nodes, adj } = this._getGraph();
+    const steps = [];
+    const visited = new Set();
+    const queue = [srcId];
+    visited.add(srcId);
+
+    steps.push({ nodeId: srcId, state: 'queued', log: `🟡 Démarrage depuis <b>${this._label(srcId)}</b>`, color: '#ffd166' });
+
+    while(queue.length) {
+      const cur = queue.shift();
+      steps.push({ nodeId: cur, state: 'visiting', log: `🔍 Visite de <b>${this._label(cur)}</b>`, color: '#ff6b9d' });
+
+      for(const { to, edgeId } of (adj[cur] || [])) {
+        steps.push({ edgeId, state: 'active', log: `  → Arête vers <b>${this._label(to)}</b>`, color: '#aaa' });
+        if(!visited.has(to)) {
+          visited.add(to);
+          queue.push(to);
+          steps.push({ nodeId: to, state: 'queued', log: `  🟡 Ajout <b>${this._label(to)}</b> à la file`, color: '#ffd166' });
+        }
+      }
+      steps.push({ nodeId: cur, state: 'visited', log: `✅ <b>${this._label(cur)}</b> visité`, color: '#06d6a0' });
+    }
+    return steps;
+  },
+
+  // ── Construire les étapes DFS ──
+  _buildDFS(srcId) {
+    const { adj } = this._getGraph();
+    const steps = [];
+    const visited = new Set();
+
+    const dfs = (id, depth) => {
+      visited.add(id);
+      steps.push({ nodeId: id, state: 'visiting', log: `${'&nbsp;'.repeat(depth*4)}🔍 Visite <b>${this._label(id)}</b> (prof. ${depth})`, color: '#ff6b9d' });
+      for(const { to, edgeId } of (adj[id] || [])) {
+        steps.push({ edgeId, state: 'active', log: `${'&nbsp;'.repeat(depth*4+2)}→ <b>${this._label(to)}</b>`, color: '#aaa' });
+        if(!visited.has(to)) dfs(to, depth + 1);
+      }
+      steps.push({ nodeId: id, state: 'visited', log: `${'&nbsp;'.repeat(depth*4)}✅ <b>${this._label(id)}</b> terminé`, color: '#06d6a0' });
+    };
+    dfs(srcId, 0);
+    return steps;
+  },
+
+  // ── Construire les étapes Dijkstra ──
+  _buildDijkstra(srcId, dstId) {
+    const { nodes, adj } = this._getGraph();
+    const steps = [];
+    const dist  = {}, prev  = {}, prevEdge = {};
+    nodes.forEach(n => { dist[n.id] = Infinity; prev[n.id] = null; });
+    dist[srcId] = 0;
+
+    const pq = [...nodes.map(n => n.id)];
+    steps.push({ nodeId: srcId, state: 'queued', log: `🟡 Source <b>${this._label(srcId)}</b> — dist=0`, color: '#ffd166' });
+
+    while(pq.length) {
+      pq.sort((a, b) => dist[a] - dist[b]);
+      const u = pq.shift();
+      if(dist[u] === Infinity) break;
+      steps.push({ nodeId: u, state: 'visiting', log: `🔍 Relax <b>${this._label(u)}</b> dist=${dist[u]}`, color: '#ff6b9d' });
+
+      for(const { to, edgeId, weight } of (adj[u] || [])) {
+        steps.push({ edgeId, state: 'active', log: `  → <b>${this._label(to)}</b> w=${weight}`, color: '#aaa' });
+        const alt = dist[u] + weight;
+        if(alt < dist[to]) {
+          dist[to] = alt;
+          prev[to] = u;
+          prevEdge[to] = edgeId;
+          steps.push({ nodeId: to, state: 'queued', log: `  🟡 Mise à jour <b>${this._label(to)}</b> dist=${alt.toFixed(2)}`, color: '#ffd166' });
+        }
+      }
+      steps.push({ nodeId: u, state: 'visited', log: `✅ <b>${this._label(u)}</b> finalisé dist=${dist[u].toFixed(2)}`, color: '#06d6a0' });
+    }
+
+    // Reconstruire le chemin
+    return this._addPathSteps(steps, srcId, dstId, prev, prevEdge, dist);
+  },
+
+  // ── Construire les étapes Bellman-Ford ──
+  _buildBellman(srcId, dstId) {
+    const { nodes, edges, adj } = this._getGraph();
+    const steps = [];
+    const dist  = {}, prev = {}, prevEdge = {};
+    nodes.forEach(n => { dist[n.id] = Infinity; prev[n.id] = null; });
+    dist[srcId] = 0;
+    steps.push({ nodeId: srcId, state: 'queued', log: `🟡 Source <b>${this._label(srcId)}</b>`, color: '#ffd166' });
+
+    for(let i = 0; i < nodes.length - 1; i++) {
+      steps.push({ log: `<br>🔄 Itération ${i+1}`, color: '#6c63ff' });
+      let updated = false;
+      /*for(const e of edges) {
+        const pairs = [[e.from, e.to]];
+        if(!e.directed) pairs.push([e.to, e.from]);
+        for(const [u, v] of pairs) {
+          const w = parseFloat(e.label) || 1; */
+      for(const e of edges) {
+        const pairs = [[e.fromId, e.toId]];  // ✅ fromId/toId
+        if(!e.directed) pairs.push([e.toId, e.fromId]);
+        for(const [u, v] of pairs) {
+            const w = parseFloat(e.weight) || 1;  // ✅ e.weight pas e.label
+          steps.push({ edgeId: e.id, state: 'active', log: `  → Arête <b>${this._label(u)}</b>→<b>${this._label(v)}</b> w=${w}`, color: '#aaa' });
+          if(dist[u] + w < dist[v]) {
+            dist[v] = dist[u] + w;
+            prev[v] = u;
+            prevEdge[v] = e.id;
+            updated = true;
+            steps.push({ nodeId: v, state: 'queued', log: `  🟡 <b>${this._label(v)}</b> ← ${dist[v].toFixed(2)}`, color: '#ffd166' });
+          }
+        }
+      }
+      if(!updated) { steps.push({ log: `  ✅ Convergé à l'itération ${i+1}`, color: '#06d6a0' }); break; }
+    }
+    nodes.forEach(n => { if(dist[n.id] < Infinity) steps.push({ nodeId: n.id, state: 'visited' }); });
+    return this._addPathSteps(steps, srcId, dstId, prev, prevEdge, dist);
+  },
+
+  _addPathSteps(steps, srcId, dstId, prev, prevEdge, dist) {
+    if(!dstId || dist[dstId] === Infinity) return steps;
+    // Reconstruire le chemin
+    const path = [], pathEdges = [];
+    let cur = dstId;
+    while(cur) { path.unshift(cur); if(prevEdge[cur]) pathEdges.unshift(prevEdge[cur]); cur = prev[cur]; }
+
+    steps.push({ log: `<br>📍 <b>Chemin : ${path.map(id=>this._label(id)).join(' → ')}</b>`, color: '#6c63ff' });
+    steps.push({ log: `💰 <b>Coût total : ${dist[dstId].toFixed(2)}</b>`, color: '#6c63ff' });
+    path.forEach(id    => steps.push({ nodeId: id, state: 'path' }));
+    pathEdges.forEach(id => steps.push({ edgeId: id, state: 'path' }));
+    steps.push({ _finalPath: path, _finalCost: dist[dstId], _pathEdges: pathEdges });
+    return steps;
+  },
+
+  _label(id) {
+    const o = Scene.objects.find(n => n.id === id);
+    return o?.label || String(id);
+  },
+
+  
+  play() {
+    if(this._paused) { this._paused = false; this._runNext(); return; }
+    this.reset();
+    this._clearLog();
+    this.speed = parseInt(document.getElementById('gt-speed').value);
+
+    // ✅ Number() car Scene assigne des IDs numériques
+    const srcId = Number(document.getElementById('gt-source').value);
+    const dstId = Number(document.getElementById('gt-dest').value);
+
+    if(!srcId) { this._log('⚠️ Sélectionne un nœud source', '#ff6b9d'); return; }
+
+    switch(this.algo) {
+        case 'BFS':      this._steps = this._buildBFS(srcId); break;
+        case 'DFS':      this._steps = this._buildDFS(srcId); break;
+        case 'DIJKSTRA': this._steps = this._buildDijkstra(srcId, dstId); break;
+        case 'BELLMAN':  this._steps = this._buildBellman(srcId, dstId); break;
+    }
+    this._stepIdx = 0;
+    this._runNext();
+    },
+
+  _runNext() {
+    if(this._paused || this._stepIdx >= this._steps.length) {
+      this._showFinalResult();
+      return;
+    }
+    const step = this._steps[this._stepIdx++];
+    this._applyStep(step);
+    if(step.log) this._log(step.log, step.color || 'var(--text2)');
+
+    // Résultat final
+    if(step._finalPath) {
+      this._showResult(step._finalPath, step._finalCost);
+    }
+
+    this._timer = setTimeout(() => this._runNext(), this.speed);
+  },
+
+  pause() {
+    this._paused = !this._paused;
+    if(!this._paused) this._runNext();
+    document.getElementById('gt-pause').textContent = this._paused ? '▶' : '⏸';
+  },
+
+  reset() {
+    clearTimeout(this._timer);
+    this._steps = []; this._stepIdx = 0; this._paused = false;
+    // Effacer les états visuels
+    Scene.objects.forEach(o => {
+      delete o._gt_state;
+      delete o._gt_edge_state;
+    });
+    App.render();
+    document.getElementById('gt-pause').textContent = '⏸';
+  },
+
+  _showResult(path, cost) {
+    const r = document.getElementById('gt-result');
+    r.style.display = 'block';
+    document.getElementById('gt-result-path').textContent =
+      path.map(id => this._label(id)).join(' → ');
+    document.getElementById('gt-result-cost').textContent =
+      `Coût total : ${cost.toFixed(2)}`;
+  },
+
+  _showFinalResult() {
+    // Rien de plus si déjà affiché
+  }
+};
+
+// ══════════════════════════════════════════════════
+//  DRAG DU PANEL TRAVERSÉE
+// ══════════════════════════════════════════════════
+(function makePanelDraggable() {
+  const panel  = document.getElementById('graph-traversal-panel');
+  const handle = panel.querySelector('div:first-child'); // header du panel
+
+  let isDragging = false, startX, startY, origX, origY;
+
+  handle.style.cursor = 'grab';
+
+  handle.addEventListener('mousedown', e => {
+    if(e.target.closest('button')) return; // ne pas drag si clic sur ✕
+    isDragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    const rect = panel.getBoundingClientRect();
+    origX = rect.left;
+    origY = rect.top;
+    handle.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if(!isDragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    // Contraindre dans la fenêtre
+    const newX = Math.max(0, Math.min(window.innerWidth  - panel.offsetWidth,  origX + dx));
+    const newY = Math.max(0, Math.min(window.innerHeight - panel.offsetHeight, origY + dy));
+    panel.style.right  = 'auto';
+    panel.style.top    = newY + 'px';
+    panel.style.left   = newX + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if(isDragging) { isDragging = false; handle.style.cursor = 'grab'; }
+  });
+
+  // Touch support
+  handle.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    isDragging = true;
+    startX = t.clientX; startY = t.clientY;
+    const rect = panel.getBoundingClientRect();
+    origX = rect.left; origY = rect.top;
+    e.preventDefault();
+  }, {passive:false});
+
+  document.addEventListener('touchmove', e => {
+    if(!isDragging) return;
+    const t = e.touches[0];
+    const dx = t.clientX - startX, dy = t.clientY - startY;
+    const newX = Math.max(0, Math.min(window.innerWidth  - panel.offsetWidth,  origX + dx));
+    const newY = Math.max(0, Math.min(window.innerHeight - panel.offsetHeight, origY + dy));
+    panel.style.right = 'auto';
+    panel.style.top   = newY + 'px';
+    panel.style.left  = newX + 'px';
+  }, {passive:false});
+
+  document.addEventListener('touchend', () => { isDragging = false; });
+})();
+
 // Raccourcis clavier dans la textarea
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('text-ta').addEventListener('keydown', e => {
@@ -1205,7 +1904,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if(e.ctrlKey && e.key === 'i') { e.preventDefault(); tfmt('italic'); }
     if(e.ctrlKey && e.key === 'u') { e.preventDefault(); tfmt('under'); }
   });
-  document.getElementById('text-confirm').onclick = () => UI.confirmText();
+  //document.getElementById('text-confirm').onclick = () => UI.confirmText();
+  const _tc = document.getElementById('text-confirm');
+  if(_tc) _tc.onclick = () => UI.confirmText();
 });
 
 // Démarrage
