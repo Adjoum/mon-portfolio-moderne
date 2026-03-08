@@ -81,7 +81,39 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);background:var(--b
 #body{display:flex;flex:1;overflow:hidden;}
 
 /* ─── TOOLBAR ─── */
-#toolbar{width:54px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:8px 0 100px;gap:2px;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;flex-shrink:0;z-index:50;}
+/*#toolbar{width:54px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:8px 0 100px;gap:2px;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;flex-shrink:0;z-index:50;} */
+#toolbar{
+  width:54px;
+  background:var(--surface);
+  border-right:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding:8px 0 8px;
+  gap:2px;
+  overflow-y:auto;
+  overflow-x:hidden;
+  flex-shrink:0;
+  z-index:50;
+  /* Scrollbar visible et stylée */
+  scrollbar-width:thin;
+  scrollbar-color: var(--border2) transparent;
+}
+
+/* Scrollbar Webkit (Chrome, Safari, Edge) */
+#toolbar::-webkit-scrollbar {
+  width: 3px;
+}
+#toolbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+#toolbar::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 10px;
+}
+#toolbar::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
 #toolbar::-webkit-scrollbar{display:none;}
 .tbtn{width:38px;height:38px;border-radius:10px;border:1px solid transparent;background:transparent;color:var(--text2);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;position:relative;flex-shrink:0;}
 .tbtn:hover{background:var(--surface2);color:var(--text);border-color:var(--border);}
