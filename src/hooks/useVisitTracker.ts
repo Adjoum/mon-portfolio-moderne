@@ -40,8 +40,8 @@ export function useVisitTracker() {
     })
     if(geo.ok) {
         const data = await geo.json()
-        payload.country = data.countryName || null
-        payload.city    = data.cityName    || null
+        payload.country = data.country || null
+        payload.city    = data.city   || null
     }
     } catch {
     // silencieux

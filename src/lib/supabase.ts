@@ -122,3 +122,37 @@ export const submitContact = async (contact: Omit<Contact, 'id' | 'createdat'>) 
   return data
 }
 
+
+/*
+create table visits (
+  id          bigserial primary key,
+  page        text not null,
+  referrer    text,
+  user_agent  text,
+  country     text,
+  city        text,
+  language    text,
+  screen      text,
+  created_at  timestamptz default now()
+);
+
+-- Index pour les requêtes fréquentes
+create index visits_created_at_idx on visits(created_at desc);
+create index visits_page_idx on visits(page);
+
+-- Autoriser les insertions anonymes (visiteurs non connectés)
+alter table visits enable row level security;
+
+create policy "Anyone can insert visits"
+  on visits for insert
+  with check (true);
+
+create policy "Only authenticated can read visits"
+  on visits for select
+  using (auth.role() = 'authenticated');   
+  
+  
+  
+  
+  
+*/
