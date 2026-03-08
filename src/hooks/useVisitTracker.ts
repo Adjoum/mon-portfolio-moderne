@@ -35,7 +35,7 @@ export function useVisitTracker() {
       
       // Remplace le bloc try/catch géo par :
     try {
-    const geo = await fetch('https://freeipapi.com/api/json', {
+    const geo = await fetch('https://ipwho.is/', {
         signal: AbortSignal.timeout(3000)
     })
     if(geo.ok) {
