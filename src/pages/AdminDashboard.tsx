@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Edit, Trash2, Save, X, Upload, Eye, Download, FileText, Briefcase, Award } from 'lucide-react'
+import { Plus, Edit, Trash2, Save, X, Upload, Eye, Download, FileText, Briefcase, Award, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import type { Project, Skill } from '../lib/supabase'
 import AdminLogin from '../components/AdminLogin';
+import VisitorStats from '../components/VisitorStats'
 
-type TabType = 'projects' | 'skills' | 'cv'
+type TabType = 'projects' | 'skills' | 'cv' | 'visitors'
 
 interface ProjectForm {
   title: string
@@ -391,6 +392,18 @@ const AdminDashboard: React.FC = () => {
           >
             <FileText size={20} />
             CV PDF
+          </button>
+
+          <button
+            onClick={() => setActiveTab('visitors')}
+            className={`px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all ${
+              activeTab === 'visitors'
+                ? 'bg-gradient-to-r from-primary to-secondary text-white'
+                : 'glass-effect text-gray-300 hover:text-white'
+            }`}
+          >
+            <Users size={20} />
+            Visiteurs
           </button>
         </div>
 
@@ -840,9 +853,22 @@ const AdminDashboard: React.FC = () => {
               </div>
             </motion.div>
           )}
+
+          {/* TAB VISITEURS */}
+          {activeTab === 'visitors' && (
+            <motion.div
+              key="visitors"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <VisitorStats />
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
     </motion.div>
+    
   )
 }
 

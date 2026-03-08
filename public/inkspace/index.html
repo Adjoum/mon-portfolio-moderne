@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adjoumani — Premium Whiteboard</title>
+<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body data-theme="dark">
+
+<!-- ═══ SPLASH ═══ -->
+<div id="splash">
+  <div class="splash-logo">Whiteboard</div>
+  <div class="splash-sub">ADJOUMANI Whiteboard Platform </div>
+  <div class="splash-bar"><div class="splash-prog"></div></div>
+</div>
+
+<!-- ═══ APP ═══ -->
+<div id="app">
+
+  <!-- HEADER -->
+  <div id="header">
+    <div class="logo" onclick="UI.openCmd()">Ink<span style="background:linear-gradient(135deg,#ff6b9d,#00d4aa);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Space</span></div>
+    <div id="ws-tabs"></div>
+    <button id="btn-add-ws" onclick="App.newWorkspace()" title="Nouveau tableau (Ctrl+T)"><i class="fa fa-plus"></i></button>
+    <!-- <div class="h-right">
+      <div id="save-pill"><span id="save-dot"></span><span id="save-text">Sauvegardé</span></div>
+      <button class="hbtn" onclick="togglePanel('ai-panel')"><i class="fa fa-wand-magic-sparkles" style="color:#ff6b9d"></i> IA</button>
+      <button class="hbtn" onclick="togglePanel('graph-panel')"><i class="fa fa-diagram-project"></i> Graphes</button>
+      <button class="hbtn" onclick="togglePanel('tmpl-panel')"><i class="fa fa-layer-group"></i> Templates</button>
+      <button class="hbtn" onclick="togglePanel('theme-panel')"><i class="fa fa-palette"></i></button>
+      <button class="hbtn" onclick="togglePanel('doc-panel')"><i class="fa fa-book-open"></i> Aide</button>
+      <button class="hbtn" onclick="UI.openShare()"><i class="fa fa-share-nodes"></i></button>
+      <button class="hbtn" onclick="App.startPresentation()"><i class="fa fa-display"></i></button>
+      <button class="hbtn accent" onclick="App.exportPNG()"><i class="fa fa-download"></i> Export</button>
+    </div>   -->
+    <div class="h-right">
+      <div id="save-pill"><span id="save-dot"></span><span id="save-text">Sauvegardé</span></div>
+      <button class="hbtn hide-xs" onclick="togglePanel('ai-panel')"><i class="fa fa-wand-magic-sparkles" style="color:#ff6b9d"></i> <span>IA</span></button>
+      <button class="hbtn hide-xs" onclick="togglePanel('graph-panel')"><i class="fa fa-diagram-project"></i> <span>Graphes</span></button>
+      <button class="hbtn hide-xs" onclick="togglePanel('tmpl-panel')"><i class="fa fa-layer-group"></i> <span>Templates</span></button>
+      <button class="hbtn hide-xs" onclick="togglePanel('theme-panel')"><i class="fa fa-palette"></i></button>
+      <button class="hbtn hide-xs" onclick="togglePanel('doc-panel')"><i class="fa fa-book-open"></i> <span>Aide</span></button>
+      <button class="hbtn hide-xs" onclick="UI.openShare()"><i class="fa fa-share-nodes"></i></button>
+      <button class="hbtn hide-xs" onclick="App.startPresentation()"><i class="fa fa-display"></i></button>
+      <button class="hbtn accent" onclick="App.exportPNG()"><i class="fa fa-download"></i> <span>Export</span></button>
+      <!-- Burger menu pour mobile xs -->
+      <button class="hbtn" id="burger-btn" onclick="toggleBurger()" style="display:none"><i class="fa fa-bars"></i></button>
+    </div>
+
+    <!-- Menu burger mobile -->
+    <div id="burger-menu" style="display:none;position:fixed;top:48px;right:0;background:var(--surface);border:1px solid var(--border2);border-radius:0 0 0 12px;padding:8px;z-index:900;min-width:160px;box-shadow:var(--shadow);">
+      <div class="ctx-item" onclick="togglePanel('ai-panel');toggleBurger()"><i class="fa fa-wand-magic-sparkles" style="color:#ff6b9d"></i> Assistant IA</div>
+      <div class="ctx-item" onclick="togglePanel('graph-panel');toggleBurger()"><i class="fa fa-diagram-project"></i> Graphes</div>
+      <div class="ctx-item" onclick="togglePanel('tmpl-panel');toggleBurger()"><i class="fa fa-layer-group"></i> Templates</div>
+      <div class="ctx-item" onclick="togglePanel('theme-panel');toggleBurger()"><i class="fa fa-palette"></i> Thèmes</div>
+      <div class="ctx-item" onclick="togglePanel('doc-panel');toggleBurger()"><i class="fa fa-book-open"></i> Aide</div>
+      <div class="ctx-sep"></div>
+      <div class="ctx-item" onclick="UI.openShare();toggleBurger()"><i class="fa fa-share-nodes"></i> Partager</div>
+      <div class="ctx-item" onclick="App.startPresentation();toggleBurger()"><i class="fa fa-display"></i> Présentation</div>
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div id="body">
+
+    <!-- TOOLBAR -->
+    <div id="toolbar">
+      <div class="t-label">DESSIN</div>
+      <button class="tbtn active" id="tool-pen"         data-tool="pen"         data-tip="Stylo (P)"        onclick="Tools.set('pen')"><i class="fa fa-pen-nib"></i></button>
+      <button class="tbtn"        id="tool-brush"       data-tool="brush"       data-tip="Pinceau (B)"      onclick="Tools.set('brush')"><i class="fa fa-paintbrush"></i></button>
+      <button class="tbtn"        id="tool-marker"      data-tool="marker"      data-tip="Marqueur (M)"     onclick="Tools.set('marker')"><i class="fa fa-highlighter"></i></button>
+      <button class="tbtn"        id="tool-calligraphy" data-tool="calligraphy" data-tip="Calligraphie (G)" onclick="Tools.set('calligraphy')"><i class="fa fa-feather-pointed"></i></button>
+      <button class="tbtn"        id="tool-eraser"      data-tool="eraser"      data-tip="Gomme (E)"        onclick="Tools.set('eraser')"><i class="fa fa-eraser"></i></button>
+      <div class="t-sep"></div>
+
+      <div class="t-label">LIGNES</div>
+      <button class="tbtn" id="tool-line"      data-tool="line"      data-tip="Ligne (L)"          onclick="Tools.set('line')"><i class="fa fa-minus"></i></button>
+      <button class="tbtn" id="tool-arrow"     data-tool="arrow"     data-tip="Flèche (A)"          onclick="Tools.set('arrow')"><i class="fa fa-arrow-right"></i></button>
+      <button class="tbtn" id="tool-dblarrow"  data-tool="dblarrow"  data-tip="Double flèche"       onclick="Tools.set('dblarrow')"><i class="fa fa-arrows-left-right"></i></button>
+      <button class="tbtn" id="tool-bezier"    data-tool="bezier"    data-tip="Bézier (4 pts)"      onclick="Tools.set('bezier')"><i class="fa fa-bezier-curve"></i></button>
+      <div class="t-sep"></div>
+
+      <div class="t-label">2D</div>
+      <button class="tbtn" id="tool-rect"          data-tool="rect"          data-tip="Rectangle (R)"      onclick="Tools.set('rect')"><i class="fa fa-square" style="font-weight:300"></i></button>
+      <button class="tbtn" id="tool-rect-fill"     data-tool="rect-fill"     data-tip="Rect. plein"         onclick="Tools.set('rect-fill')"><i class="fa fa-square"></i></button>
+      <button class="tbtn" id="tool-circle"        data-tool="circle"        data-tip="Ellipse (C)"         onclick="Tools.set('circle')"><i class="fa fa-circle" style="font-weight:300"></i></button>
+      <button class="tbtn" id="tool-circle-fill"   data-tool="circle-fill"   data-tip="Cercle plein"        onclick="Tools.set('circle-fill')"><i class="fa fa-circle"></i></button>
+      <button class="tbtn" id="tool-triangle"      data-tool="triangle"      data-tip="Triangle"            onclick="Tools.set('triangle')" style="font-size:16px">△</button>
+      <button class="tbtn" id="tool-diamond"       data-tool="diamond"       data-tip="Losange"             onclick="Tools.set('diamond')" style="font-size:16px">◇</button>
+      <button class="tbtn" id="tool-parallelogram" data-tool="parallelogram" data-tip="Parallélogramme"     onclick="Tools.set('parallelogram')" style="font-size:13px">▱</button>
+      <button class="tbtn" id="tool-pentagon"      data-tool="pentagon"      data-tip="Pentagone"           onclick="Tools.set('pentagon')" style="font-size:14px">⬠</button>
+      <button class="tbtn" id="tool-hexagon"       data-tool="hexagon"       data-tip="Hexagone"            onclick="Tools.set('hexagon')" style="font-size:14px">⬡</button>
+      <button class="tbtn" id="tool-star"          data-tool="star"          data-tip="Étoile"              onclick="Tools.set('star')" style="font-size:14px">★</button>
+      <div class="t-sep"></div>
+
+      <div class="t-label">3D</div>
+      <button class="tbtn" id="tool-cube"     data-tool="cube"     data-tip="Cube 3D"     onclick="Tools.set('cube')" style="font-size:13px">⬛</button>
+      <button class="tbtn" id="tool-prism"    data-tool="prism"    data-tip="Prisme 3D"   onclick="Tools.set('prism')" style="font-size:13px">🔺</button>
+      <button class="tbtn" id="tool-cylinder" data-tool="cylinder" data-tip="Cylindre 3D" onclick="Tools.set('cylinder')" style="font-size:13px">🥫</button>
+      <div class="t-sep"></div>
+
+      <div class="t-label">CONTENU</div>
+      <button class="tbtn" id="tool-text"    data-tool="text"    data-tip="Texte (T)"    onclick="Tools.set('text')"><i class="fa fa-font"></i></button>
+      <button class="tbtn" id="tool-formula" data-tool="formula" data-tip="Formule (F)"  onclick="Tools.set('formula')" style="font-size:11px;font-weight:700">fx</button>
+      <button class="tbtn" id="tool-image"   data-tool="image"   data-tip="Image (I)"    onclick="UI.triggerImageUpload()"><i class="fa fa-image"></i></button>
+      <button class="tbtn" id="tool-sticker" data-tool="sticker" data-tip="Sticker"      onclick="Tools.set('sticker')"><i class="fa fa-face-smile"></i></button>
+      <div class="t-sep"></div>
+
+      <div class="t-label">GRAPHE</div>
+      <button class="tbtn" id="tool-graph-node" data-tool="graph-node" data-tip="Nœud de graphe" onclick="Tools.set('graph-node')"><i class="fa fa-circle-dot"></i></button>
+      <button class="tbtn" id="tool-graph-edge" data-tool="graph-edge" data-tip="Arête"           onclick="Tools.set('graph-edge')"><i class="fa fa-diagram-project"></i></button>
+      <button class="tbtn" id="tool-angle"      data-tool="angle"      data-tip="Angle (Q)"       onclick="Tools.set('angle')" style="font-size:14px">∠</button>
+      <div class="t-sep"></div>
+
+      <div class="t-label">NAVIGUER</div>
+      <button class="tbtn" id="tool-select" data-tool="select" data-tip="Sélectionner (S)" onclick="Tools.set('select')"><i class="fa fa-arrow-pointer"></i></button>
+      <button class="tbtn" id="tool-pan"    data-tool="pan"    data-tip="Déplacer (V)"     onclick="Tools.set('pan')"><i class="fa fa-hand"></i></button>
+      <button class="tbtn" id="tool-laser"  data-tool="laser"  data-tip="Laser (K)"        onclick="Tools.set('laser')"><i class="fa fa-circle-dot" style="color:#ff3366"></i></button>
+      <div class="t-sep"></div>
+
+      <button class="tbtn" data-tip="Annuler (Ctrl+Z)"          onclick="App.undo()"><i class="fa fa-rotate-left"></i></button>
+      <button class="tbtn" data-tip="Refaire (Ctrl+Y)"          onclick="App.redo()"><i class="fa fa-rotate-right"></i></button>
+      <div class="t-sep"></div>
+      <button class="tbtn" data-tip="Changer grille (Ctrl+G)"   onclick="App.cycleGrid()"><i class="fa fa-border-all"></i></button>
+      <button class="tbtn" data-tip="Minimap"                    onclick="App.toggleMinimap()"><i class="fa fa-map"></i></button>
+      <button class="tbtn" data-tip="Commandes (Ctrl+K)"         onclick="UI.openCmd()"><i class="fa fa-terminal"></i></button>
+      <button class="tbtn" data-tip="Effacer tout"               onclick="App.clearCanvas()"><i class="fa fa-trash"></i></button>
+    </div>
+
+    <!-- CANVAS -->
+    <div id="canvas-wrap">
+      <canvas id="grid-c"></canvas>
+      <canvas id="main-c"></canvas>
+      <canvas id="overlay-c"></canvas>
+      <div id="sel-box"></div>
+      <div id="eraser-cursor"></div>
+
+      <!-- Text input -->
+      <div id="text-box">
+        <!-- Barre de mise en forme -->
+        <div id="text-toolbar" style="
+          display:flex;align-items:center;gap:4px;
+          background:var(--surface);border:1px solid var(--border2);
+          border-radius:10px 10px 0 0;padding:5px 8px;
+          box-shadow:0 -2px 12px rgba(0,0,0,.3);
+        ">
+          <!-- Taille -->
+          <button onclick="tfmt('size-down')" title="Réduire" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-weight:700;font-size:13px">A-</button>
+          <span id="txt-size-disp" style="font-family:var(--mono);font-size:11px;color:var(--text2);min-width:28px;text-align:center">18</span>
+          <button onclick="tfmt('size-up')" title="Agrandir" style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-weight:700;font-size:13px">A+</button>
+          <div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>
+          <!-- Style -->
+          <button id="txt-bold"   onclick="tfmt('bold')"   title="Gras (Ctrl+B)"      style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-weight:700;font-size:13px">B</button>
+          <button id="txt-italic" onclick="tfmt('italic')" title="Italique (Ctrl+I)"   style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-style:italic;font-size:13px">I</button>
+          <button id="txt-under"  onclick="tfmt('under')"  title="Souligné (Ctrl+U)"   style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:12px;text-decoration:underline">U</button>
+          <div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>
+          <!-- Alignement -->
+          <button onclick="tfmt('align-left')"   title="Gauche"  style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:11px">≡</button>
+          <button onclick="tfmt('align-center')" title="Centre"  style="width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:11px">☰</button>
+          <div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>
+          <!-- Famille de police -->
+          <select id="txt-font" onchange="tfmt('font')" style="height:26px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:11px;padding:0 4px;cursor:pointer;outline:none">
+            <option value="Cabinet Grotesk, sans-serif">Grotesk</option>
+            <option value="Georgia, serif">Serif</option>
+            <option value="DM Mono, monospace">Mono</option>
+            <option value="Arial, sans-serif">Arial</option>
+            <option value="Times New Roman, serif">Times</option>
+            <option value="Impact, sans-serif">Impact</option>
+          </select>
+          <div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>
+          <!-- Couleur texte -->
+          <div style="position:relative;width:26px;height:26px">
+            <div id="txt-color-dot" style="width:26px;height:26px;border-radius:6px;border:2px solid var(--border);cursor:pointer;background:#1a1a2a"></div>
+            <input type="color" id="txt-color-pick" value="#1a1a2a" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%" oninput="tfmt('color')">
+          </div>
+          <!-- OK -->
+          <div style="margin-left:auto;display:flex;gap:4px">
+            <button onclick="UI.confirmText()" style="padding:5px 14px;background:var(--accent);color:#fff;border:none;border-radius:7px;font-size:12px;cursor:pointer;font-family:var(--font);font-weight:700">✓ OK</button>
+            <button onclick="document.getElementById('text-box').style.display='none'" style="padding:5px 10px;background:var(--surface2);color:var(--text2);border:1px solid var(--border);border-radius:7px;font-size:12px;cursor:pointer">✕</button>
+          </div>
+        </div>
+        <textarea id="text-ta" rows="2" placeholder="Saisir..."></textarea>
+      </div>
+
+      <!-- Formula input -->
+      <div id="formula-box">
+        <h4>✦ Formule Mathématique</h4>
+        <div class="fx-preview" id="fx-preview">Prévisualisation...</div>
+        <!-- <div class="fx-chips">
+          <span class="fx-chip" onclick="fxIns('\\frac{a}{b}')">a/b</span>
+          <span class="fx-chip" onclick="fxIns('\\sqrt{x}')">√x</span>
+          <span class="fx-chip" onclick="fxIns('\\sum_{i=0}^{n}')">∑</span>
+          <span class="fx-chip" onclick="fxIns('\\int_{a}^{b}')">∫</span>
+          <span class="fx-chip" onclick="fxIns('\\hat{p}')">p̂</span>
+          <span class="fx-chip" onclick="fxIns('\\bar{x}')">x̄</span>
+          <span class="fx-chip" onclick="fxIns('\\alpha')">α</span>
+          <span class="fx-chip" onclick="fxIns('\\beta')">β</span>
+          <span class="fx-chip" onclick="fxIns('\\sigma^2')">σ²</span>
+          <span class="fx-chip" onclick="fxIns('\\mu')">μ</span>
+          <span class="fx-chip" onclick="fxIns('\\infty')">∞</span>
+          <span class="fx-chip" onclick="fxIns('\\pm')">±</span>
+          <span class="fx-chip" onclick="fxIns('\\leq')">≤</span>
+          <span class="fx-chip" onclick="fxIns('\\neq')">≠</span>
+          <span class="fx-chip" onclick="fxIns('\\approx')">≈</span>
+        </div> -->
+        <div class="fx-chips">
+          <!-- Fractions & racines -->
+          <span class="fx-chip" onclick="fxIns('\\frac{a}{b}')">a/b</span>
+          <span class="fx-chip" onclick="fxIns('\\sqrt{x}')">√x</span>
+          <span class="fx-chip" onclick="fxIns('\\frac{\\sqrt{b^2-4ac}}{2a}')">quadratique</span>
+          <!-- Sommes -->
+          <span class="fx-chip" onclick="fxIns('\\sum_{i=1}^{n} x_i')">∑ xᵢ</span>
+          <span class="fx-chip" onclick="fxIns('\\sum_{i=1}^{n} x_i^2')">∑ xᵢ²</span>
+          <span class="fx-chip" onclick="fxIns('\\frac{1}{n}\\sum_{i=1}^{n} x_i')">x̄ = (1/n)∑xᵢ</span>
+          <!-- Produits -->
+          <span class="fx-chip" onclick="fxIns('\\prod_{i=1}^{n} x_i')">∏ xᵢ</span>
+          <!-- Intégrales -->
+          <span class="fx-chip" onclick="fxIns('\\int_{a}^{b}')">∫ᵃᵇ</span>
+          <span class="fx-chip" onclick="fxIns('\\int_{-\\infty}^{+\\infty}')">∫₋∞^∞</span>
+          <!-- Limites -->
+          <span class="fx-chip" onclick="fxIns('\\lim_{x\\rightarrow 0}')">lim</span>
+          <span class="fx-chip" onclick="fxIns('\\lim_{n\\rightarrow\\infty}')">lim n→∞</span>
+          <!-- Décoration -->
+          <span class="fx-chip" onclick="fxIns('\\hat{p}')">p̂</span>
+          <span class="fx-chip" onclick="fxIns('\\bar{x}')">x̄</span>
+          <span class="fx-chip" onclick="fxIns('\\vec{u}')">u⃗</span>
+          <span class="fx-chip" onclick="fxIns('\\tilde{x}')">x̃</span>
+          <!-- Grecs -->
+          <span class="fx-chip" onclick="fxIns('\\alpha')">α</span>
+          <span class="fx-chip" onclick="fxIns('\\beta')">β</span>
+          <span class="fx-chip" onclick="fxIns('\\sigma^2')">σ²</span>
+          <span class="fx-chip" onclick="fxIns('\\mu')">μ</span>
+          <span class="fx-chip" onclick="fxIns('\\lambda')">λ</span>
+          <span class="fx-chip" onclick="fxIns('\\partial')">∂</span>
+          <span class="fx-chip" onclick="fxIns('\\nabla')">∇</span>
+          <!-- Opérateurs -->
+          <span class="fx-chip" onclick="fxIns('\\infty')">∞</span>
+          <span class="fx-chip" onclick="fxIns('\\pm')">±</span>
+          <span class="fx-chip" onclick="fxIns('\\leq')">≤</span>
+          <span class="fx-chip" onclick="fxIns('\\neq')">≠</span>
+          <span class="fx-chip" onclick="fxIns('\\approx')">≈</span>
+          <span class="fx-chip" onclick="fxIns('\\in')">∈</span>
+          <span class="fx-chip" onclick="fxIns('\\rightarrow')">→</span>
+          <span class="fx-chip" onclick="fxIns('\\Rightarrow')">⇒</span>
+        </div>
+        <input id="formula-input" type="text" placeholder="\frac{180}{300} = 0{,}6">
+        <div class="fx-btns">
+          <button class="fx-btn" onclick="UI.cancelFx()">Annuler</button>
+          <button class="fx-btn ok" onclick="UI.confirmFx()">Insérer ✦</button>
+        </div>
+      </div>
+
+      <!-- Sticker picker -->
+      <div id="sticker-picker">
+        <div style="display:flex;flex-wrap:wrap;gap:4px;max-width:230px">
+          <span class="stk" onclick="UI.placeSticker('😀')">😀</span><span class="stk" onclick="UI.placeSticker('⭐')">⭐</span>
+          <span class="stk" onclick="UI.placeSticker('❤️')">❤️</span><span class="stk" onclick="UI.placeSticker('🔥')">🔥</span>
+          <span class="stk" onclick="UI.placeSticker('💡')">💡</span><span class="stk" onclick="UI.placeSticker('✅')">✅</span>
+          <span class="stk" onclick="UI.placeSticker('❌')">❌</span><span class="stk" onclick="UI.placeSticker('⚠️')">⚠️</span>
+          <span class="stk" onclick="UI.placeSticker('📌')">📌</span><span class="stk" onclick="UI.placeSticker('🎯')">🎯</span>
+          <span class="stk" onclick="UI.placeSticker('🚀')">🚀</span><span class="stk" onclick="UI.placeSticker('🎨')">🎨</span>
+          <span class="stk" onclick="UI.placeSticker('📊')">📊</span><span class="stk" onclick="UI.placeSticker('🧮')">🧮</span>
+          <span class="stk" onclick="UI.placeSticker('💬')">💬</span><span class="stk" onclick="UI.placeSticker('🔗')">🔗</span>
+          <span class="stk" onclick="UI.placeSticker('📐')">📐</span><span class="stk" onclick="UI.placeSticker('🏆')">🏆</span>
+        </div>
+      </div>
+    </div><!-- /canvas-wrap -->
+
+  </div><!-- /body -->
+</div><!-- /app -->
+
+<!-- ═══ PANELS ═══ -->
+<div id="panel-overlay"></div>
+
+<!-- AI Panel -->
+<div class="side-panel" id="ai-panel">
+  <div class="panel-header"><h3><i class="fa fa-wand-magic-sparkles" style="color:#ff6b9d"></i> Assistant IA</h3><button class="panel-close" onclick="closePanel('ai-panel')">✕</button></div>
+  <div class="panel-body">
+    <div class="ai-header">
+      <div class="ai-badge"><i class="fa fa-robot"></i> Powered by Claude AI</div>
+      <p style="font-size:12px;color:var(--text2);margin-top:4px">Générez du contenu directement sur votre tableau</p>
+    </div>
+    <div class="ai-sugg">
+      <div class="ai-chip" onclick="aiQ('formules de statistiques : moyenne, variance, écart-type')">📐 Formules de statistiques</div>
+      <div class="ai-chip" onclick="aiQ('mind map sur les algorithmes de tri')">🧠 Mind map — Algorithmique</div>
+      <div class="ai-chip" onclick="aiQ('étapes du processus machine learning')">🤖 Étapes Machine Learning</div>
+      <div class="ai-chip" onclick="aiQ('liste des structures de données avec complexité')">📊 Structures de données</div>
+      <div class="ai-chip" onclick="aiQ('théorèmes importants en analyse mathématique')">∫ Théorèmes d\'analyse</div>
+    </div>
+    <textarea id="ai-prompt" placeholder="Décrivez ce que vous voulez générer sur le tableau..."></textarea>
+    <button id="ai-submit" onclick="App.submitAI()"><i class="fa fa-wand-magic-sparkles"></i> Générer sur le canvas</button>
+    <div id="ai-output"></div>
+    <p style="font-size:10px;color:var(--text2);margin-top:10px;font-family:var(--mono)">ℹ L'API Claude est gérée automatiquement dans claude.ai — aucune clé requise.</p>
+  </div>
+</div>
+
+<!-- Graph Panel -->
+<div class="side-panel" id="graph-panel">
+  <div class="panel-header"><h3><i class="fa fa-diagram-project"></i> Éditeur de Graphes</h3><button class="panel-close" onclick="closePanel('graph-panel')">✕</button></div>
+  <div class="panel-body">
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px">Créez des graphes orientés ou non orientés</p>
+    <div class="graph-mode-btns">
+      <div class="graph-btn active" onclick="Tools.set('graph-node');this.parentElement.querySelectorAll('.graph-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')"><i class="fa fa-circle-dot"></i> Nœud</div>
+      <div class="graph-btn" onclick="Tools.set('graph-edge');this.parentElement.querySelectorAll('.graph-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')"><i class="fa fa-right-long"></i> Arête</div>
+    </div>
+    <div class="graph-option">
+      <label>Graphe orienté (digraph)</label>
+      <input type="checkbox" id="chk-directed" checked>
+    </div>
+    <div class="graph-option">
+      <label>Poids de l'arête</label>
+      <input type="number" id="edge-weight" placeholder="ex: 5" min="0">
+    </div>
+    <div style="margin-top:16px">
+      <p style="font-size:11px;color:var(--text2);margin-bottom:8px;font-family:var(--mono)">MODE D'EMPLOI</p>
+      <div class="doc-row"><span class="doc-key">①</span><span class="doc-desc">Sélectionner <strong>Nœud</strong> → cliquer pour placer (labels A, B, C... auto)</span></div>
+      <div class="doc-row"><span class="doc-key">②</span><span class="doc-desc">Sélectionner <strong>Arête</strong> → cliquer nœud source puis nœud cible</span></div>
+      <div class="doc-row"><span class="doc-key">③</span><span class="doc-desc">Activer <em>Orienté</em> pour les flèches directionnelles</span></div>
+      <div class="doc-row"><span class="doc-key">④</span><span class="doc-desc">Arêtes parallèles → automatiquement courbées</span></div>
+      <div class="doc-row"><span class="doc-key">⑤</span><span class="doc-desc">Déplacer un nœud avec <strong>Sélectionner</strong> → les arêtes suivent</span></div>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:8px;">
+      <button class="fx-btn" onclick="Tools._nodeCounter=1;UI.toast('Compteur de nœuds réinitialisé','info')">Reset labels</button>
+      <button class="fx-btn" onclick="clearGraphObjects()">Effacer graphe</button>
+    </div>
+  </div>
+</div>
+
+<!-- Templates Panel -->
+<div class="side-panel" id="tmpl-panel">
+  <div class="panel-header"><h3><i class="fa fa-layer-group"></i> Templates</h3><button class="panel-close" onclick="closePanel('tmpl-panel')">✕</button></div>
+  <div class="panel-body">
+    <div class="tmpl-grid">
+      <div class="tmpl-card" onclick="App.applyTemplate('math')"><div class="tmpl-icon">📐</div><div class="tmpl-name">Cours Maths</div><div class="tmpl-desc">Axes + formules</div></div>
+      <div class="tmpl-card" onclick="App.applyTemplate('mindmap')"><div class="tmpl-icon">🧠</div><div class="tmpl-name">Mind Map</div><div class="tmpl-desc">Nœud central + branches</div></div>
+      <div class="tmpl-card" onclick="App.applyTemplate('kanban')"><div class="tmpl-icon">📋</div><div class="tmpl-name">Kanban</div><div class="tmpl-desc">3 colonnes workflow</div></div>
+      <div class="tmpl-card" onclick="App.applyTemplate('swot')"><div class="tmpl-icon">💼</div><div class="tmpl-name">SWOT</div><div class="tmpl-desc">Analyse stratégique</div></div>
+      <div class="tmpl-card" onclick="App.applyTemplate('timeline')"><div class="tmpl-icon">🗓</div><div class="tmpl-name">Timeline</div><div class="tmpl-desc">Frise chronologique</div></div>
+      <div class="tmpl-card" onclick="App.applyTemplate('venn')"><div class="tmpl-icon">⭕</div><div class="tmpl-name">Venn</div><div class="tmpl-desc">3 cercles</div></div>
+      <div class="tmpl-card" onclick="App.applyTemplate('quadrant')"><div class="tmpl-icon">🎯</div><div class="tmpl-name">Matrice 2×2</div><div class="tmpl-desc">Quadrants priorités</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Theme Panel -->
+<div class="side-panel" id="theme-panel">
+  <div class="panel-header"><h3><i class="fa fa-palette"></i> Thèmes & Apparence</h3><button class="panel-close" onclick="closePanel('theme-panel')">✕</button></div>
+  <div class="panel-body">
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px">Choisissez l'ambiance de votre espace</p>
+    <div class="theme-grid">
+      <div class="theme-card active" id="theme-dark"      onclick="App.setTheme('dark')"      style="background:#13131c"><div class="theme-name" style="color:#f0f0ff">🌙 Dark</div><div class="theme-sub" style="color:#8888aa">Sombre élégant</div><div class="theme-dots"><div class="theme-dot" style="background:#6c63ff"></div><div class="theme-dot" style="background:#ff6b9d"></div><div class="theme-dot" style="background:#00d4aa"></div></div></div>
+      <div class="theme-card" id="theme-light"     onclick="App.setTheme('light')"     style="background:#fff"><div class="theme-name" style="color:#1a1a2e">☀️ Light</div><div class="theme-sub" style="color:#6060a0">Mode clair</div><div class="theme-dots"><div class="theme-dot" style="background:#6c63ff"></div><div class="theme-dot" style="background:#ff6b9d"></div><div class="theme-dot" style="background:#00d4aa"></div></div></div>
+      <div class="theme-card" id="theme-solarized" onclick="App.setTheme('solarized')" style="background:#073642"><div class="theme-name" style="color:#839496">🌊 Solarized</div><div class="theme-sub" style="color:#657b83">Base16</div><div class="theme-dots"><div class="theme-dot" style="background:#268bd2"></div><div class="theme-dot" style="background:#d33682"></div><div class="theme-dot" style="background:#2aa198"></div></div></div>
+      <div class="theme-card" id="theme-midnight"  onclick="App.setTheme('midnight')"  style="background:#050510"><div class="theme-name" style="color:#c8c8ff">🌌 Midnight</div><div class="theme-sub" style="color:#5555aa">Espace profond</div><div class="theme-dots"><div class="theme-dot" style="background:#00f5ff"></div><div class="theme-dot" style="background:#ff00aa"></div><div class="theme-dot" style="background:#aaff00"></div></div></div>
+    </div>
+    <div style="margin-top:16px">
+      <div class="doc-section">
+        <h4>Grille</h4>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="fx-btn" onclick="App.setGrid('lines')">Lignes</button>
+          <button class="fx-btn" onclick="App.setGrid('dots')">Points</button>
+          <button class="fx-btn" onclick="App.setGrid('cross')">Croix</button>
+          <button class="fx-btn" onclick="App.setGrid('isometric')">Iso</button>
+          <button class="fx-btn" onclick="App.setGrid('none')">Aucune</button>
+        </div>
+      </div>
+      <div class="doc-section">
+        <h4>Fond du canvas</h4>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:12px;color:var(--text2)">Couleur de fond</span>
+          <input type="color" value="#faf9f6" style="border:none;background:none;cursor:pointer;width:32px;height:32px" oninput="App.setCanvasBg(this.value)">
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DOC Panel — page complète de documentation -->
+<div class="side-panel" id="doc-panel">
+  <div class="panel-header"><h3><i class="fa fa-book-open"></i> Guide d'utilisation</h3><button class="panel-close" onclick="closePanel('doc-panel')">✕</button></div>
+  <div class="panel-body">
+
+    <div style="background:linear-gradient(135deg,#6c63ff11,#ff6b9d11);border:1px solid var(--border2);border-radius:10px;padding:12px;margin-bottom:16px;text-align:center">
+      <div style="font-size:18px;font-weight:800;background:linear-gradient(135deg,#6c63ff,#ff6b9d);-webkit-background-clip:text;-webkit-text-fill-color:transparent">InkSpace v3.0</div>
+      <div style="font-size:11px;color:var(--text2);font-family:var(--mono)">Documentation officielle — Guide utilisateur complet</div>
+    </div>
+
+    <div class="doc-section">
+      <h4>🎨 Outils de dessin libre</h4>
+      <div class="doc-row"><span class="doc-key">P</span><span class="doc-desc"><strong>Stylo</strong> — Tracé précis et fin. Idéal pour les annotations et schémas détaillés.</span></div>
+      <div class="doc-row"><span class="doc-key">B</span><span class="doc-desc"><strong>Pinceau</strong> — Effet brosse organique avec dispersion. Pour un rendu artistique.</span></div>
+      <div class="doc-row"><span class="doc-key">M</span><span class="doc-desc"><strong>Marqueur</strong> — Surligneur semi-transparent épais. Parfait pour mettre en évidence.</span></div>
+      <div class="doc-row"><span class="doc-key">G</span><span class="doc-desc"><strong>Calligraphie</strong> — Trait sensible à la direction du mouvement. Écriture élégante.</span></div>
+      <div class="doc-row"><span class="doc-key">E</span><span class="doc-desc"><strong>Gomme</strong> — Efface les objets dessinés. Curseur circulaire visible. Ajustez la taille dans la palette.</span></div>
+    </div>
+
+    <div class="doc-section">
+      <h4>📐 Formes 2D</h4>
+      <div class="doc-row"><span class="doc-key">R</span><span class="doc-desc"><strong>Rectangle</strong> (contour ou plein) — Cliquer-glisser pour dessiner.</span></div>
+      <div class="doc-row"><span class="doc-key">C</span><span class="doc-desc"><strong>Ellipse/Cercle</strong> (contour ou plein) — Cliquer-glisser.</span></div>
+      <div class="doc-row"><span class="doc-key">L</span><span class="doc-desc"><strong>Ligne droite</strong> — Du point A au point B.</span></div>
+      <div class="doc-row"><span class="doc-key">A</span><span class="doc-desc"><strong>Flèche</strong> simple ou double — Indique une direction ou relation.</span></div>
+      <div class="doc-row"><span class="doc-key">—</span><span class="doc-desc"><strong>Triangle, Losange, Parallélogramme, Pentagone, Hexagone, Étoile</strong> — Dans la barre d'outils 2D.</span></div>
+    </div>
+
+    <div class="doc-section">
+      <h4>🎲 Formes 3D</h4>
+      <div class="doc-row"><span class="doc-key">⬛</span><span class="doc-desc"><strong>Cube</strong> — Perspective isométrique avec face supérieure et arêtes. Rendu réaliste.</span></div>
+      <div class="doc-row"><span class="doc-key">🔺</span><span class="doc-desc"><strong>Prisme triangulaire</strong> — Triangle extrudé en 3D avec arêtes pointillées.</span></div>
+      <div class="doc-row"><span class="doc-key">🥫</span><span class="doc-desc"><strong>Cylindre</strong> — Corps cylindrique avec ellipses dessus/dessous. Lignes pointillées pour les arêtes cachées.</span></div>
+    </div>
+
+    <div class="doc-section">
+      <h4>〜 Courbe de Bézier</h4>
+      <div class="doc-row"><span class="doc-key">①</span><span class="doc-desc">Sélectionner l'outil Bézier dans la barre.</span></div>
+      <div class="doc-row"><span class="doc-key">②</span><span class="doc-desc">Cliquer 4 fois : <em>départ → contrôle 1 → contrôle 2 → arrivée</em>.</span></div>
+      <div class="doc-row"><span class="doc-key">③</span><span class="doc-desc">La courbe est tracée automatiquement au 4ème clic.</span></div>
+    </div>
+
+    <div class="doc-section">
+      <h4>T Texte</h4>
+      <div class="doc-row"><span class="doc-key">T</span><span class="doc-desc">Sélectionner l'outil Texte, cliquer sur le canvas. Saisir le texte, valider avec <strong>Ctrl+Entrée</strong> ou le bouton OK.</span></div>
+      <div class="doc-row"><span class="doc-key">—</span><span class="doc-desc">La taille du texte suit le réglage de taille dans la palette. Multi-lignes supporté.</span></div>
+    </div>
+
+    <div class="doc-section">
+      <h4>fx Formules Mathématiques</h4>
+      <div class="doc-row"><span class="doc-key">F</span><span class="doc-desc">Sélectionner l'outil Formule, cliquer sur le canvas. La boîte de saisie apparaît.</span></div>
+      <div class="doc-row"><span class="doc-key">—</span><span class="doc-desc">Utiliser la notation LaTeX simplifiée : <code style="font-family:var(--mono);color:var(--accent)">\frac{a}{b}</code>, <code style="font-family:var(--mono);color:var(--accent)">\sqrt{x}</code>, <code style="font-family:var(--mono);color:var(--accent)">\alpha</code></span></div>
+      <div class="doc-row"><span class="doc-key">—</span><span class="doc-desc">Les boutons de raccourcis insèrent automatiquement les symboles courants.</span></div>
+      <div class="doc-row"><span class="doc-key">—</span><span class="doc-desc">Les fractions <code style="font-family:var(--mono);color:var(--accent)">\frac{}</code> sont rendu avec numérateur/dénominateur visuellement séparés.</span></div>
+    </div>
+
+    <div class="doc-section">
+      <h4>∠ Outil Angle</h4>
+      <div class="doc-row"><span class="doc-key">Q</span><span class="doc-desc">Activer l'outil Angle.</span></div>
+      <div class="doc-row"><span class="doc-key">①</span><span class="doc-desc">1er clic : place le <strong>sommet</strong> de l'angle.</span></div>
+      <div class="doc-row"><span class="doc-key">②</span><span class="doc-desc">2ème clic : extrémité du <strong>premier bras</strong>.</span></div>
+      <div class="doc-row"><span class="doc-key">③</span><span class="doc-desc">3ème clic : extrémité du <strong>second bras</strong>. La mesure en degrés s'affiche automatiquement.</span></div>
+    </div>
+
+    <div class="doc-section">
+      <h4>⬤ Graphes (orientés &amp; non orientés)</h4>
+      <div class="doc-row"><span class="doc-key">①</span><span class="doc-desc">Ouvrir le panneau <strong>Graphes</strong> (en-tête).</span></div>
+      <div class="doc-row"><span class="doc-key">②</span><span class="doc-desc">Choisir <strong>Nœud</strong> → cliquer pour placer. Les nœuds reçoivent des étiquettes A, B, C... automatiquement.</span></div>
+      <div class="doc-row"><span class="doc-key">③</span><span class="doc-desc">Choisir <strong>Arête</strong> → cliquer le nœud source, puis le nœud cible.</span></div>
+      <div class="doc-row"><span class="doc-key">④</span><span class="doc-desc">Activer <em>Orienté</em> pour les digraphes (flèches). Sinon : arête bidirectionnelle.</span></div>
+      <div class="doc-row"><span class="doc-key">⑤</span><span class="doc-desc">Ajouter un <strong>poids</strong> optionnel à chaque arête.</span></div>
+      <div class="doc-row"><span class="doc-key">⑥</span><span class="doc-desc">Déplacer les nœuds avec l'outil <strong>Sélectionner</strong> — les arêtes se mettent à jour automatiquement.</span></div>
+    </div>
+
+    <div class="doc-section">
+      <h4>⬚ Sélection &amp; Déplacement</h4>
+      <div class="doc-row"><span class="doc-key">S</span><span class="doc-desc">Activer l'outil Sélectionner.</span></div>
+      <div class="doc-row"><span class="doc-key">—</span><span class="doc-desc">Cliquer sur un élément pour le sélectionner. Le glisser pour le déplacer.</span></div>
+      <div class="doc-row"><span class="doc-key">—</span><span class="doc-desc">Cliquer-glisser sur un espace vide pour sélectionner plusieurs éléments.</span></div>
+      <div class="doc-row"><span class="doc-key">Del</span><span class="doc-desc">Supprimer les éléments sélectionnés.</span></div>
+      <div class="doc-row"><span class="doc-key">Ctrl+A</span><span class="doc-desc">Tout sélectionner.</span></div>
+    </div>
+
+    <div class="doc-section">
+      <h4>✋ Navigation sur le canvas</h4>
+      <div class="doc-row"><span class="doc-key">V</span><span class="doc-desc"><strong>Outil Main</strong> — Déplacer tout le canvas (contenu + grille simultanément).</span></div>
+      <div class="doc-row"><span class="doc-key">Espace</span><span class="doc-desc">Maintenir Espace = activer la main temporairement.</span></div>
+      <div class="doc-row"><span class="doc-key">Molette</span><span class="doc-desc">Zoom centré sur le curseur (contenu + grille).</span></div>
+      <div class="doc-row"><span class="doc-key">+/-</span><span class="doc-desc">Zoom avant/arrière.</span></div>
+      <div class="doc-row"><span class="doc-key">⌂</span><span class="doc-desc">Bouton Reset zoom — revient à 100%, centré.</span></div>
+    </div>
+
+    <div class="doc-section">
+      <h4>⌨️ Raccourcis clavier complets</h4>
+      <div class="doc-row"><span class="doc-key">Ctrl+Z</span><span class="doc-desc">Annuler</span></div>
+      <div class="doc-row"><span class="doc-key">Ctrl+Y</span><span class="doc-desc">Refaire</span></div>
+      <div class="doc-row"><span class="doc-key">Ctrl+K</span><span class="doc-desc">Palette de commandes (recherche)</span></div>
+      <div class="doc-row"><span class="doc-key">Ctrl+T</span><span class="doc-desc">Nouveau tableau</span></div>
+      <div class="doc-row"><span class="doc-key">Ctrl+G</span><span class="doc-desc">Changer le type de grille</span></div>
+      <div class="doc-row"><span class="doc-key">Ctrl+S</span><span class="doc-desc">Sauvegarder maintenant</span></div>
+      <div class="doc-row"><span class="doc-key">Ctrl+E</span><span class="doc-desc">Exporter PNG</span></div>
+      <div class="doc-row"><span class="doc-key">Ctrl+A</span><span class="doc-desc">Tout sélectionner</span></div>
+      <div class="doc-row"><span class="doc-key">Ctrl+⇧+C</span><span class="doc-desc">Lancer les confettis 🎉</span></div>
+      <div class="doc-row"><span class="doc-key">Échap</span><span class="doc-desc">Annuler / Fermer</span></div>
+      <div class="doc-row"><span class="doc-key">Del</span><span class="doc-desc">Supprimer la sélection</span></div>
+    </div>
+
+    <div class="doc-section">
+      <h4>🗂️ Espaces de travail</h4>
+      <div class="doc-row"><span class="doc-key">+</span><span class="doc-desc">Créer un nouveau tableau.</span></div>
+      <div class="doc-row"><span class="doc-key">2×clic</span><span class="doc-desc">Double-cliquer sur un onglet pour le renommer.</span></div>
+      <div class="doc-row"><span class="doc-key">✕</span><span class="doc-desc">Fermer un tableau (sauf le dernier).</span></div>
+      <div class="doc-row"><span class="doc-key">—</span><span class="doc-desc">Sauvegarde automatique dans le navigateur (localStorage) — les données persistent entre sessions.</span></div>
+    </div>
+
+    <div class="doc-section">
+      <h4>🤖 Assistant IA</h4>
+      <div class="doc-row"><span class="doc-key">—</span><span class="doc-desc">Ouvrir le panneau IA (en-tête). Décrire ce à générer en français ou anglais.</span></div>
+      <div class="doc-row"><span class="doc-key">—</span><span class="doc-desc">L'IA génère listes, formules, schémas et les place directement sur le canvas.</span></div>
+      <div class="doc-row"><span class="doc-key">—</span><span class="doc-desc">Aucune clé API requise — l'accès Claude est intégré à l'environnement.</span></div>
+    </div>
+
+    <div class="doc-section">
+      <h4>📤 Export &amp; Partage</h4>
+      <div class="doc-row"><span class="doc-key">PNG</span><span class="doc-desc">Exporter le tableau en image haute résolution.</span></div>
+      <div class="doc-row"><span class="doc-key">SVG</span><span class="doc-desc">Export vectoriel (via le menu Partager).</span></div>
+      <div class="doc-row"><span class="doc-key">🖨</span><span class="doc-desc">Imprimer directement.</span></div>
+      <div class="doc-row"><span class="doc-key">📺</span><span class="doc-desc"><strong>Mode présentation</strong> — Plein écran pour projeter votre travail.</span></div>
+    </div>
+
+    <div style="margin-top:20px;padding:12px;background:var(--surface2);border-radius:10px;text-align:center;font-size:11px;color:var(--text2)">
+      <strong style="color:var(--accent)">InkSpace v3.0</strong> — Tableau blanc premium<br>
+      Données sauvegardées localement dans votre navigateur.<br>
+      <span style="color:var(--accent2)">© 2025 — Plateforme commercialisable</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ BOTTOM PALETTE ═══ -->
+<div id="palette">
+  <div class="cdot active" style="background:#1a1a2a" data-color="#1a1a2a" onclick="setCol(this)"></div>
+  <div class="cdot" style="background:#e63946" data-color="#e63946" onclick="setCol(this)"></div>
+  <div class="cdot" style="background:#ff6b9d" data-color="#ff6b9d" onclick="setCol(this)"></div>
+  <div class="cdot" style="background:#ffd166" data-color="#ffd166" onclick="setCol(this)"></div>
+  <div class="cdot" style="background:#06d6a0" data-color="#06d6a0" onclick="setCol(this)"></div>
+  <div class="cdot" style="background:#6c63ff" data-color="#6c63ff" onclick="setCol(this)"></div>
+  <div class="cdot" style="background:#00b4d8" data-color="#00b4d8" onclick="setCol(this)"></div>
+  <div class="cdot" style="background:#f77f00" data-color="#f77f00" onclick="setCol(this)"></div>
+  <div style="position:relative;width:20px;height:20px;flex-shrink:0">
+    <div class="cdot" style="background:conic-gradient(red,yellow,green,cyan,blue,magenta,red)"></div>
+    <input type="color" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%" oninput="Tools.color=this.value;document.querySelectorAll('.cdot').forEach(d=>d.classList.remove('active'));updateSizeDot()">
+  </div>
+  <div class="pal-sep"></div>
+  <div class="pal-label">TAILLE</div>
+  <div id="size-wrap">
+    <div id="size-disp"><div id="size-dot" style="width:6px;height:6px"></div></div>
+    <input type="range" id="size-range" min="1" max="50" value="3" oninput="Tools.size=+this.value;updateSizeDot()">
+  </div>
+  <div class="pal-sep"></div>
+  <div class="pal-label">OPACITÉ</div>
+  <input type="range" id="opacity-range" min="10" max="100" value="100" oninput="Tools.opacity=+this.value/100">
+</div>
+
+<!-- ═══ ZOOM ═══ -->
+<div id="zoom-bar">
+  <button class="z-btn" onclick="Viewport.zoomOut();UI.updateZoomDisplay();App.render()">−</button>
+  <span id="zoom-val">100%</span>
+  <button class="z-btn" onclick="Viewport.zoomIn();UI.updateZoomDisplay();App.render()">+</button>
+  <button class="z-btn" onclick="Viewport.reset2();UI.updateZoomDisplay();App.render()" title="Reset">⌂</button>
+</div>
+
+<!-- ═══ MINIMAP ═══ -->
+<div id="minimap"><canvas id="minimap-c" width="135" height="84"></canvas><div id="minimap-label">MINIMAP</div></div>
+
+<!-- ═══ CONTEXT MENU ═══ -->
+<!-- <div id="ctx-menu">
+  <div class="ctx-item" onclick="App.undo()"><i class="fa fa-rotate-left"></i> Annuler<span class="ctx-key">Ctrl+Z</span></div>
+  <div class="ctx-item" onclick="App.redo()"><i class="fa fa-rotate-right"></i> Refaire<span class="ctx-key">Ctrl+Y</span></div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" onclick="Tools._selectAll()"><i class="fa fa-object-group"></i> Tout sélectionner<span class="ctx-key">Ctrl+A</span></div>
+  <div class="ctx-item" onclick="Tools.deleteSelected()"><i class="fa fa-trash-can"></i> Supprimer sélection<span class="ctx-key">Del</span></div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" onclick="App.exportPNG()"><i class="fa fa-download"></i> Exporter PNG<span class="ctx-key">Ctrl+E</span></div>
+  <div class="ctx-item" onclick="App.printCanvas()"><i class="fa fa-print"></i> Imprimer</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item danger" onclick="App.clearCanvas()"><i class="fa fa-trash"></i> Effacer tout</div>
+</div>   -->
+<div id="ctx-menu">
+  <div class="ctx-item" onclick="App.undo()"><i class="fa fa-rotate-left"></i> Annuler<span class="ctx-key">Ctrl+Z</span></div>
+  <div class="ctx-item" onclick="App.redo()"><i class="fa fa-rotate-right"></i> Refaire<span class="ctx-key">Ctrl+Y</span></div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" onclick="Tools._selectAll()"><i class="fa fa-object-group"></i> Tout sélectionner<span class="ctx-key">Ctrl+A</span></div>
+  <div class="ctx-item" onclick="Tools.deleteSelected()"><i class="fa fa-trash-can"></i> Supprimer<span class="ctx-key">Del</span></div>
+  <div class="ctx-sep"></div>
+  <!-- Actions z-order -->
+  <div class="ctx-item" id="ctx-bring-front" onclick="zOrder('front')" style="display:none"><i class="fa fa-layer-group"></i> Mettre au premier plan</div>
+  <div class="ctx-item" id="ctx-send-back"   onclick="zOrder('back')"  style="display:none"><i class="fa fa-layer-group" style="opacity:.4"></i> Mettre en arrière plan</div>
+  <div class="ctx-item" id="ctx-bring-fwd"   onclick="zOrder('fwd')"   style="display:none"><i class="fa fa-arrow-up"></i> Avancer d'un rang</div>
+  <div class="ctx-item" id="ctx-send-bwd"    onclick="zOrder('bwd')"   style="display:none"><i class="fa fa-arrow-down"></i> Reculer d'un rang</div>
+  <!-- Taille image -->
+  <div class="ctx-item" id="ctx-img-size"    onclick="openImgResize()" style="display:none"><i class="fa fa-crop"></i> Redimensionner...</div>
+  <div class="ctx-item" id="ctx-img-ratio"   onclick="resetImgRatio()" style="display:none"><i class="fa fa-expand"></i> Rétablir les proportions</div>
+  <div id="ctx-sep-img" class="ctx-sep"      style="display:none"></div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" onclick="App.exportPNG()"><i class="fa fa-download"></i> Exporter PNG<span class="ctx-key">Ctrl+E</span></div>
+  <div class="ctx-item" onclick="App.printCanvas()"><i class="fa fa-print"></i> Imprimer</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item danger" onclick="App.clearCanvas()"><i class="fa fa-trash"></i> Effacer tout</div>
+</div>
+
+<!-- ═══ COMMAND PALETTE ═══ -->
+<div id="cmd-overlay" onclick="UI.closeCmd(event)">
+  <div id="cmd-box">
+    <div id="cmd-input-wrap"><i class="fa fa-terminal"></i><input id="cmd-input" placeholder="Rechercher une commande..." oninput="filterCmd(this.value)" onkeydown="cmdKey(event)"></div>
+    <div id="cmd-results"></div>
+  </div>
+</div>
+
+<!-- ═══ MODALS ═══ -->
+<div class="modal-overlay" id="rename-modal">
+  <div class="modal-box">
+    <h3>✏️ Renommer le tableau</h3>
+    <input id="rename-input" class="modal-input" type="text" onkeydown="if(e.key==='Enter')UI.confirmRename()">
+    <div class="modal-btns">
+      <button class="modal-btn" onclick="UI.closeRename()">Annuler</button>
+      <button class="modal-btn ok" onclick="UI.confirmRename()">Renommer</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="share-modal">
+  <div class="modal-box" style="width:380px">
+    <h3>🔗 Partager ce tableau</h3>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px">Lien de partage (lecture seule)</p>
+    <div class="share-link"><input id="share-link-input" readonly><button onclick="UI.copyShareLink()">Copier</button></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="fx-btn" onclick="App.exportPNG()"><i class="fa fa-image"></i> PNG</button>
+      <button class="fx-btn" onclick="App.exportSVG()"><i class="fa fa-bezier-curve"></i> SVG</button>
+      <button class="fx-btn" onclick="App.printCanvas()"><i class="fa fa-print"></i> Imprimer</button>
+    </div>
+    <div class="modal-btns"><button class="modal-btn ok" onclick="document.getElementById('share-modal').classList.remove('show')">Fermer</button></div>
+  </div>
+</div>
+
+<!-- ═══ PRESENTATION ═══ -->
+<div id="pres-overlay">
+  <canvas id="pres-canvas"></canvas>
+  <button id="pres-exit" onclick="App.exitPresentation()"><i class="fa fa-xmark"></i> Quitter (Échap)</button>
+</div>
+
+<!-- ═══ LASER ═══ -->
+<div id="laser"></div>
+
+<!-- ═══ TOAST ═══ -->
+<div id="toast-container"></div>
+
+<!-- ═══ IMAGE UPLOAD ═══ -->
+<input type="file" id="img-upload" accept="image/*" style="display:none" onchange="handleImgUpload(event)">
+
+<!-- ═══ SCRIPTS (ordre important) ═══ -->
+<script src="js/engine.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/tools.js"></script>
+<script src="js/app.js" defer></script>
+<script>
+// ── Glue code (pont entre HTML et modules) ──
+
+function setCol(el) {
+  document.querySelectorAll('.cdot').forEach(d => d.classList.remove('active'));
+  el.classList.add('active');
+  Tools.color = el.dataset.color;
+  updateSizeDot();
+}
+function updateSizeDot() {
+  const d = document.getElementById('size-dot');
+  const s = Math.max(4, Math.min(Tools.size, 18));
+  d.style.width = s+'px'; d.style.height = s+'px';
+  d.style.background = Tools.color === '#ffffff' ? '#ccc' : Tools.color;
+}
+function fxIns(t) {
+  const el = document.getElementById('formula-input');
+  const pos = el.selectionStart;
+  el.value = el.value.slice(0,pos) + t + el.value.slice(pos);
+  el.selectionStart = el.selectionEnd = pos + t.length;
+  document.getElementById('fx-preview').textContent = latexToText(el.value) || 'Prévisualisation...';
+  el.focus();
+}
+function aiQ(p) {
+  document.getElementById('ai-prompt').value = p;
+  App.submitAI();
+}
+function handleImgUpload(e) {
+  const file = e.target.files[0]; if(!file) return;
+  const cx = App._W/2, cy = App._H/2;
+  const { x: wx, y: wy } = Viewport.screenToWorld(cx, cy);
+  App.insertImageFile(file, wx, wy);
+  e.target.value = '';
+}
+function clearGraphObjects() {
+  const toRemove = Scene.objects.filter(o => o.type==='graph-node'||o.type==='graph-edge').map(o=>o.id);
+  toRemove.forEach(id => Scene.remove(id));
+  Tools._nodeCounter = 1;
+  App.render(); App.pushUndo(); App.scheduleSave();
+  UI.toast('Graphe effacé','info');
+}
+
+// ── État de la boîte texte ──
+const _txtState = { size:18, color:'#1a1a2a', bold:false, italic:false, under:false, align:'left', font:'Cabinet Grotesk, sans-serif' };
+
+function _applyTxtState() {
+  const ta = document.getElementById('text-ta');
+  ta.style.fontSize    = _txtState.size + 'px';
+  ta.style.color       = _txtState.color;
+  ta.style.fontWeight  = _txtState.bold   ? '700' : '400';
+  ta.style.fontStyle   = _txtState.italic ? 'italic' : 'normal';
+  ta.style.textDecoration = _txtState.under ? 'underline' : 'none';
+  ta.style.textAlign   = _txtState.align;
+  ta.style.fontFamily  = _txtState.font;
+  document.getElementById('txt-size-disp').textContent = Math.round(_txtState.size);
+  document.getElementById('txt-bold').style.background   = _txtState.bold   ? 'var(--accent)' : 'var(--surface2)';
+  document.getElementById('txt-bold').style.color        = _txtState.bold   ? '#fff' : 'var(--text)';
+  document.getElementById('txt-italic').style.background = _txtState.italic ? 'var(--accent)' : 'var(--surface2)';
+  document.getElementById('txt-italic').style.color      = _txtState.italic ? '#fff' : 'var(--text)';
+  document.getElementById('txt-under').style.background  = _txtState.under  ? 'var(--accent)' : 'var(--surface2)';
+  document.getElementById('txt-under').style.color       = _txtState.under  ? '#fff' : 'var(--text)';
+  document.getElementById('txt-color-dot').style.background = _txtState.color;
+  document.getElementById('txt-font').value = _txtState.font;
+}
+
+function tfmt(cmd) {
+  const STEP = 2, MIN = 8, MAX = 120;
+  if(cmd === 'size-up')     { _txtState.size = Math.min(MAX, _txtState.size + STEP); }
+  else if(cmd === 'size-down') { _txtState.size = Math.max(MIN, _txtState.size - STEP); }
+  else if(cmd === 'bold')   { _txtState.bold   = !_txtState.bold; }
+  else if(cmd === 'italic') { _txtState.italic = !_txtState.italic; }
+  else if(cmd === 'under')  { _txtState.under  = !_txtState.under; }
+  else if(cmd === 'align-left')   { _txtState.align = 'left'; }
+  else if(cmd === 'align-center') { _txtState.align = 'center'; }
+  else if(cmd === 'color')  { _txtState.color = document.getElementById('txt-color-pick').value; }
+  else if(cmd === 'font')   { _txtState.font  = document.getElementById('txt-font').value; }
+  _applyTxtState();
+  document.getElementById('text-ta').focus();
+}
+
+// ══════════════════════════════════════════════════
+//  MOTEUR DE RENDU MATHÉMATIQUE
+//  Supporte : frac, sqrt, sum, prod, int, limites,
+//             exposants, indices, chapeau, barre,
+//             symboles grecs et opérateurs
+// ══════════════════════════════════════════════════
+function renderMathExpr(ctx, raw, x, y, fs, color) {
+  color = color || '#222';
+  const tokens = tokenizeMath(raw);
+  let cx = x;
+  for(let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    const w = drawMathToken(ctx, t, cx, y, fs, color);
+    cx += w;
+  }
+  return { width: cx - x };
+}
+
+// ── Tokenisation ──
+function tokenizeMath(raw) {
+  const tokens = [];
+  let i = 0;
+  while(i < raw.length) {
+    if(raw[i] === '\\') {
+      // Commande LaTeX
+      let cmd = '\\';
+      i++;
+      while(i < raw.length && /[a-zA-Z*]/.test(raw[i])) { cmd += raw[i]; i++; }
+      // Lire les arguments {}
+      const args = [];
+      while(i < raw.length && raw[i] === '{') {
+        let depth = 1, content = '';
+        i++;
+        while(i < raw.length && depth > 0) {
+          if(raw[i] === '{') depth++;
+          else if(raw[i] === '}') { depth--; if(depth===0){i++;break;} }
+          if(depth > 0) content += raw[i];
+          i++;
+        }
+        args.push(content);
+      }
+      // Lire _{ } et ^{ } éventuels après la commande
+      let sub = null, sup = null;
+      while(i < raw.length && (raw[i]==='_'||raw[i]==='^')) {
+        const type = raw[i]; i++;
+        let val = '';
+        if(raw[i]==='{') {
+          let depth=1; i++;
+          while(i<raw.length&&depth>0){if(raw[i]==='{')depth++;else if(raw[i]==='}'){depth--;if(depth===0){i++;break;}}if(depth>0)val+=raw[i];i++;}
+        } else { val=raw[i]; i++; }
+        if(type==='_') sub=val; else sup=val;
+      }
+      tokens.push({ type:'cmd', cmd, args, sub, sup });
+    } else if(raw[i] === '_') {
+      // Indice
+      i++;
+      let val='';
+      if(raw[i]==='{'){let depth=1;i++;while(i<raw.length&&depth>0){if(raw[i]==='{')depth++;else if(raw[i]==='}'){depth--;if(depth===0){i++;break;}}if(depth>0)val+=raw[i];i++;}}
+      else{val=raw[i];i++;}
+      tokens.push({ type:'sub', val });
+    } else if(raw[i] === '^') {
+      // Exposant
+      i++;
+      let val='';
+      if(raw[i]==='{'){let depth=1;i++;while(i<raw.length&&depth>0){if(raw[i]==='{')depth++;else if(raw[i]==='}'){depth--;if(depth===0){i++;break;}}if(depth>0)val+=raw[i];i++;}}
+      else{val=raw[i];i++;}
+      tokens.push({ type:'sup', val });
+    } else if(raw[i] === ' ') {
+      tokens.push({ type:'space' }); i++;
+    } else {
+      // Caractère simple — grouper les lettres/chiffres consécutifs
+      let txt = raw[i]; i++;
+      tokens.push({ type:'char', val: txt });
+    }
+  }
+  return tokens;
+}
+
+// ── Dessine un token, retourne la largeur occupée ──
+function drawMathToken(ctx, t, x, y, fs, color) {
+  ctx.fillStyle = color;
+
+  if(t.type === 'space') return fs * 0.3;
+
+  if(t.type === 'char') {
+    const display = mathCharMap(t.val);
+    ctx.font = `italic ${fs}px Georgia, serif`;
+    ctx.fillText(display, x, y);
+    return ctx.measureText(display).width + 1;
+  }
+
+  if(t.type === 'sup') {
+    const display = latexToText(t.val);
+    const sfs = fs * 0.6;
+    ctx.font = `italic ${sfs}px Georgia, serif`;
+    ctx.fillText(display, x, y - fs * 0.45);
+    return ctx.measureText(display).width + 1;
+  }
+
+  if(t.type === 'sub') {
+    const display = latexToText(t.val);
+    const sfs = fs * 0.6;
+    ctx.font = `italic ${sfs}px Georgia, serif`;
+    ctx.fillText(display, x, y + fs * 0.35);
+    return ctx.measureText(display).width + 1;
+  }
+
+  if(t.type === 'cmd') {
+    return drawMathCmd(ctx, t, x, y, fs, color);
+  }
+
+  return 0;
+}
+
+// ── Dessine une commande LaTeX ──
+function drawMathCmd(ctx, t, x, y, fs, color) {
+  ctx.fillStyle = color;
+  const sfs = fs * 0.58; // taille indices/exposants
+  const bfs = fs * 1.6;  // taille grands symboles (∑ ∏ ∫)
+
+  // ── FRACTION ──
+  if(t.cmd === '\\frac') {
+    const num = t.args[0] || '', den = t.args[1] || '';
+    ctx.font = `italic ${fs}px Georgia, serif`;
+    const nw = measureMath(ctx, num, fs);
+    const dw = measureMath(ctx, den, fs);
+    const fw = Math.max(nw, dw) + 12;
+    const pad = (fw - nw) / 2;
+    const pad2 = (fw - dw) / 2;
+    renderMathExpr(ctx, num, x + pad, y - fs * 0.35, fs * 0.85, color);
+    ctx.fillRect(x, y + 2, fw, 1.5);
+    renderMathExpr(ctx, den, x + pad2, y + fs * 0.92, fs * 0.85, color);
+    let w = fw;
+    if(t.sup) { ctx.font=`italic ${sfs}px Georgia, serif`; ctx.fillStyle=color; ctx.fillText(latexToText(t.sup), x+fw, y-fs*0.5); w+=ctx.measureText(latexToText(t.sup)).width+2; }
+    if(t.sub) { ctx.font=`italic ${sfs}px Georgia, serif`; ctx.fillStyle=color; ctx.fillText(latexToText(t.sub), x+fw, y+fs*0.4); w+=ctx.measureText(latexToText(t.sub)).width+2; }
+    return w + 4;
+  }
+
+  // ── RACINE CARRÉE ──
+  if(t.cmd === '\\sqrt') {
+    const inner = t.args[0] || 'x';
+    const iw = measureMath(ctx, inner, fs);
+    const ih = fs;
+    const pad = 6;
+    // Symbole √
+    ctx.font = `${fs * 1.1}px Georgia, serif`;
+    ctx.fillStyle = color;
+    ctx.fillText('√', x, y);
+    const sw = ctx.measureText('√').width - 4;
+    // Trait horizontal
+    ctx.fillRect(x + sw, y - ih * 0.82, iw + pad, 1.5);
+    // Contenu
+    renderMathExpr(ctx, inner, x + sw + pad/2, y, fs, color);
+    return sw + iw + pad + 4;
+  }
+
+  // ── SOMME ∑ ──
+  if(t.cmd === '\\sum') {
+    return drawBigOp(ctx, '∑', t, x, y, fs, bfs, color);
+  }
+
+  // ── PRODUIT ∏ ──
+  if(t.cmd === '\\prod') {
+    return drawBigOp(ctx, '∏', t, x, y, fs, bfs, color);
+  }
+
+  // ── INTÉGRALE ∫ ──
+  if(t.cmd === '\\int') {
+    return drawBigOp(ctx, '∫', t, x, y, fs, bfs * 0.9, color);
+  }
+
+  // ── LIMITE ──
+  if(t.cmd === '\\lim') {
+    ctx.font = `italic ${fs}px Georgia, serif`;
+    ctx.fillStyle = color;
+    ctx.fillText('lim', x, y);
+    const lw = ctx.measureText('lim').width;
+    if(t.sub) {
+      const subTxt = latexToText(t.sub).replace('->', '→');
+      ctx.font = `italic ${sfs}px Georgia, serif`;
+      const sw2 = ctx.measureText(subTxt).width;
+      ctx.fillText(subTxt, x + (lw - sw2) / 2, y + fs * 0.42);
+    }
+    return lw + 4;
+  }
+
+  // ── VECTEUR (flèche au dessus) ──
+  if(t.cmd === '\\vec') {
+    const inner = t.args[0] || 'v';
+    ctx.font = `italic ${fs}px Georgia, serif`;
+    ctx.fillStyle = color;
+    ctx.fillText(inner, x, y);
+    const iw = ctx.measureText(inner).width;
+    // Flèche
+    ctx.beginPath();
+    ctx.moveTo(x, y - fs * 0.85);
+    ctx.lineTo(x + iw, y - fs * 0.85);
+    ctx.moveTo(x + iw - 5, y - fs * 0.85 - 3);
+    ctx.lineTo(x + iw, y - fs * 0.85);
+    ctx.lineTo(x + iw - 5, y - fs * 0.85 + 3);
+    ctx.strokeStyle = color; ctx.lineWidth = 1.2; ctx.stroke();
+    return iw + 4;
+  }
+
+  // ── CHAPEAU hat ──
+  if(t.cmd === '\\hat') {
+    const inner = t.args[0] || 'x';
+    ctx.font = `italic ${fs}px Georgia, serif`;
+    ctx.fillStyle = color;
+    ctx.fillText(inner, x, y);
+    const iw = ctx.measureText(inner).width;
+    ctx.font = `${fs * 0.7}px Georgia, serif`;
+    ctx.fillText('^', x + iw/2 - 4, y - fs * 0.6);
+    return iw + 4;
+  }
+
+  // ── BARRE bar ──
+  if(t.cmd === '\\bar') {
+    const inner = t.args[0] || 'x';
+    ctx.font = `italic ${fs}px Georgia, serif`;
+    ctx.fillStyle = color;
+    ctx.fillText(inner, x, y);
+    const iw = ctx.measureText(inner).width;
+    ctx.fillRect(x, y - fs * 0.85, iw, 1.5);
+    return iw + 4;
+  }
+
+  // ── TILDE ──
+  if(t.cmd === '\\tilde') {
+    const inner = t.args[0] || 'x';
+    ctx.font = `italic ${fs}px Georgia, serif`;
+    ctx.fillStyle = color;
+    ctx.fillText(inner, x, y);
+    const iw = ctx.measureText(inner).width;
+    ctx.font = `${fs * 0.7}px Georgia, serif`;
+    ctx.fillText('~', x + iw/2 - 5, y - fs * 0.6);
+    return iw + 4;
+  }
+
+  // ── Symboles simples (grecs, opérateurs) ──
+  const SYMBOL_MAP = {
+    '\\alpha':'α','\\beta':'β','\\gamma':'γ','\\delta':'δ','\\epsilon':'ε',
+    '\\zeta':'ζ','\\eta':'η','\\theta':'θ','\\iota':'ι','\\kappa':'κ',
+    '\\lambda':'λ','\\mu':'μ','\\nu':'ν','\\xi':'ξ','\\pi':'π','\\rho':'ρ',
+    '\\sigma':'σ','\\tau':'τ','\\upsilon':'υ','\\phi':'φ','\\chi':'χ',
+    '\\psi':'ψ','\\omega':'ω',
+    '\\Gamma':'Γ','\\Delta':'Δ','\\Theta':'Θ','\\Lambda':'Λ','\\Xi':'Ξ',
+    '\\Pi':'Π','\\Sigma':'Σ','\\Phi':'Φ','\\Psi':'Ψ','\\Omega':'Ω',
+    '\\infty':'∞','\\pm':'±','\\mp':'∓','\\times':'×','\\div':'÷',
+    '\\cdot':'·','\\circ':'∘','\\leq':'≤','\\geq':'≥','\\neq':'≠',
+    '\\approx':'≈','\\equiv':'≡','\\sim':'∼','\\propto':'∝',
+    '\\in':'∈','\\notin':'∉','\\subset':'⊂','\\supset':'⊃',
+    '\\cup':'∪','\\cap':'∩','\\emptyset':'∅','\\forall':'∀','\\exists':'∃',
+    '\\nabla':'∇','\\partial':'∂','\\rightarrow':'→','\\leftarrow':'←',
+    '\\Rightarrow':'⇒','\\Leftrightarrow':'⟺','\\mapsto':'↦',
+    '\\ldots':'…','\\cdots':'⋯','\\vdots':'⋮','\\ddots':'⋱',
+  };
+
+  const sym = SYMBOL_MAP[t.cmd];
+  if(sym) {
+    ctx.font = `italic ${fs}px Georgia, serif`;
+    ctx.fillStyle = color;
+    ctx.fillText(sym, x, y);
+    const w = ctx.measureText(sym).width;
+    if(t.sup) { ctx.font=`italic ${sfs}px Georgia, serif`; ctx.fillText(latexToText(t.sup), x+w, y-fs*0.45); }
+    if(t.sub) { ctx.font=`italic ${sfs}px Georgia, serif`; ctx.fillText(latexToText(t.sub), x+w, y+fs*0.35); }
+    return w + (t.sup||t.sub ? ctx.measureText(latexToText(t.sup||t.sub||'')).width + 2 : 2);
+  }
+
+  // Fallback : afficher tel quel
+  const fallback = t.cmd.replace('\\','');
+  ctx.font = `italic ${fs}px Georgia, serif`;
+  ctx.fillStyle = color;
+  ctx.fillText(fallback, x, y);
+  return ctx.measureText(fallback).width + 2;
+}
+
+// Sous-échantillonner un tableau de points à max N points
+function subsample(pts, maxN) {
+  if(pts.length <= maxN) return pts;
+  const result = [];
+  const step = (pts.length - 1) / (maxN - 1);
+  for(let i = 0; i < maxN; i++) {
+    result.push(pts[Math.round(i * step)]);
+  }
+  return result;
+}
+
+// ── Grand opérateur (∑ ∏ ∫) avec bornes ──
+function drawBigOp(ctx, symbol, t, x, y, fs, bfs, color) {
+  ctx.font = `${bfs}px Georgia, serif`;
+  ctx.fillStyle = color;
+  ctx.fillText(symbol, x, y + fs * 0.15);
+  const sw = ctx.measureText(symbol).width * 0.85;
+
+  // Borne inférieure (sub) : en dessous, centré
+  if(t.sub) {
+    const subTxt = latexToText(t.sub);
+    const sfs = fs * 0.58;
+    ctx.font = `italic ${sfs}px Georgia, serif`;
+    ctx.fillStyle = color;
+    const subW = ctx.measureText(subTxt).width;
+    ctx.fillText(subTxt, x + (sw - subW) / 2, y + fs * 0.72);
+  }
+
+  // Borne supérieure (sup) : au dessus, centré
+  if(t.sup) {
+    const supTxt = latexToText(t.sup);
+    const sfs = fs * 0.58;
+    ctx.font = `italic ${sfs}px Georgia, serif`;
+    ctx.fillStyle = color;
+    const supW = ctx.measureText(supTxt).width;
+    ctx.fillText(supTxt, x + (sw - supW) / 2, y - fs * 0.72);
+  }
+
+  return sw + 6;
+}
+
+// ── Mesure la largeur d'une expression sans dessiner ──
+function measureMath(ctx, raw, fs) {
+  const tmp = { fillText(){}, fillRect(){}, beginPath(){}, moveTo(){}, lineTo(){}, stroke(){}, strokeStyle:'', lineWidth:1, font:'', fillStyle:'' };
+  // Estimation approximative
+  ctx.font = `italic ${fs}px Georgia, serif`;
+  return ctx.measureText(latexToText(raw)).width + raw.length * 2;
+}
+
+// ── Map caractères spéciaux ──
+function mathCharMap(c) {
+  const map = { '*':'×', "'":"′", '`':'`' };
+  return map[c] || c;
+}
+
+// ══════════════════════════════════════════
+//  RESPONSIVE JS
+// ══════════════════════════════════════════
+
+// ── Burger menu ──
+function toggleBurger() {
+  const m = document.getElementById('burger-menu');
+  const open = m.style.display === 'block';
+  m.style.display = open ? 'none' : 'block';
+}
+document.addEventListener('click', e => {
+  if(!e.target.closest('#burger-btn') && !e.target.closest('#burger-menu'))
+    document.getElementById('burger-menu').style.display = 'none';
+});
+
+// ── Afficher le burger uniquement sur xs ──
+function updateBurgerVisibility() {
+  const burger = document.getElementById('burger-btn');
+  const hideXsBtns = document.querySelectorAll('.hbtn.hide-xs');
+  if(window.innerWidth <= 480) {
+    burger.style.display = 'flex';
+    hideXsBtns.forEach(b => b.style.display = 'none');
+  } else {
+    burger.style.display = 'none';
+    hideXsBtns.forEach(b => b.style.display = 'flex');
+  }
+}
+window.addEventListener('resize', updateBurgerVisibility);
+
+// ── Pinch-to-zoom (touch) ──
+(function initPinchZoom() {
+  let lastDist = null;
+  let lastMidX = 0, lastMidY = 0;
+
+  document.getElementById('overlay-c').addEventListener('touchstart', e => {
+    if(e.touches.length === 2) {
+      e.preventDefault();
+      const t = e.touches;
+      lastDist = Math.hypot(t[1].clientX-t[0].clientX, t[1].clientY-t[0].clientY);
+      lastMidX = (t[0].clientX + t[1].clientX) / 2;
+      lastMidY = (t[0].clientY + t[1].clientY) / 2;
+    }
+  }, {passive: false});
+
+  document.getElementById('overlay-c').addEventListener('touchmove', e => {
+    if(e.touches.length === 2) {
+      e.preventDefault();
+      const t = e.touches;
+      const dist = Math.hypot(t[1].clientX-t[0].clientX, t[1].clientY-t[0].clientY);
+      const midX = (t[0].clientX + t[1].clientX) / 2;
+      const midY = (t[0].clientY + t[1].clientY) / 2;
+
+      if(lastDist) {
+        const delta = (dist - lastDist) / lastDist;
+        const rect  = document.getElementById('overlay-c').getBoundingClientRect();
+        Viewport.zoomAt(midX - rect.left, midY - rect.top, delta * 0.8);
+        // Pan avec le déplacement du milieu
+        Viewport.panX += midX - lastMidX;
+        Viewport.panY += midY - lastMidY;
+        UI.updateZoomDisplay();
+        App.render();
+      }
+      lastDist = dist;
+      lastMidX = midX; lastMidY = midY;
+    }
+  }, {passive: false});
+
+  document.getElementById('overlay-c').addEventListener('touchend', e => {
+    if(e.touches.length < 2) lastDist = null;
+  });
+})();
+
+// ── Orientation change : recalc canvas ──
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => {
+    App._resize();
+    App.render();
+  }, 300); // délai pour laisser le navigateur recalculer
+});
+
+// ── Z-Order (plan) ──
+function zOrder(dir) {
+  UI.hideCtxMenu();
+  const ids = [...Tools._selectedIds];
+  if(!ids.length) return;
+  const id = ids[0];
+  const idx = Scene.objects.findIndex(o => o.id === id);
+  if(idx < 0) return;
+  const obj = Scene.objects.splice(idx, 1)[0];
+  if(dir === 'front') Scene.objects.push(obj);
+  else if(dir === 'back')  Scene.objects.unshift(obj);
+  else if(dir === 'fwd')   Scene.objects.splice(Math.min(idx+1, Scene.objects.length), 0, obj);
+  else if(dir === 'bwd')   Scene.objects.splice(Math.max(idx-1, 0), 0, obj);
+  App.render(); App.pushUndo(); App.scheduleSave();
+  UI.toast({ front:'Premier plan ✓', back:'Arrière plan ✓', fwd:'Avancé ✓', bwd:'Reculé ✓' }[dir], 'success');
+}
+
+// ── Resize image par dialog ──
+function openImgResize() {
+  UI.hideCtxMenu();
+  const id = [...Tools._selectedIds][0];
+  const o  = Scene.objects.find(obj => obj.id === id);
+  if(!o || o.type !== 'image') return;
+  const w = prompt(`Largeur (actuelle: ${Math.round(o.w)}px) :`, Math.round(o.w));
+  if(w === null) return;
+  const ratio = o.w / o.h;
+  o.w = Math.max(10, parseFloat(w) || o.w);
+  o.h = o.w / ratio; // proportionnel
+  App.render(); App.pushUndo(); App.scheduleSave();
+  UI.toast(`Image : ${Math.round(o.w)}×${Math.round(o.h)}px`, 'info');
+}
+
+// ── Rétablir proportions originales ──
+function resetImgRatio() {
+  UI.hideCtxMenu();
+  const id = [...Tools._selectedIds][0];
+  const o  = Scene.objects.find(obj => obj.id === id);
+  if(!o || o.type !== 'image' || !o._img) return;
+  const maxW = 600;
+  let w = o._img.naturalWidth, h = o._img.naturalHeight;
+  if(w > maxW) { h = h * maxW/w; w = maxW; }
+  o.w = w; o.h = h;
+  App.render(); App.pushUndo(); App.scheduleSave();
+  UI.toast(`Proportions originales : ${Math.round(w)}×${Math.round(h)}px`, 'success');
+}
+
+// ── Afficher les options contextuelles selon la sélection ──
+function updateCtxMenuForSelection() {
+  const ids = [...Tools._selectedIds];
+  const hasImg = ids.some(id => {
+    const o = Scene.objects.find(obj => obj.id === id);
+    return o && o.type === 'image';
+  });
+  const hasSel = ids.length > 0;
+  ['ctx-bring-front','ctx-send-back','ctx-bring-fwd','ctx-send-bwd'].forEach(id => {
+    document.getElementById(id).style.display = hasSel ? 'flex' : 'none';
+  });
+  ['ctx-img-size','ctx-img-ratio','ctx-sep-img'].forEach(id => {
+    document.getElementById(id).style.display = hasImg ? 'flex' : 'none';
+  });
+}
+
+// Raccourcis clavier dans la textarea
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('text-ta').addEventListener('keydown', e => {
+    if(e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { UI.confirmText(); return; }
+    if(e.key === 'Escape') { document.getElementById('text-box').style.display='none'; return; }
+    if(e.ctrlKey && e.key === 'b') { e.preventDefault(); tfmt('bold'); }
+    if(e.ctrlKey && e.key === 'i') { e.preventDefault(); tfmt('italic'); }
+    if(e.ctrlKey && e.key === 'u') { e.preventDefault(); tfmt('under'); }
+  });
+  document.getElementById('text-confirm').onclick = () => UI.confirmText();
+});
+
+// Démarrage
+document.addEventListener('DOMContentLoaded', () => {
+  updateBurgerVisibility(); 
+  App.init()
+});
+</script>
+</body>
+</html>

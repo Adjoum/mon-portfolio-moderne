@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, X, Home, User, Briefcase, Code, Mail, Download, Brain } from 'lucide-react'
+import { Menu, X, Home, User, Briefcase, Code, Mail, Download, Brain, PenLine } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import type { LucideIcon } from "lucide-react"
 
@@ -22,6 +22,7 @@ const Navigation: React.FC = () => {
     { name: 'Compétences', href: '/skills', icon: Code },
     { name: 'CV', href: '/cv', icon: Download },
     { name: 'IA Lab', href: '/ai-lab', icon: Brain },
+    { name: 'InkSpace',     href: '/adjoumani-whiteboard',  icon: PenLine },
     { name: 'Contact', href: '/contact', icon: Mail },
   ]
 

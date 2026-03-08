@@ -197,7 +197,7 @@ const Hero: React.FC = () => {
               { icon: Github, href: "https://github.com/Adjoum" },
               { icon: Linkedin, href: "https://www.linkedin.com/in/koffi-wilfried-adjoumani/" },
               {icon: Facebook, href: "https://web.facebook.com/profile.php?id=100084939496635"},
-              { icon: Mail, href: "mailto:adjoumanideveloppeurwebmob@gmail.com" }
+              { icon: Mail, href: "mailto:contact@adjoumani-koffi.com" }
             ].map((social, index) => (
               <motion.a
                 key={index}

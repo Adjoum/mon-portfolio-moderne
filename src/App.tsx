@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion'
 
 // ✅ Components chargés immédiatement (critiques)
 import Navigation from './components/Navigation'
+import { useVisitTracker } from './hooks/useVisitTracker'
 import Footer from './components/Footer'
 
 // ✅ Pages avec LAZY LOADING (chargées à la demande)
@@ -20,9 +21,7 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 const TermsPage = lazy(() => import('./pages/TermsPage'))
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
 
-
-
-
+const WhiteboardPage = lazy(() => import('./pages/whiteboard'))
 
 // Custom cursor component
 const CustomCursor: React.FC = () => {
@@ -105,25 +104,36 @@ const ScrollToTop: React.FC = () => {
 // Animated Routes wrapper
 const AnimatedRoutes: React.FC = () => {
   const location = useLocation()
+  const isWhiteboard = location.pathname === '/adjoumani-whiteboard'
+  useVisitTracker()
 
   return (
-    <AnimatePresence mode="wait">
-      <Suspense fallback={<PageLoader />}>
-        <Routes location={location} key={location.pathname}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/about" element={<AboutPage />} />
-          <Route path="/projects" element={<ProjectsPage />} />
-          <Route path="/skills" element={<SkillsPage />} />
-          <Route path="/cv" element={<CVPage />} />
-          <Route path="/ai-lab" element={<AILabPage />} />
-          <Route path="/contact" element={<ContactPage />} />
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/terms" element={<TermsPage />} />
-          <Route path="/privacy" element={<PrivacyPage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </Suspense>
-    </AnimatePresence>
+    <>
+      {/* Scroll to top désactivé sur whiteboard */}
+      {!isWhiteboard && <ScrollToTop />}
+
+      <AnimatePresence mode="wait">
+        <Suspense fallback={<PageLoader />}>
+          <Routes location={location} key={location.pathname}>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/skills" element={<SkillsPage />} />
+            <Route path="/cv" element={<CVPage />} />
+            <Route path="/ai-lab" element={<AILabPage />} />
+            <Route path="/adjoumani-whiteboard" element={<WhiteboardPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/terms" element={<TermsPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </Suspense>
+      </AnimatePresence>
+
+      {/* Footer masqué sur whiteboard */}
+      {!isWhiteboard && <Footer />}
+    </>
   )
 }
 
@@ -131,22 +141,17 @@ function App() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Simulate initial loading
     setTimeout(() => setLoading(false), 2000)
   }, [])
 
-  if (loading) {
-    return <LoadingScreen />
-  }
+  if (loading) return <LoadingScreen />
 
   return (
     <Router>
       <div className="app-container">
         <CustomCursor />
         <Navigation />
-        <ScrollToTop />
-        <AnimatedRoutes />
-        <Footer />
+        <AnimatedRoutes />  {/* ScrollToTop et Footer sont maintenant dedans */}
       </div>
     </Router>
   )

@@ -27,6 +27,11 @@ body {
   overflow-x: hidden;
 }
 
+/* Empêche le scroll sur la page whiteboard */
+body:has(.whiteboard-page) {
+  overflow: hidden;
+}
+
 /* Scrollbar personnalisée */
 ::-webkit-scrollbar {
   width: 10px;

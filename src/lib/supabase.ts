@@ -53,6 +53,28 @@ export interface Contact {
   createdat: string
 }
 
+export interface Visit {
+  id: number
+  page: string
+  referrer: string | null
+  user_agent: string | null
+  country: string | null
+  city: string | null
+  language: string | null
+  screen: string | null
+  created_at: string
+}
+
+export interface Stats {
+  total: number
+  today: number
+  pages: Record<string, number>
+  countries: Record<string, number>
+  referrers: Record<string, number>
+  screens: Record<string, number>
+  byHour: number[]
+}
+
 // Configuration Supabase
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''

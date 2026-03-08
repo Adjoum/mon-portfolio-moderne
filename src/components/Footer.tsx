@@ -13,7 +13,7 @@ const Footer: React.FC = () => {
     { icon: Linkedin, href: 'https://www.linkedin.com/in/koffi-wilfried-adjoumani/', label: 'LinkedIn' },
     {icon: Facebook, href: "https://web.facebook.com/profile.php?id=100084939496635", label: 'Facebook'},
     { icon: X, href: 'https://x.com/home', label: 'X' },
-    { icon: Mail, href: 'mailto:adjoumanideveloppeurwebmob@gmail.com', label: 'Email' },
+    { icon: Mail, href: 'mailto:contact@adjoumani-koffi.com', label: 'Email' },
   ]
 
   const quickLinks = [
@@ -103,8 +103,8 @@ const Footer: React.FC = () => {
               <li>
                 <strong className="text-white">Email:</strong>
                 <br />
-                <a href="mailto:adjoumanideveloppeurwebmob@gmail.com" className="hover:text-primary transition-colors">
-                  adjoumanideveloppeurwebmob@gmail.com
+                <a href="mailto:contact@adjoumani-koffi.com" className="hover:text-primary transition-colors">
+                  contact@adjoumani-koffi.com
                 </a>
               </li>
               <li>

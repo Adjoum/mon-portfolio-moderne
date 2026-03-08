@@ -160,7 +160,7 @@ const CVPage: React.FC = () => {
                 <div className="grid md:grid-cols-2 gap-4 text-gray-300">
                   <div className="flex items-center gap-3">
                     <Mail className="text-primary" size={20} />
-                    <span>adjoumanideveloppeurwebmob@gmail.com</span>
+                    <span>contact@adjoumani-koffi.com</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <Phone className="text-primary" size={20} />

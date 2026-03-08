@@ -46,9 +46,9 @@ const ContactPage: React.FC = () => {
     {
       icon: Mail,
       title: 'Email',
-      value: 'adjoumanideveloppeurwebmob@gmail.com',
+      value: 'contact@adjoumani-koffi.com',
       shortValue: 'adjoumani...@gmail.com',
-      href: 'mailto:adjoumanideveloppeurwebmob@gmail.com',
+      href: 'mailto:contact@adjoumani-koffi.com',
       color: 'from-blue-500 to-cyan-500'
     },
     {
