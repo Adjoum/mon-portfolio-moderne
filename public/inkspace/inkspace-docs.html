@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InkSpace v3 — Documentation</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,400;1,700&family=JetBrains+Mono:wght@300;400;500;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#0a0a0f;--paper:#f4f1eb;--mid:#8c8070;--violet:#5b3fff;--rose:#ff3d6e;--teal:#00c9a7;--amber:#ff8c00;--sky:#0099ff;--grad:linear-gradient(135deg,#5b3fff,#ff3d6e);--grad2:linear-gradient(135deg,#00c9a7,#0099ff);--display:'Playfair Display',Georgia,serif;--body:'Plus Jakarta Sans',sans-serif;--mono:'JetBrains Mono',monospace}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px}
+body{background:var(--ink);color:var(--paper);font-family:var(--body);overflow:hidden;height:100vh;width:100vw}
+#bg{position:fixed;inset:0;z-index:0;pointer-events:none}
+/* TOPBAR */
+#topbar{position:fixed;top:0;left:0;right:0;z-index:200;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 32px;border-bottom:1px solid rgba(244,241,235,.08);background:rgba(10,10,15,.8);backdrop-filter:blur(24px)}
+.tb-logo{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:900;font-size:19px;letter-spacing:-.03em}
+.tb-dot{width:8px;height:8px;border-radius:50%;background:var(--grad);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(91,63,255,.4)}50%{transform:scale(1.2);box-shadow:0 0 0 6px rgba(91,63,255,0)}}
+.tb-pips{display:flex;gap:4px}
+.pip{width:28px;height:4px;border-radius:2px;background:rgba(244,241,235,.12);cursor:pointer;transition:all .3s}
+.pip.on{background:var(--grad);width:44px}
+.pip:hover:not(.on){background:rgba(244,241,235,.28)}
+.tb-right{font-family:var(--mono);font-size:11px;color:var(--mid)}
+.tb-right b{color:var(--paper);font-weight:500}
+/* PROGRESS */
+#prog{position:fixed;top:52px;left:0;height:2px;background:var(--grad);z-index:201;transition:width .5s cubic-bezier(.4,0,.2,1);box-shadow:0 0 16px rgba(91,63,255,.6)}
+/* VIEWER */
+#viewer{position:fixed;inset:52px 0 0;z-index:10;overflow:hidden}
+.slide{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding-bottom:100px;opacity:0;transform:translateY(40px);pointer-events:none;transition:opacity .5s cubic-bezier(.4,0,.2,1),transform .5s cubic-bezier(.4,0,.2,1);scrollbar-width:thin;scrollbar-color:rgba(91,63,255,.35) transparent}
+.slide.on{opacity:1;transform:none;pointer-events:all}
+.slide.out{opacity:0;transform:translateY(-40px)}
+/* HERO */
+.hero-wrap{min-height:calc(100vh - 52px);display:grid;grid-template-columns:1fr 1fr;align-items:center;padding:0 8vw;gap:60px}
+@media(max-width:768px){.hero-wrap{grid-template-columns:1fr;padding:48px 24px}.hero-r{display:none}}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--violet);margin-bottom:20px;display:flex;align-items:center;gap:10px}
+.eyebrow::before{content:'';display:block;width:32px;height:1px;background:var(--violet)}
+.h1{font-family:var(--display);font-weight:900;font-size:clamp(52px,7vw,88px);line-height:.92;letter-spacing:-.04em;margin-bottom:28px}
+.h1 .gr{background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sub{font-size:16px;line-height:1.75;color:rgba(244,241,235,.6);max-width:480px;margin-bottom:44px;font-weight:300}
+.pills{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:44px}
+.pill{padding:6px 14px;border-radius:100px;font-family:var(--mono);font-size:11px;border:1px solid rgba(244,241,235,.14);color:rgba(244,241,235,.6);transition:all .2s}
+.pill.ac{background:rgba(91,63,255,.13);border-color:rgba(91,63,255,.4);color:#a895ff}
+.pill:hover{border-color:var(--violet);color:var(--paper)}
+.cta-row{display:flex;gap:12px;flex-wrap:wrap}
+.btn-p{padding:14px 32px;border-radius:100px;background:var(--grad);border:none;color:#fff;font-family:var(--body);font-weight:700;font-size:14px;cursor:pointer;transition:all .3s}
+.btn-p:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(91,63,255,.4)}
+.btn-g{padding:14px 24px;border-radius:100px;background:transparent;border:1px solid rgba(244,241,235,.18);color:rgba(244,241,235,.6);font-family:var(--body);font-weight:600;font-size:14px;cursor:pointer;transition:all .3s}
+.btn-g:hover{border-color:rgba(244,241,235,.45);color:var(--paper)}
+/* Hero stats */
+.hero-r{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.st{background:rgba(244,241,235,.04);border:1px solid rgba(244,241,235,.08);border-radius:18px;padding:28px 20px;transition:all .3s;position:relative;overflow:hidden}
+.st::before{content:'';position:absolute;top:-30px;right:-30px;width:80px;height:80px;border-radius:50%;filter:blur(30px);opacity:.22}
+.st:hover{background:rgba(244,241,235,.07);transform:translateY(-3px)}
+.st.v{--c:#5b3fff}.st.v::before{background:#5b3fff}
+.st.r{--c:#ff3d6e}.st.r::before{background:#ff3d6e}
+.st.t{--c:#00c9a7}.st.t::before{background:#00c9a7}
+.st.a{--c:#ff8c00}.st.a::before{background:#ff8c00}
+.st-big{font-family:var(--display);font-weight:900;font-size:52px;letter-spacing:-.04em;line-height:1;color:var(--c,var(--paper));margin-bottom:6px}
+.st-lbl{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--mid)}
+.st.tall{grid-row:span 2;display:flex;flex-direction:column;justify-content:flex-end}
+.st.tall .st-big{font-size:72px}
+/* CONTENT */
+.cs{max-width:1100px;margin:0 auto;padding:60px 48px 40px}
+@media(max-width:640px){.cs{padding:36px 18px}}
+.ch-tag{font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--mid);margin-bottom:14px;display:flex;align-items:center;gap:12px}
+.ch-tag .num{background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-weight:700;font-size:10px}
+.ch-title{font-family:var(--display);font-weight:900;font-size:clamp(36px,5vw,64px);line-height:1;letter-spacing:-.03em;margin-bottom:16px}
+.ch-title em{font-style:italic;font-weight:400;background:var(--grad2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ch-intro{font-size:16px;line-height:1.75;color:rgba(244,241,235,.58);max-width:620px;font-weight:300;margin-bottom:48px;border-left:2px solid rgba(91,63,255,.45);padding-left:20px}
+/* Strips */
+.strips{display:flex;flex-direction:column;gap:2px;margin-bottom:36px}
+.strip{display:grid;grid-template-columns:52px 1fr auto;align-items:center;gap:20px;padding:18px 22px;background:rgba(244,241,235,.03);border:1px solid rgba(244,241,235,.06);border-radius:11px;transition:all .22s;cursor:default}
+.strip:first-child{border-radius:18px 18px 11px 11px}
+.strip:last-child{border-radius:11px 11px 18px 18px}
+.strip:hover{background:rgba(244,241,235,.07);border-color:rgba(244,241,235,.12);transform:translateX(4px)}
+.si{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.sn{font-weight:700;font-size:13.5px;margin-bottom:3px;letter-spacing:-.01em}
+.sd{font-family:var(--mono);font-size:11px;color:rgba(244,241,235,.42);line-height:1.55}
+.sk{font-family:var(--mono);font-size:11px;padding:4px 10px;background:rgba(244,241,235,.07);border:1px solid rgba(244,241,235,.11);border-bottom:2px solid rgba(244,241,235,.05);border-radius:6px;color:var(--mid);white-space:nowrap;flex-shrink:0}
+/* Twin */
+.twin{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
+@media(max-width:640px){.twin{grid-template-columns:1fr}}
+/* HCard */
+.hcard{border-radius:18px;padding:28px;border:1px solid rgba(244,241,235,.07);position:relative;overflow:hidden;margin-bottom:20px;background:rgba(244,241,235,.025)}
+.hcard::after{content:'';position:absolute;top:-50px;right:-50px;width:180px;height:180px;border-radius:50%;background:var(--hc,#5b3fff);opacity:.07;filter:blur(45px);pointer-events:none}
+.hcard-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--hc,#5b3fff);margin-bottom:10px}
+.hcard-title{font-family:var(--display);font-size:21px;font-weight:700;margin-bottom:12px;letter-spacing:-.02em}
+.hcard-body{font-family:var(--mono);font-size:12px;color:rgba(244,241,235,.52);line-height:1.9}
+.hcard-body b{color:var(--paper);font-weight:600}
+.hcard-body .ac{color:var(--hc,#5b3fff)}
+/* Algo grid */
+.algos{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-bottom:28px}
+@media(max-width:640px){.algos{grid-template-columns:repeat(2,1fr)}}
+.at{border-radius:14px;padding:22px 16px;border:1px solid rgba(244,241,235,.07);background:rgba(244,241,235,.025);text-align:center;transition:all .3s;cursor:default;position:relative;overflow:hidden}
+.at::before{content:'';position:absolute;bottom:-30px;left:-30px;width:100px;height:100px;border-radius:50%;background:var(--ac);opacity:.06;filter:blur(28px);transition:opacity .3s}
+.at:hover{border-color:rgba(244,241,235,.14);transform:translateY(-4px)}
+.at:hover::before{opacity:.14}
+.at-sym{font-size:28px;display:block;margin-bottom:10px}
+.at-name{font-family:var(--display);font-size:18px;font-weight:700;margin-bottom:7px;color:var(--ac)}
+.at-desc{font-family:var(--mono);font-size:10.5px;color:rgba(244,241,235,.42);line-height:1.6;margin-bottom:10px}
+.at-tag{display:inline-block;padding:3px 10px;border-radius:100px;font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);color:var(--mid)}
+/* Stepflow */
+.sf{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-bottom:36px;border:1px solid rgba(244,241,235,.07);border-radius:16px;overflow:hidden}
+@media(max-width:640px){.sf{grid-template-columns:repeat(2,1fr)}}
+.sf-s{padding:26px 20px;border-right:1px solid rgba(244,241,235,.07);background:rgba(244,241,235,.02);transition:background .2s}
+.sf-s:last-child{border-right:none}
+.sf-s:hover{background:rgba(244,241,235,.05)}
+.sf-n{font-family:var(--display);font-size:44px;font-weight:900;line-height:1;color:rgba(91,63,255,.18);margin-bottom:10px;letter-spacing:-.04em}
+.sf-t{font-weight:700;font-size:13px;margin-bottom:5px}
+.sf-d{font-family:var(--mono);font-size:10.5px;color:rgba(244,241,235,.4);line-height:1.6}
+/* Color legend */
+.legend{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:28px}
+@media(max-width:640px){.legend{grid-template-columns:1fr}}
+.cl{display:flex;align-items:center;gap:12px;padding:13px 16px;background:rgba(244,241,235,.025);border:1px solid rgba(244,241,235,.06);border-radius:10px}
+.cl-d{width:13px;height:13px;border-radius:50%;flex-shrink:0;box-shadow:0 0 10px var(--dc)}
+.cl-state{font-weight:700;font-size:11.5px;color:var(--dc);margin-bottom:2px}
+.cl-m{font-family:var(--mono);font-size:10px;color:rgba(244,241,235,.38)}
+/* Code */
+.code-blk{background:#0d0d18;border:1px solid rgba(91,63,255,.2);border-radius:14px;overflow:hidden;margin-bottom:20px;font-family:var(--mono)}
+.cb-bar{display:flex;align-items:center;gap:7px;padding:11px 16px;background:rgba(91,63,255,.07);border-bottom:1px solid rgba(91,63,255,.13)}
+.cd{width:10px;height:10px;border-radius:50%}
+.cb-title{margin-left:10px;font-size:11px;color:rgba(244,241,235,.38);letter-spacing:.03em}
+.cb-lang{margin-left:auto;font-size:10px;padding:2px 10px;border-radius:100px;background:rgba(91,63,255,.18);color:#a895ff;border:1px solid rgba(91,63,255,.28)}
+.cb-body{padding:22px;font-size:12.5px;line-height:2}
+.kw{color:#ff3d6e;font-weight:700}.fn{color:#a895ff}.st2{color:#00c9a7}.nm{color:#ffc44d}.cm{color:#3d3d5a;font-style:italic}.op{color:rgba(244,241,235,.45)}.id{color:var(--paper)}
+/* Feat matrix */
+.fm{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:28px}
+@media(max-width:640px){.fm{grid-template-columns:1fr}}
+.fc{padding:20px 17px;background:rgba(244,241,235,.025);border:1px solid rgba(244,241,235,.06);border-radius:13px;transition:all .22s}
+.fc:hover{background:rgba(244,241,235,.06);border-color:rgba(244,241,235,.12);transform:translateY(-3px)}
+.fc-i{font-size:23px;margin-bottom:11px;display:block}
+.fc-n{font-weight:700;font-size:13px;margin-bottom:5px}
+.fc-d{font-family:var(--mono);font-size:10.5px;color:rgba(244,241,235,.38);line-height:1.6}
+/* Shortcuts */
+.scs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:28px}
+@media(max-width:640px){.scs{grid-template-columns:repeat(2,1fr)}}
+.scr{display:flex;justify-content:space-between;align-items:center;padding:9px 13px;background:rgba(244,241,235,.022);border:1px solid rgba(244,241,235,.055);border-radius:8px;gap:7px}
+.sc-k{display:flex;gap:3px;flex-shrink:0}
+.key{font-family:var(--mono);font-size:10px;padding:3px 7px;background:rgba(244,241,235,.08);border:1px solid rgba(244,241,235,.12);border-bottom:2px solid rgba(244,241,235,.04);border-radius:5px;color:#a895ff}
+.sc-l{font-family:var(--mono);font-size:10px;color:rgba(244,241,235,.38);text-align:right}
+/* Lang row */
+.langs{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:24px}
+.lc{padding:6px 14px;border-radius:100px;font-family:var(--mono);font-size:11px;font-weight:500;border:1px solid;transition:all .2s;cursor:default}
+.lc:hover{transform:translateY(-2px)}
+.rule{height:1px;background:linear-gradient(90deg,transparent,rgba(244,241,235,.1),transparent);margin:32px 0}
+/* RATING */
+.rating{min-height:calc(100vh - 52px);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px 24px 100px;position:relative}
+.rating::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 30% 50%,rgba(91,63,255,.09) 0%,transparent 60%),radial-gradient(ellipse at 70% 50%,rgba(255,61,110,.07) 0%,transparent 60%);pointer-events:none}
+.r-q{font-family:var(--display);font-size:clamp(28px,5vw,52px);font-weight:900;letter-spacing:-.03em;margin-bottom:13px;line-height:1.1}
+.r-q span{font-style:italic;font-weight:400;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.r-sub{font-size:15px;color:rgba(244,241,235,.48);font-weight:300;margin-bottom:48px;max-width:440px}
+.stars{display:flex;gap:14px;margin-bottom:12px;justify-content:center}
+.star{font-size:36px;cursor:pointer;transition:all .25s cubic-bezier(.34,1.56,.64,1);filter:saturate(0) brightness(.4);user-select:none}
+.star.on{filter:saturate(1) brightness(1);transform:scale(1.25)}
+.star:hover{transform:scale(1.35) rotate(-5deg);filter:saturate(1)}
+.slbls{display:flex;gap:14px;justify-content:center;margin-bottom:36px}
+.sl{width:36px;font-family:var(--mono);font-size:9px;color:rgba(244,241,235,.22);text-align:center;transition:color .2s;text-transform:uppercase;letter-spacing:.04em;line-height:1.3}
+.sl.on{color:rgba(244,241,235,.65)}
+.like-btn{display:inline-flex;align-items:center;gap:10px;padding:15px 34px;border-radius:100px;border:1px solid rgba(244,241,235,.14);background:rgba(244,241,235,.04);color:rgba(244,241,235,.58);font-family:var(--body);font-weight:600;font-size:15px;cursor:pointer;transition:all .3s cubic-bezier(.34,1.56,.64,1);margin-bottom:40px}
+.like-btn:hover{border-color:rgba(255,61,110,.45);color:var(--rose);background:rgba(255,61,110,.07);transform:scale(1.04)}
+.like-btn.on{border-color:var(--rose);background:rgba(255,61,110,.11);color:var(--rose);transform:scale(1.06)}
+.hrt{font-size:22px;transition:transform .4s cubic-bezier(.34,1.56,.64,1)}
+.like-btn.on .hrt{transform:scale(1.4)}
+.rfb{font-family:var(--mono);font-size:13px;min-height:20px;margin-bottom:44px;opacity:0;transform:translateY(8px);transition:all .4s;color:#a895ff}
+.rfb.on{opacity:1;transform:none}
+.rsum{display:flex;gap:2px;border-radius:18px;overflow:hidden;border:1px solid rgba(244,241,235,.07);margin-bottom:36px}
+.rs{flex:1;padding:22px 14px;text-align:center;background:rgba(244,241,235,.025);border-right:1px solid rgba(244,241,235,.06)}
+.rs:last-child{border-right:none}
+.rs-big{font-family:var(--display);font-size:34px;font-weight:900;letter-spacing:-.03em;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1;margin-bottom:5px}
+.rs-lbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:var(--mid)}
+.r-footer{font-family:var(--mono);font-size:11px;color:rgba(244,241,235,.2);line-height:2}
+.r-footer a{color:var(--violet);text-decoration:none}
+/* BOTTOM NAV */
+#bnav{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:200;display:flex;align-items:center;gap:7px;background:rgba(10,10,15,.82);backdrop-filter:blur(24px);border:1px solid rgba(244,241,235,.1);border-radius:100px;padding:5px 9px 5px 14px;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.bn{display:flex;align-items:center;gap:7px;padding:10px 20px;border-radius:100px;border:none;font-family:var(--body);font-size:13px;font-weight:600;cursor:pointer;transition:all .22s;letter-spacing:-.01em}
+.bn-p{background:rgba(244,241,235,.07);color:rgba(244,241,235,.52)}
+.bn-p:hover:not(:disabled){background:rgba(244,241,235,.12);color:var(--paper)}
+.bn-p:disabled{opacity:.28;cursor:not-allowed}
+.bn-n{background:var(--grad);color:#fff;box-shadow:0 4px 14px rgba(91,63,255,.32)}
+.bn-n:hover:not(:disabled){transform:translateX(3px);box-shadow:0 6px 22px rgba(91,63,255,.5)}
+.bn-n:disabled{opacity:.32;cursor:not-allowed}
+.bn-div{width:1px;height:20px;background:rgba(244,241,235,.1);margin:0 3px}
+.bn-info{font-family:var(--mono);font-size:10px;color:var(--mid);min-width:34px;text-align:center;letter-spacing:.04em}
+</style>
+</head>
+<body>
+
+<canvas id="bg"></canvas>
+
+<div id="topbar">
+  <div class="tb-logo"><div class="tb-dot"></div>InkSpace <span style="font-family:var(--mono);font-weight:300;font-size:13px;color:var(--mid);margin-left:6px">docs v3</span></div>
+  <div class="tb-pips" id="pips"></div>
+  <div class="tb-right">PAGE <b id="pgn">1</b> / 9</div>
+</div>
+
+<div id="prog" style="width:11.1%"></div>
+
+<div id="viewer">
+
+<!-- SLIDE 0 — HERO -->
+<div class="slide on" id="s0">
+<div class="hero-wrap">
+  <div class="hero-l">
+    <div class="eyebrow">Documentation officielle</div>
+    <h1 class="h1">Ink<span class="gr">Space</span><br>v3.0</h1>
+    <p class="sub">Le tableau blanc interactif conçu pour les enseignants, étudiants et entrepreneurs — dessin libre, graphes algorithmiques, éditeur de code, formules mathématiques et IA intégrée. Gratuit, puissant, sans limites.</p>
+    <div class="pills">
+      <div class="pill ac">15+ outils</div>
+      <div class="pill ac">4 algos graphes</div>
+      <div class="pill ac">7 langages code</div>
+      <div class="pill">100% gratuit</div>
+      <div class="pill">Hors-ligne</div>
+      <div class="pill">Export PNG/SVG</div>
+    </div>
+    <div class="cta-row">
+      <button class="btn-p" onclick="goTo(1)">Commencer la visite →</button>
+      <button class="btn-g" onclick="goTo(8)">Laisser un avis</button>
+    </div>
+  </div>
+  <div class="hero-r">
+    <div class="st v"><div class="st-big">15+</div><div class="st-lbl">Outils de dessin</div></div>
+    <div class="st r tall"><div class="st-big">∞</div><div class="st-lbl">Canvas infini</div></div>
+    <div class="st t"><div class="st-big">4</div><div class="st-lbl">Algorithmes graphes</div></div>
+    <div class="st a"><div class="st-big">7</div><div class="st-lbl">Langages de code</div></div>
+  </div>
+</div>
+</div>
+
+<!-- SLIDE 1 — DESSIN -->
+<div class="slide" id="s1">
+<div class="cs">
+  <div class="ch-tag"><span class="num">01</span>— Outils de tracé</div>
+  <h2 class="ch-title">Dessinez<br><em>librement.</em></h2>
+  <p class="ch-intro">Cinq modes de tracé distincts pour capturer chaque idée avec le style et l'expressivité qui vous convient — du stylo précis à la calligraphie sensible au geste.</p>
+
+  <div class="strips">
+    <div class="strip">
+      <div class="si" style="background:rgba(91,63,255,.13)">✒️</div>
+      <div><div class="sn">Stylo — Tracé précis</div><div class="sd">Trait fin avec lissage automatique. Courbes calculées par moyenne glissante. Idéal pour annotations et schémas techniques.</div></div>
+      <div class="sk">P</div>
+    </div>
+    <div class="strip">
+      <div class="si" style="background:rgba(255,61,110,.13)">🎨</div>
+      <div><div class="sn">Pinceau — Effet artistique</div><div class="sd">Trait épais avec rendu organique et dispersion naturelle. Pressure simulée selon la vitesse du geste.</div></div>
+      <div class="sk">B</div>
+    </div>
+    <div class="strip">
+      <div class="si" style="background:rgba(255,196,77,.13)">🖊️</div>
+      <div><div class="sn">Marqueur — Surligneur</div><div class="sd">Opacité 35%, trait épais (5× taille), extrémités carrées. Semi-transparent pour surligner sans masquer le contenu.</div></div>
+      <div class="sk">M</div>
+    </div>
+    <div class="strip">
+      <div class="si" style="background:rgba(0,201,167,.13)">🪶</div>
+      <div><div class="sn">Calligraphie — Trait expressif</div><div class="sd">Épaisseur variable selon la direction — fin en diagonale, plus épais horizontalement. Parfait pour les titres artistiques.</div></div>
+      <div class="sk">G</div>
+    </div>
+    <div class="strip">
+      <div class="si" style="background:rgba(255,140,0,.13)">🧹</div>
+      <div><div class="sn">Gomme — Effacement précis</div><div class="sd">Curseur circulaire visible. Supprime les objets qui intersectent la zone. Taille ajustable 1–50px.</div></div>
+      <div class="sk">E</div>
+    </div>
+  </div>
+
+  <div class="hcard" style="--hc:#5b3fff">
+    <div class="hcard-lbl">⚡ Contrôle avancé</div>
+    <div class="hcard-title">Paramètres de tracé en temps réel</div>
+    <div class="hcard-body">Ajustez la <b>taille du trait</b> (1–50px) et l'<b>opacité</b> (10–100%) via la palette du bas. La <b>palette de couleurs</b> offre 10 teintes + sélecteur illimité. Maintenez <span class="ac">Espace</span> pour activer temporairement l'outil Main sans changer d'outil actif.</div>
+  </div>
+
+  <div class="scs">
+    <div class="scr"><div class="sc-k"><span class="key">Espace</span></div><div class="sc-l">Main temp.</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">Ctrl</span><span class="key">Z</span></div><div class="sc-l">Annuler</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">Ctrl</span><span class="key">Y</span></div><div class="sc-l">Refaire</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">Del</span></div><div class="sc-l">Supprimer</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">Ctrl</span><span class="key">A</span></div><div class="sc-l">Tout sélect.</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">+</span><span class="key">−</span></div><div class="sc-l">Zoom</div></div>
+  </div>
+</div>
+</div>
+
+<!-- SLIDE 2 — FORMES -->
+<div class="slide" id="s2">
+<div class="cs">
+  <div class="ch-tag"><span class="num">02</span>— Géométrie & Formes</div>
+  <h2 class="ch-title">2D, 3D<br><em>& Courbes.</em></h2>
+  <p class="ch-intro">Des formes précises, des solides 3D réalistes et deux outils mathématiques uniques — pour des diagrammes, cours de géométrie et présentations techniques au niveau professionnel.</p>
+
+  <div class="twin">
+    <div>
+      <p style="font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mid);margin-bottom:12px">Formes 2D</p>
+      <div class="strips">
+        <div class="strip"><div class="si" style="background:rgba(91,63,255,.1)">▭</div><div><div class="sn">Rectangle / Plein</div><div class="sd">Contour ou rempli, toutes proportions. Ctrl+glisser pour carré.</div></div><div class="sk">R</div></div>
+        <div class="strip"><div class="si" style="background:rgba(0,201,167,.1)">○</div><div><div class="sn">Ellipse / Plein</div><div class="sd">Cercle ou ellipse par cliquer-glisser.</div></div><div class="sk">C</div></div>
+        <div class="strip"><div class="si" style="background:rgba(255,61,110,.1)">△</div><div><div class="sn">Polygones variés</div><div class="sd">Triangle, losange, parallélogramme, pentagone, hexagone, étoile.</div></div><div class="sk">S</div></div>
+      </div>
+    </div>
+    <div>
+      <p style="font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mid);margin-bottom:12px">Formes 3D</p>
+      <div class="strips">
+        <div class="strip"><div class="si" style="background:rgba(91,63,255,.1)">⬛</div><div><div class="sn">Cube isométrique</div><div class="sd">3 faces visibles avec remplissage différencié et perspective réaliste.</div></div><div class="sk">3D</div></div>
+        <div class="strip"><div class="si" style="background:rgba(0,153,255,.1)">🔺</div><div><div class="sn">Prisme triangulaire</div><div class="sd">Arêtes cachées en pointillé. Vue latérale correcte.</div></div><div class="sk">3D</div></div>
+        <div class="strip"><div class="si" style="background:rgba(0,201,167,.1)">🥫</div><div><div class="sn">Cylindre</div><div class="sd">Ellipses haut/bas, arêtes latérales, remplissage léger.</div></div><div class="sk">3D</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="twin">
+    <div class="hcard" style="--hc:#00c9a7">
+      <div class="hcard-lbl">✦ Fonctionnalité unique</div>
+      <div class="hcard-title">〜 Bézier cubique auto</div>
+      <div class="hcard-body">Tracez librement à main levée — le moteur détecte la courbe et ajuste une <b>courbe de Bézier cubique parfaite</b> par résolution de système linéaire. Mode 4 clics : <span class="ac">départ → P1 → P2 → arrivée.</span></div>
+    </div>
+    <div class="hcard" style="--hc:#ffc44d">
+      <div class="hcard-lbl">✦ Fonctionnalité unique</div>
+      <div class="hcard-title">∠ Angle à main levée</div>
+      <div class="hcard-body">Dessinez un angle — l'algorithme de <b>courbure maximale</b> localise le sommet et affiche la mesure en degrés en temps réel. <span class="ac">Parfait pour les cours de géométrie.</span></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- SLIDE 3 — TEXTE -->
+<div class="slide" id="s3">
+<div class="cs">
+  <div class="ch-tag"><span class="num">03</span>— Texte & Mathématiques</div>
+  <h2 class="ch-title">Écriture<br><em>& Formules.</em></h2>
+  <p class="ch-intro">Un éditeur de texte riche avec barre de mise en forme flottante et un moteur LaTeX custom pour rendre des formules mathématiques directement sur le canvas — sans plugin, sans export.</p>
+
+  <div class="twin">
+    <div class="hcard" style="--hc:#5b3fff">
+      <div class="hcard-lbl">T — Outil Texte</div>
+      <div class="hcard-title">Formatage complet</div>
+      <div class="hcard-body"><b>Taille :</b> 8 à 120px<br><b>Style :</b> Gras, Italique, Souligné<br><b>Alignement :</b> Gauche, Centre, Droite<br><b>Police :</b> 6 familles disponibles<br><b>Multi-ligne :</b> ↵ pour sauter de ligne<br>Validez avec <span class="ac">Ctrl+Entrée</span></div>
+    </div>
+    <div class="hcard" style="--hc:#00c9a7">
+      <div class="hcard-lbl">fx — Formules LaTeX</div>
+      <div class="hcard-title">Moteur mathématique</div>
+      <div class="hcard-body">Saisissez en notation LaTeX. Le moteur custom tokenise et rend visuellement avec la <b>mise en page verticale correcte</b> des fractions, intégrales et sommes. <span class="ac">Double-clic pour éditer.</span></div>
+    </div>
+  </div>
+
+  <div class="hcard" style="--hc:#ff3d6e">
+    <div class="hcard-lbl">Symboles supportés</div>
+    <div class="hcard-title">Couverture LaTeX complète</div>
+    <div class="hcard-body">
+      <span style="color:#a895ff">\frac{a}{b} &nbsp;\sqrt{x} &nbsp;\sum_{i=1}^{n} &nbsp;\int &nbsp;\lim &nbsp;\prod</span><br><br>
+      <b>Grecques :</b> <span style="color:#00c9a7">α β γ δ σ μ λ π θ φ ω ε ρ Σ Ω Δ</span><br>
+      <b>Opérateurs :</b> <span style="color:#ffc44d">≤ ≥ ≠ ≈ ≡ ∈ ∉ ⊂ ∪ ∩ ∀ ∃ ∂ ∇ ±</span><br>
+      <b>Structures :</b> <span style="color:#ff3d6e">\vec{u} &nbsp;\hat{p} &nbsp;\bar{x} &nbsp;\tilde{x} &nbsp;\dot{y}</span>
+    </div>
+  </div>
+
+  <div class="scs">
+    <div class="scr"><div class="sc-k"><span class="key">T</span></div><div class="sc-l">Outil texte</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">F</span></div><div class="sc-l">Formule LaTeX</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">Ctrl</span><span class="key">B</span></div><div class="sc-l">Gras</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">Ctrl</span><span class="key">I</span></div><div class="sc-l">Italique</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">Ctrl</span><span class="key">U</span></div><div class="sc-l">Souligné</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">2×Clic</span></div><div class="sc-l">Éditer texte</div></div>
+  </div>
+</div>
+</div>
+
+<!-- SLIDE 4 — CODE -->
+<div class="slide" id="s4">
+<div class="cs">
+  <div class="ch-tag"><span class="num">04</span>— Éditeur de code</div>
+  <h2 class="ch-title">Code sur<br><em>le canvas.</em></h2>
+  <p class="ch-intro">Un éditeur CodeMirror intégré avec coloration syntaxique, numérotation et rendu canvas style terminal macOS — pour illustrer vos algorithmes directement sur le tableau blanc.</p>
+
+  <div class="langs">
+    <div class="lc" style="color:#c678dd;border-color:#c678dd44;background:#c678dd0d">Pseudo-code</div>
+    <div class="lc" style="color:#3776ab;border-color:#3776ab44;background:#3776ab0d">Python</div>
+    <div class="lc" style="color:#f7df1e;border-color:#f7df1e44;background:#f7df1e0d">JavaScript</div>
+    <div class="lc" style="color:#a8b9cc;border-color:#a8b9cc44;background:#a8b9cc0d">C</div>
+    <div class="lc" style="color:#659ad2;border-color:#659ad244;background:#659ad20d">C++</div>
+    <div class="lc" style="color:#e76f00;border-color:#e76f0044;background:#e76f000d">Java</div>
+    <div class="lc" style="color:#00c9a7;border-color:#00c9a744;background:#00c9a70d">Pascal</div>
+  </div>
+
+  <div class="code-blk">
+    <div class="cb-bar">
+      <div class="cd" style="background:#ff5f57"></div>
+      <div class="cd" style="background:#febc2e"></div>
+      <div class="cd" style="background:#28c840"></div>
+      <div class="cb-title">tri_selection.pseudo</div>
+      <div class="cb-lang">PSEUDO</div>
+    </div>
+    <div class="cb-body">
+<span class="kw">ALGORITHME</span> <span class="fn">TriSelection</span><br>
+<span class="kw">VARIABLES</span>&nbsp;&nbsp;A : <span class="kw">TABLEAU</span>[<span class="nm">1</span>..<span class="id">n</span>] <span class="kw">DE</span> <span class="fn">ENTIER</span> &nbsp;; &nbsp;i, j, min_idx : <span class="fn">ENTIER</span><br><br>
+<span class="kw">DÉBUT</span><br>
+&nbsp;&nbsp;<span class="kw">POUR</span> i <span class="op">←</span> <span class="nm">1</span> <span class="kw">À</span> n<span class="op">-</span><span class="nm">1</span> <span class="kw">FAIRE</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;min_idx <span class="op">←</span> i<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">POUR</span> j <span class="op">←</span> i<span class="op">+</span><span class="nm">1</span> <span class="kw">À</span> n <span class="kw">FAIRE</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">SI</span> A[j] <span class="op">&lt;</span> A[min_idx] <span class="kw">ALORS</span>&nbsp;&nbsp;min_idx <span class="op">←</span> j&nbsp;&nbsp;<span class="kw">FIN SI</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">FIN POUR</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="cm">// Échanger A[i] et A[min_idx]</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;temp <span class="op">←</span> A[i] &nbsp;; &nbsp;A[i] <span class="op">←</span> A[min_idx] &nbsp;; &nbsp;A[min_idx] <span class="op">←</span> temp<br>
+&nbsp;&nbsp;<span class="kw">FIN POUR</span><br>
+<span class="kw">FIN</span>
+    </div>
+  </div>
+
+  <div class="sf">
+    <div class="sf-s"><div class="sf-n">01</div><div class="sf-t">Ouvrir l'éditeur</div><div class="sf-d">Icône &lt;/&gt; dans la toolbar ou touche <b>K</b>. La fenêtre CodeMirror s'ouvre.</div></div>
+    <div class="sf-s"><div class="sf-n">02</div><div class="sf-t">Choisir le langage</div><div class="sf-d">Parmi 7 langages. Un template complet est injecté si l'éditeur est vide.</div></div>
+    <div class="sf-s"><div class="sf-n">03</div><div class="sf-t">Insérer sur canvas</div><div class="sf-d">Cliquez "Insérer" ou <b>Ctrl+Entrée</b>. Le bloc macOS apparaît avec numéros de ligne et coloration.</div></div>
+    <div class="sf-s"><div class="sf-n">04</div><div class="sf-t">Modifier le bloc</div><div class="sf-d"><b>Double-cliquez</b> sur le bloc pour rouvrir l'éditeur. Déplacez avec Sélectionner.</div></div>
+  </div>
+</div>
+</div>
+
+<!-- SLIDE 5 — GRAPHES -->
+<div class="slide" id="s5">
+<div class="cs">
+  <div class="ch-tag"><span class="num">05</span>— Éditeur de graphes</div>
+  <h2 class="ch-title">Graphes<br><em>interactifs.</em></h2>
+  <p class="ch-intro">Créez des graphes orientés et non-orientés avec pondération, gestion des arêtes parallèles, self-loops et déplacement dynamique — la base pour les algorithmes de traversée.</p>
+
+  <div class="fm">
+    <div class="fc"><span class="fc-i">⬤</span><div class="fc-n">Nœuds étiquetés</div><div class="fc-d">Labels automatiques A, B, C… Colorables, déplaçables. Les arêtes suivent en temps réel.</div></div>
+    <div class="fc"><span class="fc-i">→</span><div class="fc-n">Arêtes orientées</div><div class="fc-d">Flèche directionnelle avec tête calculée précisément à la frontière du nœud cible.</div></div>
+    <div class="fc"><span class="fc-i">↔</span><div class="fc-n">Arêtes non-orientées</div><div class="fc-d">Connexion bidirectionnelle. Courbée automatiquement si l'arête inverse existe.</div></div>
+    <div class="fc"><span class="fc-i">⟳</span><div class="fc-n">Self-loops</div><div class="fc-d">Boucle circulaire automatique si source = destination. Dessinée hors du nœud.</div></div>
+    <div class="fc"><span class="fc-i">w</span><div class="fc-n">Pondération</div><div class="fc-d">Entrez un poids dans le panneau. Badge blanc affiché sur l'arête. Requis pour Dijkstra/Bellman.</div></div>
+    <div class="fc"><span class="fc-i">⤳</span><div class="fc-n">Arêtes parallèles</div><div class="fc-d">Courbure auto pour éviter le chevauchement quand deux arêtes opposées existent.</div></div>
+  </div>
+
+  <div class="sf">
+    <div class="sf-s"><div class="sf-n">①</div><div class="sf-t">Placer les nœuds</div><div class="sf-d">Outil Nœud. Cliquez sur le canvas. Labels A, B, C… auto.</div></div>
+    <div class="sf-s"><div class="sf-n">②</div><div class="sf-t">Tracer les arêtes</div><div class="sf-d">Outil Arête. Cliquez source puis cible. Courbure auto si arête parallèle existe.</div></div>
+    <div class="sf-s"><div class="sf-n">③</div><div class="sf-t">Paramétrer</div><div class="sf-d">Panneau Graphes : cochez "Orienté", entrez un poids optionnel.</div></div>
+    <div class="sf-s"><div class="sf-n">④</div><div class="sf-t">Manipuler</div><div class="sf-d">Outil Sélect. : glissez les nœuds, supprimez. Tout se synchronise instantanément.</div></div>
+  </div>
+
+  <div class="hcard" style="--hc:#00c9a7">
+    <div class="hcard-lbl">Synchronisation en temps réel</div>
+    <div class="hcard-title">Les arêtes suivent les nœuds</div>
+    <div class="hcard-body">Quand vous déplacez un nœud avec l'outil Sélectionner, <b>toutes les arêtes connectées</b> (x1,y1,x2,y2) sont recalculées instantanément. Aucune arête orpheline. Aucun recalcul manuel nécessaire.</div>
+  </div>
+</div>
+</div>
+
+<!-- SLIDE 6 — TRAVERSÉE -->
+<div class="slide" id="s6">
+<div class="cs">
+  <div class="ch-tag"><span class="num">06</span>— Traversée de graphes</div>
+  <h2 class="ch-title">Algorithmes<br><em>en direct.</em></h2>
+  <p class="ch-intro">BFS, DFS, Dijkstra, Bellman-Ford — visualisés étape par étape sur votre graphe. Chaque nœud et chaque arête changent de couleur selon l'état algorithmique exact.</p>
+
+  <div class="algos">
+    <div class="at" style="--ac:#ffc44d"><span class="at-sym">🌊</span><div class="at-name">BFS</div><div class="at-desc">Parcours en largeur. Explore niveau par niveau. Garantit le plus court chemin (nbre d'arêtes).</div><div class="at-tag">File FIFO</div></div>
+    <div class="at" style="--ac:#ff3d6e"><span class="at-sym">🌲</span><div class="at-name">DFS</div><div class="at-desc">Parcours en profondeur. Explore chaque branche jusqu'au bout avant de revenir.</div><div class="at-tag">Pile récursive</div></div>
+    <div class="at" style="--ac:#5b3fff"><span class="at-sym">⚡</span><div class="at-name">Dijkstra</div><div class="at-desc">Plus court chemin pondéré. Poids ≥ 0. File de priorité. Source → Destination.</div><div class="at-tag">Poids positifs</div></div>
+    <div class="at" style="--ac:#00c9a7"><span class="at-sym">🔁</span><div class="at-name">Bellman-Ford</div><div class="at-desc">Plus court chemin avec poids négatifs. Détecte les cycles négatifs. Relaxation totale.</div><div class="at-tag">Poids négatifs ✓</div></div>
+  </div>
+
+  <div class="legend">
+    <div class="cl"><div class="cl-d" style="--dc:#ffc44d;background:#ffc44d"></div><div><div class="cl-state" style="color:#ffc44d">Jaune — En attente</div><div class="cl-m">Nœud ajouté à la file / mis en attente d'exploration</div></div></div>
+    <div class="cl"><div class="cl-d" style="--dc:#ff3d6e;background:#ff3d6e"></div><div><div class="cl-state" style="color:#ff3d6e">Rose — En visite</div><div class="cl-m">Nœud actuellement traité / en cours de relaxation</div></div></div>
+    <div class="cl"><div class="cl-d" style="--dc:#00c9a7;background:#00c9a7"></div><div><div class="cl-state" style="color:#00c9a7">Vert — Finalisé</div><div class="cl-m">Nœud entièrement visité / distance définitive</div></div></div>
+    <div class="cl"><div class="cl-d" style="--dc:#5b3fff;background:#5b3fff"></div><div><div class="cl-state" style="color:#5b3fff">Violet — Chemin optimal</div><div class="cl-m">Chemin le plus court trouvé et mis en évidence</div></div></div>
+  </div>
+
+  <div class="twin">
+    <div class="hcard" style="--hc:#5b3fff">
+      <div class="hcard-lbl">Panneau Traversée</div>
+      <div class="hcard-title">Draggable & Configurable</div>
+      <div class="hcard-body">Ouvrir avec <span class="ac">Ctrl+R</span>. <b>Glissez le panneau</b> partout sur l'écran. Les nœuds du graphe sont auto-détectés. Choisissez <b>vitesse</b> (100ms–2s), source, destination. Le <b>journal log</b> documente chaque étape en temps réel.</div>
+    </div>
+    <div class="hcard" style="--hc:#00c9a7">
+      <div class="hcard-lbl">Résultat final</div>
+      <div class="hcard-title">Chemin & Coût affichés</div>
+      <div class="hcard-body">À la fin de Dijkstra / Bellman-Ford :<br><br>📍 <b>Chemin :</b> A → C → F → B<br>💰 <b>Coût total :</b> 4.00<br><br>Les arêtes du chemin optimal sont <span class="ac">surlignées en violet</span> sur le canvas.</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- SLIDE 7 — OUTILS & EXPORT -->
+<div class="slide" id="s7">
+<div class="cs">
+  <div class="ch-tag"><span class="num">07</span>— Outils, IA & Export</div>
+  <h2 class="ch-title">Aller<br><em>plus loin.</em></h2>
+  <p class="ch-intro">Assistant IA, multi-tableaux, templates, export HD, thèmes, images et mode présentation — tout l'écosystème pour travailler, enseigner et partager sans limites.</p>
+
+  <div class="fm">
+    <div class="fc"><span class="fc-i">🤖</span><div class="fc-n">Assistant IA (LLaMA 3.3)</div><div class="fc-d">Décrivez en français. L'IA génère mind maps, listes, formules et les place automatiquement sur le canvas.</div></div>
+    <div class="fc"><span class="fc-i">📤</span><div class="fc-n">Export PNG / SVG</div><div class="fc-d">Image haute résolution ou vectoriel. Impression native. Ctrl+E pour PNG rapide.</div></div>
+    <div class="fc"><span class="fc-i">🖼️</span><div class="fc-n">Images & Médias</div><div class="fc-d">Importez PNG, JPG, SVG. 8 poignées de redimensionnement. Z-order. Double-clic pour remplacer.</div></div>
+    <div class="fc"><span class="fc-i">📋</span><div class="fc-n">7 Templates</div><div class="fc-d">Cours Maths, Mind Map, Kanban, SWOT, Timeline, Venn, Matrice 2×2 — prêts en 1 clic.</div></div>
+    <div class="fc"><span class="fc-i">🗂️</span><div class="fc-n">Multi-tableaux</div><div class="fc-d">Ctrl+T pour un nouveau tableau. Renommez par double-clic. Sauvegarde auto localStorage.</div></div>
+    <div class="fc"><span class="fc-i">🎨</span><div class="fc-n">4 Thèmes · 5 Grilles</div><div class="fc-d">Dark, Light, Solarized, Midnight. Grilles : lignes, points, croix, isométrique, aucune.</div></div>
+    <div class="fc"><span class="fc-i">📺</span><div class="fc-n">Mode Présentation</div><div class="fc-d">Plein écran pour projeter. Laser pointer intégré. Navigation clavier.</div></div>
+    <div class="fc"><span class="fc-i">↕️</span><div class="fc-n">Z-order & Sélection</div><div class="fc-d">Monter/descendre les objets. Sélection multi-objets par lasso ou Ctrl+clic.</div></div>
+    <div class="fc"><span class="fc-i">🎉</span><div class="fc-n">Confettis</div><div class="fc-d">Ctrl+Shift+C pour célébrer ! Animation confettis colorés sur tout le canvas.</div></div>
+  </div>
+
+  <div class="rule"></div>
+  <p style="font-family:var(--mono);font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--mid);margin-bottom:14px">Raccourcis globaux</p>
+  <div class="scs">
+    <div class="scr"><div class="sc-k"><span class="key">Ctrl</span><span class="key">K</span></div><div class="sc-l">Palette cmd</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">Ctrl</span><span class="key">E</span></div><div class="sc-l">Export PNG</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">Ctrl</span><span class="key">T</span></div><div class="sc-l">Nouveau tableau</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">Ctrl</span><span class="key">G</span></div><div class="sc-l">Changer grille</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">Ctrl</span><span class="key">R</span></div><div class="sc-l">Traversée graphe</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">Ctrl</span><span class="key">A</span></div><div class="sc-l">Tout sélect.</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">V</span></div><div class="sc-l">Sélectionner</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">H</span></div><div class="sc-l">Main / Pan</div></div>
+    <div class="scr"><div class="sc-k"><span class="key">Ctrl</span><span class="key">⇧</span><span class="key">C</span></div><div class="sc-l">Confettis 🎉</div></div>
+  </div>
+</div>
+</div>
+
+<!-- SLIDE 8 — RATING -->
+<div class="slide" id="s8">
+<div class="rating">
+  <div class="eyebrow" style="justify-content:center;margin-bottom:20px">Votre avis</div>
+  <h2 class="r-q">Cette documentation<br>vous a-t-elle <span>aidé ?</span></h2>
+  <p class="r-sub">Un retour sincère nous aide à améliorer InkSpace pour toute la communauté des créateurs, enseignants et développeurs d'Afrique.</p>
+
+  <div class="stars" id="stars">
+    <div class="star" data-v="1" onclick="rate(1)">⭐</div>
+    <div class="star" data-v="2" onclick="rate(2)">⭐</div>
+    <div class="star" data-v="3" onclick="rate(3)">⭐</div>
+    <div class="star" data-v="4" onclick="rate(4)">⭐</div>
+    <div class="star" data-v="5" onclick="rate(5)">⭐</div>
+  </div>
+  <div class="slbls">
+    <div class="sl" data-v="1">Pas<br>utile</div>
+    <div class="sl" data-v="2">Peu<br>utile</div>
+    <div class="sl" data-v="3">Cor<br>rect</div>
+    <div class="sl" data-v="4">Très<br>utile</div>
+    <div class="sl" data-v="5">Excel<br>lent!</div>
+  </div>
+
+  <button class="like-btn" id="lbtn" onclick="toggleLike()">
+    <span class="hrt" id="hrt">🤍</span>
+    <span id="llbl">J'aime cette documentation</span>
+  </button>
+
+  <div class="rfb" id="rfb"></div>
+
+  <div class="rsum">
+    <div class="rs"><div class="rs-big">8</div><div class="rs-lbl">Sections</div></div>
+    <div class="rs"><div class="rs-big">15+</div><div class="rs-lbl">Outils</div></div>
+    <div class="rs"><div class="rs-big">4</div><div class="rs-lbl">Algos</div></div>
+    <div class="rs"><div class="rs-big" id="yr">—</div><div class="rs-lbl">Votre note</div></div>
+  </div>
+
+  <div class="r-footer">
+    InkSpace v3.0 — Développé par <a href="#">Adjoumani Koffi</a> · Côte d'Ivoire 🇨🇮<br>
+    Gratuit pour les enseignants, étudiants &amp; entrepreneurs d'Afrique<br>
+    <span style="font-size:10px;opacity:.5">← Naviguez avec les flèches clavier ou les boutons</span>
+  </div>
+</div>
+</div>
+
+</div><!-- /viewer -->
+
+<div id="bnav">
+  <button class="bn bn-p" id="bprev" onclick="prev()" disabled>← Précédent</button>
+  <div class="bn-div"></div>
+  <div class="bn-info" id="binfo">1/9</div>
+  <div class="bn-div"></div>
+  <button class="bn bn-n" id="bnext" onclick="next()">Suivant →</button>
+</div>
+
+<script>
+let cur=0,TOTAL=9,liked=false,rating=0;
+const MSGS=['','Merci. Nous notons votre retour.','Nous améliorerons cela.','Bonne base — on continue !','Merci ! Ça nous motive vraiment.','🎉 Excellent ! Merci beaucoup !'];
+
+// Build pips
+const pipsEl=document.getElementById('pips');
+for(let i=0;i<TOTAL;i++){const d=document.createElement('div');d.className='pip'+(i===0?' on':'');d.dataset.i=i;d.onclick=()=>goTo(i);pipsEl.appendChild(d);}
+
+function goTo(n){
+  if(n===cur)return;
+  const old=document.getElementById('s'+cur);
+  old.classList.add('out');
+  setTimeout(()=>{old.classList.remove('on','out');},440);
+  cur=n;
+  const el=document.getElementById('s'+cur);
+  el.classList.add('on');
+  el.scrollTop=0;
+  updateUI();
+}
+function next(){if(cur<TOTAL-1)goTo(cur+1);}
+function prev(){if(cur>0)goTo(cur-1);}
+
+function updateUI(){
+  document.getElementById('prog').style.width=((cur+1)/TOTAL*100).toFixed(1)+'%';
+  document.getElementById('pgn').textContent=cur+1;
+  document.getElementById('binfo').textContent=(cur+1)+'/'+TOTAL;
+  document.getElementById('bprev').disabled=cur===0;
+  document.getElementById('bnext').disabled=cur===TOTAL-1;
+  document.getElementById('bnext').textContent=cur===TOTAL-2?'Donner mon avis →':'Suivant →';
+  document.querySelectorAll('.pip').forEach(p=>p.classList.toggle('on',+p.dataset.i===cur));
+}
+
+function rate(v){
+  rating=v;
+  document.querySelectorAll('.star').forEach((s,i)=>s.classList.toggle('on',i<v));
+  document.querySelectorAll('.sl').forEach(l=>l.classList.toggle('on',+l.dataset.v===v));
+  document.getElementById('yr').textContent=v+'/5';
+  const fb=document.getElementById('rfb');
+  fb.textContent=MSGS[v];fb.classList.add('on');
+}
+function toggleLike(){
+  liked=!liked;
+  document.getElementById('lbtn').classList.toggle('on',liked);
+  document.getElementById('hrt').textContent=liked?'❤️':'🤍';
+  document.getElementById('llbl').textContent=liked?'Merci pour votre soutien !':"J'aime cette documentation";
+  if(liked&&!rating)rate(5);
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key==='ArrowDown')next();
+  if(e.key==='ArrowLeft' ||e.key==='ArrowUp')prev();
+});
+
+// Animated background
+(function(){
+  const c=document.getElementById('bg');
+  const ctx=c.getContext('2d');
+  let W,H,nodes=[];
+  function resize(){W=c.width=window.innerWidth;H=c.height=window.innerHeight;}
+  function init(){nodes=[];const n=Math.floor(W*H/20000);for(let i=0;i<n;i++)nodes.push({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.2,vy:(Math.random()-.5)*.2,r:Math.random()*1.5+.5});}
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    nodes.forEach(n=>{n.x+=n.vx;n.y+=n.vy;if(n.x<0||n.x>W)n.vx*=-1;if(n.y<0||n.y>H)n.vy*=-1;});
+    for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){
+      const dx=nodes[i].x-nodes[j].x,dy=nodes[i].y-nodes[j].y,d=Math.hypot(dx,dy);
+      if(d<130){ctx.beginPath();ctx.moveTo(nodes[i].x,nodes[i].y);ctx.lineTo(nodes[j].x,nodes[j].y);ctx.strokeStyle='rgba(91,63,255,'+(1-d/130)*.1+')';ctx.lineWidth=.5;ctx.stroke();}
+    }
+    nodes.forEach(n=>{ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,Math.PI*2);ctx.fillStyle='rgba(91,63,255,.28)';ctx.fill();});
+    requestAnimationFrame(draw);
+  }
+  window.addEventListener('resize',()=>{resize();init();});
+  resize();init();draw();
+})();
+</script>
+</body>
+</html>

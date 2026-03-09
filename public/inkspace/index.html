@@ -45,7 +45,8 @@
       <button class="hbtn hide-xs" onclick="togglePanel('graph-panel')"><i class="fa fa-diagram-project"></i> <span>Graphes</span></button>
       <button class="hbtn hide-xs" onclick="togglePanel('tmpl-panel')"><i class="fa fa-layer-group"></i> <span>Templates</span></button>
       <button class="hbtn hide-xs" onclick="togglePanel('theme-panel')"><i class="fa fa-palette"></i></button>
-      <button class="hbtn hide-xs" onclick="togglePanel('doc-panel')"><i class="fa fa-book-open"></i> <span>Aide</span></button>
+      <!-- <button class="hbtn hide-xs" onclick="togglePanel('doc-panel')"><i class="fa fa-book-open"></i> <span>Aide</span></button>  -->
+      <button class="hbtn hide-xs" onclick="document.getElementById('help-modal').style.display='flex'"><i class="fa fa-book-open"></i> <span>Aide</span></button>
       <button class="hbtn hide-xs" onclick="UI.openShare()"><i class="fa fa-share-nodes"></i></button>
       <button class="hbtn hide-xs" onclick="App.startPresentation()"><i class="fa fa-display"></i></button>
       <button class="hbtn accent" onclick="App.exportPNG()"><i class="fa fa-download"></i> <span>Export</span></button>
@@ -59,7 +60,8 @@
       <div class="ctx-item" onclick="togglePanel('graph-panel');toggleBurger()"><i class="fa fa-diagram-project"></i> Graphes</div>
       <div class="ctx-item" onclick="togglePanel('tmpl-panel');toggleBurger()"><i class="fa fa-layer-group"></i> Templates</div>
       <div class="ctx-item" onclick="togglePanel('theme-panel');toggleBurger()"><i class="fa fa-palette"></i> Thèmes</div>
-      <div class="ctx-item" onclick="togglePanel('doc-panel');toggleBurger()"><i class="fa fa-book-open"></i> Aide</div>
+      <!-- <div class="ctx-item" onclick="togglePanel('doc-panel');toggleBurger()"><i class="fa fa-book-open"></i> Aide</div> -->
+       <div class="ctx-item" onclick="document.getElementById('help-modal').style.display='flex'";toggleBurger()"><i class="fa fa-book-open"></i> Aide</div>
       <div class="ctx-sep"></div>
       <div class="ctx-item" onclick="UI.openShare();toggleBurger()"><i class="fa fa-share-nodes"></i> Partager</div>
       <div class="ctx-item" onclick="App.startPresentation();toggleBurger()"><i class="fa fa-display"></i> Présentation</div>
@@ -738,6 +740,14 @@
       <div id="gt-result-path"></div>
       <div id="gt-result-cost" style="color:var(--text2);margin-top:3px;"></div>
     </div>
+  </div>
+</div>
+
+<div id="help-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);align-items:center;justify-content:center;">
+  <div style="width:95vw;height:92vh;border-radius:20px;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,.1);">
+    <button onclick="document.getElementById('help-modal').style.display='none'" 
+            style="position:absolute;top:12px;right:16px;z-index:10;background:#ff3d6e;border:none;color:#fff;border-radius:50%;width:32px;height:32px;font-size:16px;cursor:pointer;font-weight:700">✕</button>
+    <iframe src="inkspace-docs.html" style="width:100%;height:100%;border:none;border-radius:20px;"></iframe>
   </div>
 </div>
 
