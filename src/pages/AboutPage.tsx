@@ -146,6 +146,83 @@ const AboutPage: React.FC = () => {
         </div>
       </section>
 
+      {/* ── BANDEAU CODEFORGE ── */}
+      <section className="py-16 px-6 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/20 via-secondary/20 to-accent/20" />
+        <div className="absolute inset-0" style={{
+          backgroundImage: 'radial-gradient(circle at 20% 50%, rgba(99,102,241,0.15) 0%, transparent 50%), radial-gradient(circle at 80% 50%, rgba(236,72,153,0.15) 0%, transparent 50%)'
+        }} />
+        
+        <div className="container mx-auto relative z-10 text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            viewport={{ once: true }}
+          >
+            {/* Badge */}
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-effect border border-primary/30 text-primary text-sm font-mono mb-8">
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              CodeForge WebIDE — Disponible maintenant
+            </div>
+
+            {/* Titre principal */}
+            <h2 className="text-5xl lg:text-8xl font-black mb-6 leading-none tracking-tight">
+              <span className="gradient-text">Codez</span>
+              <br />
+              <span className="text-white">sans limites.</span>
+            </h2>
+
+            {/* Sous-titre */}
+            <p className="text-xl lg:text-2xl text-gray-300 max-w-3xl mx-auto mb-4 leading-relaxed">
+              Un vrai <strong className="text-white">VS Code dans le navigateur</strong>, 
+              hébergé sur le cloud. Python, C++, JavaScript, Java et plus — 
+              avec terminal bash et packages réels.
+            </p>
+
+            <p className="text-lg text-gray-500 mb-10 font-mono">
+              pip install · npm install · gcc · java · go · rust
+            </p>
+
+            {/* CTA */}
+            <motion.a
+              href="/playground"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="inline-flex items-center gap-3 px-10 py-5 bg-gradient-to-r from-primary to-secondary rounded-full font-bold text-white text-lg shadow-lg"
+              style={{ boxShadow: '0 0 40px rgba(99,102,241,0.4)' }}
+            >
+              <span style={{ fontSize: 22 }}>⚒</span>
+              Ouvrir CodeForge IDE
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            </motion.a>
+
+            {/* Stats rapides */}
+            <div className="flex justify-center gap-12 mt-12">
+              {[
+                { val: '10+', lbl: 'Langages' },
+                { val: '∞',   lbl: 'Gratuit' },
+                { val: '24/7', lbl: 'Disponible' },
+              ].map((s, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.15 }}
+                  viewport={{ once: true }}
+                  className="text-center"
+                >
+                  <div className="text-4xl font-black gradient-text">{s.val}</div>
+                  <div className="text-gray-500 text-sm font-mono mt-1">{s.lbl}</div>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        </div>
+      </section>
+      
       {/* Achievements Stats */}
       <section className="py-20 px-6">
         <div className="container mx-auto">
