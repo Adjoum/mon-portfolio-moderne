@@ -22,6 +22,7 @@ const TermsPage = lazy(() => import('./pages/TermsPage'))
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
 
 const WhiteboardPage = lazy(() => import('./pages/whiteboard'))
+const PlaygroundPage = lazy(() => import('./pages/playground'))
 
 // Custom cursor component
 const CustomCursor: React.FC = () => {
@@ -103,14 +104,18 @@ const ScrollToTop: React.FC = () => {
 
 // Animated Routes wrapper
 const AnimatedRoutes: React.FC = () => {
+
   const location = useLocation()
   const isWhiteboard = location.pathname === '/adjoumani-whiteboard'
+  const isPlayground = location.pathname === '/playground'
+  const isFullscreen  = isWhiteboard || isPlayground
+
   useVisitTracker()
 
   return (
     <>
       {/* Scroll to top désactivé sur whiteboard */}
-      {!isWhiteboard && <ScrollToTop />}
+      {!isFullscreen && <ScrollToTop />}
 
       <AnimatePresence mode="wait">
         <Suspense fallback={<PageLoader />}>
@@ -122,6 +127,7 @@ const AnimatedRoutes: React.FC = () => {
             <Route path="/cv" element={<CVPage />} />
             <Route path="/ai-lab" element={<AILabPage />} />
             <Route path="/adjoumani-whiteboard" element={<WhiteboardPage />} />
+            <Route path="/playground" element={<PlaygroundPage />} />
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/terms" element={<TermsPage />} />
@@ -132,7 +138,7 @@ const AnimatedRoutes: React.FC = () => {
       </AnimatePresence>
 
       {/* Footer masqué sur whiteboard */}
-      {!isWhiteboard && <Footer />}
+      {!isFullscreen && <Footer />}
     </>
   )
 }
