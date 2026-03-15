@@ -268,6 +268,11 @@ body:has(.whiteboard-page) {
   }
 }
 
+/* Empêche le scroll sur la page playground */
+body:has(.playground-page) {
+  overflow: hidden;
+}
+
 
 
 
