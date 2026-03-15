@@ -116,6 +116,7 @@ const AnimatedRoutes: React.FC = () => {
     <>
       {/* Scroll to top désactivé sur whiteboard */}
       {!isFullscreen && <ScrollToTop />}
+      {!isPlayground && <Navigation />}
 
       <AnimatePresence mode="wait">
         <Suspense fallback={<PageLoader />}>
@@ -156,7 +157,7 @@ function App() {
     <Router>
       <div className="app-container">
         <CustomCursor />
-        <Navigation />
+        {/*<Navigation />  */}
         <AnimatedRoutes />  {/* ScrollToTop et Footer sont maintenant dedans */}
       </div>
     </Router>
