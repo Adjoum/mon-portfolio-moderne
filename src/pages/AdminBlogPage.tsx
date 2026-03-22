@@ -50,10 +50,10 @@ const AdminBlogPage: React.FC = () => {
   useEffect(() => {
     const token = localStorage.getItem('blog_token');
     const user  = JSON.parse(localStorage.getItem('blog_user') || '{}');
-    if (!token || user?.role !== 'admin') navigate('/admin');
+    if (!token || user?.role !== 'admin') navigate('/blog-admin');
   }, [navigate]);
 
-  const handleLogout = () => { localStorage.removeItem('blog_token'); localStorage.removeItem('blog_user'); navigate('/admin'); };
+  const handleLogout = () => { localStorage.removeItem('blog_token'); localStorage.removeItem('blog_user'); navigate('/blog-admin'); };
 
   useEffect(() => { getTags().then((t: Tag[]) => setAllTags(t)).catch(() => {}); }, []);
 
