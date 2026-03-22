@@ -1,7 +1,7 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import ProjectsGallery from '../components/ProjectsGallery'
-
+// Je test le deploiement
 const ProjectsPage: React.FC = () => {
   return (
     <motion.div

@@ -320,7 +320,7 @@ const BlogPage: React.FC = () => {
 
   const featuredArticles = articles.filter(a => a.featured);
   const regularArticles  = articles.filter(a => !a.featured);
-
+  // Ceci est un test pour deploiement
   return (
     <>
       <style>{`
