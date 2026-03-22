@@ -1,0 +1,117 @@
+# docker-compose.yml
+# À placer dans : D:\adjoumani-portfolio\docker-compose.yml
+#
+# Structure réelle du projet :
+#   D:\adjoumani-portfolio\
+#   ├── docker-compose.yml        ← CE FICHIER
+#   ├── .env.docker               ← variables
+#   ├── Makefile
+#   ├── blog-api\                 ← backend Node.js
+#   │   ├── Dockerfile
+#   │   ├── .dockerignore
+#   │   └── src\
+#   ├── src\                      ← frontend React (même niveau)
+#   ├── Dockerfile.frontend       ← Dockerfile frontend
+#   ├── nginx.conf
+#   └── package.json
+
+services:
+
+  # ── Backend Node.js ────────────────────────────────────────
+  api:
+    build:
+      context: ./blog-api          # ← sous-dossier blog-api
+      dockerfile: Dockerfile
+    container_name: blog-api
+    restart: unless-stopped
+    env_file: .env.docker
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+    ports:
+      - "5000:5000"
+    volumes:
+      - uploads_data:/app/public/uploads
+    networks:
+      - blog-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  # ── Frontend React (Nginx) ────────────────────────────────
+  frontend:
+    build:
+      context: .                   # ← racine adjoumani-portfolio/
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:5000/api}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+    container_name: blog-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    networks:
+      - blog-network
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── MongoDB local (optionnel si tu utilises Atlas) ─────────
+  mongo:
+    image: mongo:7-jammy
+    container_name: blog-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-secret}
+      MONGO_INITDB_DATABASE: blog
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - blog-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ── Mongo Express — interface web (dev seulement) ──────────
+  mongo-express:
+    image: mongo-express:latest
+    container_name: blog-mongo-ui
+    restart: unless-stopped
+    profiles: ["dev"]
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USER:-admin}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD:-secret}
+      #ME_CONFIG_MONGODB_URL: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-secret}@mongo:27017/
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-secret}@ac-fg8khzz-shard-00-00.uberjbb.mongodb.net:27017,ac-fg8khzz-shard-00-01.uberjbb.mongodb.net:27017,ac-fg8khzz-shard-00-02.uberjbb.mongodb.net:27017/adjoumani-blog?ssl=true&replicaSet=atlas-pg2keo-shard-0&authSource=admin&retryWrites=true&w=majority&appName=Cluster0
+      ME_CONFIG_BASICAUTH: "false"
+    ports:
+      - "8081:8081"
+    networks:
+      - blog-network
+    depends_on:
+      - mongo
+
+volumes:
+  mongo_data:
+  uploads_data:
+
+networks:
+  blog-network:
+    driver: bridge

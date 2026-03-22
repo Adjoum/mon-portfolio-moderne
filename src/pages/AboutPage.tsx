@@ -199,6 +199,54 @@ const AboutPage: React.FC = () => {
               </svg>
             </motion.a>
 
+            {/* Mot de passe avec bouton copier */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              viewport={{ once: true }}
+              className="inline-flex flex-col items-center gap-3 mt-8 mb-10"
+            >
+              <p className="text-gray-400 text-sm font-mono">
+                🔑 Mot de passe d'accès à l'IDE
+              </p>
+              <div className="flex items-center gap-3 glass-effect px-6 py-3 rounded-full border border-primary/30">
+                <span className="text-white font-mono font-bold text-lg tracking-widest">
+                  CodeForge2026
+                </span>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText('CodeForge2026')
+                    const btn = document.getElementById('copy-pwd-btn')
+                    if (btn) {
+                      btn.innerHTML = '✓'
+                      btn.style.color = '#4ade80'
+                      setTimeout(() => {
+                        btn.innerHTML = '⧉'
+                        btn.style.color = '#9ca3af'
+                      }, 2000)
+                    }
+                  }}
+                  id="copy-pwd-btn"
+                  title="Copier le mot de passe"
+                  style={{
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '50%',
+                    width: 32, height: 32,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', color: '#9ca3af',
+                    fontSize: 16, transition: 'all .2s',
+                  }}
+                >
+                  ⧉
+                </button>
+              </div>
+              <p className="text-gray-600 text-xs font-mono">
+                Cliquez sur ⧉ pour copier · Collez-le dans l'IDE
+              </p>
+            </motion.div>
+
             {/* Stats rapides */}
             <div className="flex justify-center gap-12 mt-12">
               {[
