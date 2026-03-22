@@ -106,10 +106,10 @@ async function aiGenerateDiagram(userPrompt) {
   return parsed;
 }  */
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 async function aiGenerateDiagram(userPrompt) {
-  const response = await fetch(`${API_URL}/api/groq/generate-diagram`, {
+  const response = await fetch(`${API_URL}/groq/generate-diagram`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt: userPrompt }),
