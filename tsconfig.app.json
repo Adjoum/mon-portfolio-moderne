@@ -24,5 +24,7 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src", "blog-api/src/models", "blog-api/src/routes", "blog-api/src/index.ts"]
+  //"include": ["src", "blog-api/src/models", "blog-api/src/routes", "blog-api/src/index.ts"]
+  "include": ["src"],
+  "exclude": ["node_modules", "blog-api", "dist"]
 }
