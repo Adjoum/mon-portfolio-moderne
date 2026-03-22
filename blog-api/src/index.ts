@@ -23,6 +23,9 @@ import commentsRouter from './routes/comments';
 import authRouter     from './routes/auth';
 import uploadRouter   from './routes/upload';
 import tagsRouter     from './routes/tags';
+import groqRouter from './routes/groq';
+
+
 
 // ── Config ───────────────────────────────────────────────────
 dotenv.config();
@@ -112,6 +115,7 @@ app.use('/api/comments', commentLimiter, commentsRouter);
 app.use('/api/upload',   uploadLimiter,  uploadRouter);
 app.use('/api/auth',     authLimiter,    authRouter);
 app.use('/api/tags',     tagsRouter);
+app.use('/api/groq', groqRouter);
 
 // ── Health check ─────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

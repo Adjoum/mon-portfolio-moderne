@@ -476,11 +476,12 @@ const App = {
     btn.textContent='⏳ Génération...'; btn.disabled=true;
     out.style.display='block'; out.textContent='Génération en cours...'; out.style.color='var(--text2)';
 
-    const GROQ_API_KEY = localStorage.getItem('inkspace_api_key') || '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';
-    const GROQ_MODEL   = 'llama-3.3-70b-versatile'; // modèle Groq rapide et gratuit
-
+    //const GROQ_API_KEY = localStorage.getItem('inkspace_api_key') || 'gsk_ZAef9G4bXt6gcs0ywy4h7qg2i';
+    //const GROQ_MODEL   = 'llama-3.3-70b-versatile'; // modèle Groq rapide et gratuit
+    const API_URL = 'https://api.adjoumani-koffi.com'; // en prod
+    // const API_URL = 'http://localhost:5000'; // en dev
     try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      /*const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${GROQ_API_KEY}`,
@@ -503,7 +504,14 @@ const App = {
           ],
           temperature: 0.7
         })
-      });
+      });*/
+
+      const res = await fetch(`${API_URL}/api/groq/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      }); 
+
 
       const data = await res.json();
 
