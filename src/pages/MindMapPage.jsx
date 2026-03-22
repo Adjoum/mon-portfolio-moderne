@@ -32,7 +32,7 @@ const genId = () => `u${++_nodeIdCounter}_${Date.now().toString(36)}`;
 //  • isEffect:true pour le nœud effet Ishikawa (jamais isRoot:true)
 //  • IDs courts (n1, n2…) pour éviter les collisions
 // ───────────────────────────────────────────────────────────────
-const AI_SYSTEM = `Tu es un expert en diagrammes d'analyse (mind map, Ishikawa, SWOT, 5 Pourquoi…).
+/*const AI_SYSTEM = `Tu es un expert en diagrammes d'analyse (mind map, Ishikawa, SWOT, 5 Pourquoi…).
 Réponds UNIQUEMENT avec du JSON valide, sans markdown, sans \`\`\`json, sans commentaires.
 
 Format EXACT — respecte chaque champ :
@@ -91,11 +91,36 @@ async function aiGenerateDiagram(userPrompt) {
   const raw   = (data.content || []).map(b => b.text || '').join('').trim();
   // Nettoyer d'éventuels backticks résiduels
   const clean = raw
-    .replace(/^```[a-zA-Z]*\s*/i, '')
-    .replace(/\s*```\s*$/i, '')
-    .trim();
+  //  .replace(/^```[a-zA-Z]*\s*/ //i, '')
+  //  .replace(/\s*```\s*$/i, '')
+  //  .trim();
 
-  const parsed = JSON.parse(clean);
+  /*const parsed = JSON.parse(clean);
+
+  // Validation minimale
+  if (!parsed.nodes || typeof parsed.nodes !== 'object')
+    throw new Error('JSON invalide : champ "nodes" manquant');
+  if (!Array.isArray(parsed.edges))
+    throw new Error('JSON invalide : champ "edges" manquant');
+
+  return parsed;
+}  */
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+async function aiGenerateDiagram(userPrompt) {
+  const response = await fetch(`${API_URL}/api/groq/generate-diagram`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt: userPrompt }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.error || `Erreur API ${response.status}`);
+  }
+
+  const parsed = await response.json();
 
   // Validation minimale
   if (!parsed.nodes || typeof parsed.nodes !== 'object')
