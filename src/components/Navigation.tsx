@@ -4,7 +4,7 @@ import {
   Menu, X, Home, User, Briefcase, Code, Mail,
   Download, Brain, PenLine, Terminal,
   Wrench, ChevronDown, LayoutDashboard, Timer,
-  BookMarked, Network, FolderKanban
+  BookMarked, Network, FolderKanban, FileText
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
@@ -86,6 +86,14 @@ const toolItems: ToolItem[] = [
     icon: Terminal,
     description: 'Bac à sable de code',
     color: '#ecc94b',
+  },
+
+  {
+    name: 'Blog',
+    href: '/blog',
+    icon: FileText,
+    description: 'Mon blog',
+    color: '&#8b5cf6',
   },
 ]
 

@@ -63,7 +63,6 @@ app.use((req, res, next) => {
 app.use(cors({
   origin: [
     'https://adjoumani-koffi.com',
-    'https://portfolioblogapi-ak7alid4.b4a.run',
     'https://www.adjoumani-koffi.com',
     'http://localhost',
     'http://localhost:80',
@@ -152,10 +151,23 @@ function shutdown(signal: string) {
   }, 5000);
 }
 
+// Auto-ping anti-sleep (Render Free)
+if (process.env.NODE_ENV === 'production') {
+  const SELF_URL = process.env.RENDER_EXTERNAL_URL || '';
+  setInterval(async () => {
+    try {
+      await fetch(`${SELF_URL}/api/health`);
+      console.log('🏓 Self-ping ok');
+    } catch (e) {
+      console.warn('⚠️ Self-ping failed:', e);
+    }
+  }, 10 * 60 * 1000); // toutes les 10 min
+}
 // ── Lancement ────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
+const BASE_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
 const server = app.listen(PORT, () =>
-  console.log(`🚀 Blog API sur http://localhost:${PORT}`)
+  console.log(`🚀 Blog API ${BASE_URL}`)
 );
 
 // Écouter les signaux d'arrêt
