@@ -478,7 +478,7 @@ const App = {
 
     //const GROQ_API_KEY = localStorage.getItem('inkspace_api_key') || 'gsk_ZAef9G4bXt6gcs0ywy4h7qg2i';
     //const GROQ_MODEL   = 'llama-3.3-70b-versatile'; // modèle Groq rapide et gratuit
-    const API_URL = 'https://api.adjoumani-koffi.com'; // en prod
+    const API_URL = 'VITE_API_URL=https://portfolioblogapi-ak7alid4.b4a.run'; // en prod
     // const API_URL = 'http://localhost:5000'; // en dev
     try {
       /*const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {

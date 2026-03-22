@@ -63,6 +63,7 @@ app.use((req, res, next) => {
 app.use(cors({
   origin: [
     'https://adjoumani-koffi.com',
+    'https://portfolioblogapi-ak7alid4.b4a.run',
     'https://www.adjoumani-koffi.com',
     'http://localhost',
     'http://localhost:80',
