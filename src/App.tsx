@@ -33,6 +33,9 @@ const BlogPage = lazy(() => import('./pages/BlogPage'))
 const BlogPostPage = lazy(() => import('./pages/BlogPostPage'))
 const AdminBlogPage = lazy(() => import('./pages/AdminBlogPage'))
 const AdminLoginPage = lazy(() => import('./pages/AdminLoginPage'))
+const KnowledgeAdmin = lazy(() => import('./pages/KnowledgeAdmin'))
+
+
 
 
 
@@ -148,6 +151,7 @@ const AnimatedRoutes: React.FC = () => {
             <Route path="/playground"             element={<PlaygroundPage />} />
             <Route path="/contact"                element={<ContactPage />} />
             <Route path="/admin"                  element={<AdminDashboard />} />
+            <Route path="/admin/knowledge"        element={<KnowledgeAdmin />} />
             <Route path="/terms"                  element={<TermsPage />} />
             <Route path="/privacy"                element={<PrivacyPage />} />
 

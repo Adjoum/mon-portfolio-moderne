@@ -1,8 +1,10 @@
 // blog-api/src/index.ts
+import dotenv from 'dotenv';
+dotenv.config();
 
 import express    from 'express';
 import cors       from 'cors';
-import dotenv     from 'dotenv';
+
 import mongoose   from 'mongoose';
 import cookieParser from 'cookie-parser';
 import path          from 'path';
@@ -24,11 +26,13 @@ import authRouter     from './routes/auth';
 import uploadRouter   from './routes/upload';
 import tagsRouter     from './routes/tags';
 import groqRouter from './routes/groq';
+import knowledgeRouter from './routes/knowledge';
+import agentRouter from './routes/agent';
 
 
 
-// ── Config ───────────────────────────────────────────────────
-dotenv.config();
+
+
 
 const app = express();
 
@@ -116,6 +120,9 @@ app.use('/api/upload',   uploadLimiter,  uploadRouter);
 app.use('/api/auth',     authLimiter,    authRouter);
 app.use('/api/tags',     tagsRouter);
 app.use('/api/groq', groqRouter);
+app.use('/api/agent/knowledge', knowledgeRouter);
+app.use('/api/agent', agentRouter);
+
 
 // ── Health check ─────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
@@ -162,7 +169,7 @@ if (process.env.NODE_ENV === 'production') {
       console.warn('⚠️ Self-ping failed:', e);
     }
   }, 10 * 60 * 1000); // toutes les 10 min
-}
+} 
 // ── Lancement ────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
 const BASE_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;

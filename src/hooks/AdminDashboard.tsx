@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Brain } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Edit, Trash2, Save, X, Upload, Eye, Download, FileText, Briefcase, Award, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import type { Project, Skill } from '../lib/supabase'
 import AdminLogin from '../components/AdminLogin';
 import VisitorStats from '../components/VisitorStats'
+
+
+
 
 type TabType = 'projects' | 'skills' | 'cv' | 'visitors'
 
@@ -58,6 +63,7 @@ const AdminDashboard: React.FC = () => {
   })
 
   const [techInput, setTechInput] = useState('')
+  const navigate = useNavigate()
 
   // ✅ AJOUTE CE useEffect POUR VÉRIFIER L'AUTHENTIFICATION
   useEffect(() => {
@@ -405,6 +411,28 @@ const AdminDashboard: React.FC = () => {
             <Users size={20} />
             Visiteurs
           </button>
+          {/* Bouton accès Knowledge Base */}
+          <motion.button
+            onClick={() => navigate('/admin/knowledge')}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="px-5 py-3 rounded-xl font-semibold flex items-center gap-2 text-sm relative overflow-hidden"
+            style={{
+              background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(236,72,153,0.2))',
+              border: '1px solid rgba(99,102,241,0.4)',
+              color: '#a5b4fc',
+            }}
+          >
+            <Brain size={18} />
+            🧠 Knowledge Base
+            <span style={{
+              position: 'absolute', top: 4, right: 6,
+              width: 7, height: 7, borderRadius: '50%',
+              background: '#22c55e',
+              animation: 'pulse 2s infinite',
+            }} />
+          </motion.button>
+
         </div>
 
         {/* Contenu des tabs */}

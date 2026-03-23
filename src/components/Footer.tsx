@@ -2,6 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { Github, Linkedin, Mail, X, Facebook, Heart, ArrowUp } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { AIAgent } from './AIAgent';
 
 const Footer: React.FC = () => {
   const scrollToTop = () => {
@@ -167,6 +168,7 @@ const Footer: React.FC = () => {
       >
         <ArrowUp size={24} />
       </motion.button>
+      <AIAgent />
     </footer>
   )
 }
