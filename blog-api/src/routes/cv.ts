@@ -56,8 +56,9 @@ router.post('/compile', async (req: Request, res: Response) => {
     await fs.writeFile(texPath, code, 'utf8');
 
     await run(
-      'pdflatex',
+      "latexmk",
       [
+        '-pdf',
         '-interaction=nonstopmode',
         '-halt-on-error',
         '-file-line-error',
@@ -66,17 +67,7 @@ router.post('/compile', async (req: Request, res: Response) => {
       workDir
     );
 
-    await run(
-      'pdflatex',
-      [
-        '-interaction=nonstopmode',
-        '-halt-on-error',
-        '-file-line-error',
-        'main.tex',
-      ],
-      workDir
-    );
-
+    
     const pdfBuffer = await fs.readFile(pdfPath);
 
     res.setHeader('Content-Type', 'application/pdf');
