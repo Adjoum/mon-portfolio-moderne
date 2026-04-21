@@ -28,6 +28,8 @@ import tagsRouter     from './routes/tags';
 import groqRouter from './routes/groq';
 import knowledgeRouter from './routes/knowledge';
 import agentRouter from './routes/agent';
+import cvRouter from './routes/cv';
+
 
 
 
@@ -122,6 +124,7 @@ app.use('/api/tags',     tagsRouter);
 app.use('/api/groq', groqRouter);
 app.use('/api/agent/knowledge', knowledgeRouter);
 app.use('/api/agent', agentRouter);
+app.use('/api/cv', cvRouter);
 
 
 // ── Health check ─────────────────────────────────────────────

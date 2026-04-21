@@ -1,5 +1,5 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react'
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 
 // ✅ Components chargés immédiatement (critiques)
@@ -34,6 +34,13 @@ const BlogPostPage = lazy(() => import('./pages/BlogPostPage'))
 const AdminBlogPage = lazy(() => import('./pages/AdminBlogPage'))
 const AdminLoginPage = lazy(() => import('./pages/AdminLoginPage'))
 const KnowledgeAdmin = lazy(() => import('./pages/KnowledgeAdmin'))
+const LaTeXCVEditor = lazy(() => import('./pages/CVBuilder/LaTeXEditor'))
+const CVGenerator = lazy(() => import('./pages/CVBuilder/CVGenerator'))
+
+
+
+
+
 
 
 
@@ -54,6 +61,9 @@ const FULLSCREEN_ROUTES = [
   '/adjoumani-whiteboard',
   '/playground',
   '/tools/novamind',   // NovaMind occupe tout l'écran (canvas infini)
+  '/cv-builder',       // CV Builder a sa propre nav interne
+  '/cv-generator',     // CV Generator a sa propre nav interne
+  '/latex-cv-editor',   // LaTeX CV Editor a sa propre nav interne
 ]
 
 // ── Custom cursor ─────────────────────────────────────────────
@@ -128,6 +138,7 @@ const ScrollToTop: React.FC = () => {
 const AnimatedRoutes: React.FC = () => {
   const location   = useLocation()
   const isFullscreen = FULLSCREEN_ROUTES.includes(location.pathname)
+  const navigate = useNavigate();
 
   useVisitTracker()
 
@@ -168,6 +179,9 @@ const AnimatedRoutes: React.FC = () => {
             <Route path="/blog/edit/:id"          element={<AdminBlogPage />} />
             <Route path="/blog/:slug"             element={<BlogPostPage />} />
             <Route path="/blog"                   element={<BlogPage />} />
+            <Route path="/latex-cv-editor"             element={<LaTeXCVEditor />} />
+            
+            <Route path="/cv-generator"           element={<CVGenerator onGoHome={() => navigate('/')} />} />
 
             {/* ── 404 ── */}
             <Route path="*"                       element={<NotFoundPage />} />
