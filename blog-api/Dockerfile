@@ -58,6 +58,6 @@ USER nodeuser
 EXPOSE 5000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-  CMD wget -qO- https://api.adjoumani-koffi/api/health || exit 1  
+  CMD wget -qO- https://api.adjoumani-koffi.com/api/health || exit 1  
 # http://localhost:5000/api/health
 CMD ["node", "dist/index.js"]
