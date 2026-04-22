@@ -11,7 +11,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
  
-const storage = new CloudinaryStorage({
+const storage = new CloudinaryStorage({   //https://adjoumani-portfolio.onrender.com
   cloudinary,
   params: async (req, file) => ({
     folder:         'adjoumani-blog',
