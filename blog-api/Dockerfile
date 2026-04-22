@@ -31,16 +31,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     wget \
-    texlive-latex-base \
-    texlive-latex-recommended \
-    texlive-latex-extra \
-    texlive-fonts-recommended \
-    lmodern \
+    perl \
+    ghostscript \
+    make \
     latexmk \
+    texlive-full \
+    poppler-utils \
  && rm -rf /var/lib/apt/lists/*
 
-# Vérification optionnelle utile au debug
-RUN which pdflatex && which latexmk
+RUN which pdflatex && which latexmk && which xelatex && which lualatex
 
 # Utilisateur non-root
 RUN groupadd -g 1001 nodejs && \
