@@ -826,6 +826,17 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
           {onGoHome && <button className="gp-nav-btn" onClick={onGoHome}>🏠</button>}
           <div className="gp-logo">⚡ CV Generator Pro</div>
           <div className="gp-logo-sub">IA · 8 Templates · Vérification qualité</div>
+          <button
+            onClick={() => window.location.href = '/latex-cv-editor'}
+            style={{
+              padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 700,
+              cursor: 'pointer', border: '1px solid rgba(99,102,241,.4)',
+              background: 'rgba(99,102,241,.1)', color: '#a5b4fc',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            ⚗️ Éditeur LaTeX
+          </button>
         </div>
         {cv && step === 'preview' && (
           <div className="gp-header-right">

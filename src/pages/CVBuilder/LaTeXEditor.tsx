@@ -444,7 +444,19 @@ export default function LaTeXCVEditor() {
         <div style={{ display: "flex", flexDirection: "column" }}>
           <span style={{ fontWeight: 800, fontSize: 15, color: "#e6edf3" }}>📘 LaTeX CV Editor</span>
           <span style={{ fontSize: 10, color: "#8b949e" }}>mode Overleaf-compatible · PDF serveur</span>
+          
         </div>
+        <button
+            onClick={() => window.location.href = '/cv-generator'}
+            style={{
+              padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 700,
+              cursor: 'pointer', border: '1px solid #21262d',
+              background: '#21262d', color: '#8b949e',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            ← CV Generator
+          </button>
 
         <div style={{ display: "flex", gap: 5, marginLeft: 10, flexWrap: "wrap" }}>
           {Object.entries(TEMPLATES).map(([id, t]) => (

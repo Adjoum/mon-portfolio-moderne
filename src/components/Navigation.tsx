@@ -4,7 +4,9 @@ import {
   Menu, X, Home, User, Briefcase, Code, Mail,
   Download, Brain, PenLine, Terminal,
   Wrench, ChevronDown, LayoutDashboard, Timer,
-  BookMarked, Network, FolderKanban, FileText
+  BookMarked, Network, FolderKanban, FileText,
+  UserRoundPen,
+  ScrollText
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
@@ -89,11 +91,20 @@ const toolItems: ToolItem[] = [
   },
 
   {
+    name: 'CV Generator',
+    href: '/cv-generator',
+    icon: UserRoundPen,
+    description: 'Générateur de CV LaTeX professionnel',
+    badge: 'Nouveau',
+    color: '#f6ad55',
+  },
+
+  {
     name: 'Blog',
     href: '/blog',
-    icon: FileText,
-    description: 'Mon blog',
-    color: '&#8b5cf6',
+    icon: ScrollText,
+    description: 'Articles & actualités',
+    color: '#8b5cf6',
   },
 ]
 
