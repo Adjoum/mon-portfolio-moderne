@@ -4,7 +4,7 @@ import {
   Menu, X, Home, User, Briefcase, Code, Mail,
   Download, Brain, PenLine, Terminal,
   Wrench, ChevronDown, LayoutDashboard, Timer,
-  BookMarked, Network, FolderKanban, FileText,
+  BookMarked, Network, FolderKanban, 
   UserRoundPen,
   ScrollText
 } from 'lucide-react'
