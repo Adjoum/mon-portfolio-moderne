@@ -620,7 +620,7 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
             </div>
 
             <div className="gp-grid-2 gp-mt">
-              <Sel label="🎯 Poste visé / Rôle cible" value={intake.targetRole}
+             {/* <Sel label="🎯 Poste visé / Rôle cible" value={intake.targetRole}
                 onChange={v => upI('targetRole', v)}
                 options={[
                   { v:'', l:'-- Tapez ci-dessous --' },
@@ -634,7 +634,34 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
                   { v:'Product Manager',                 l:'Product Manager' },
                 ]} />
               <Inp label="Poste visé (libre)" value={intake.targetRole} onChange={v => upI('targetRole', v)}
-                placeholder="Ex: Senior Software Engineer @ OpenAI" />
+                placeholder="Ex: Senior Software Engineer @ OpenAI" />     */}
+              <label className="gp-field">
+                <span className="gp-field-label">🎯 Poste visé / Rôle cible</span>
+                <input
+                  className="gp-input"
+                  list="targetRole-suggestions"
+                  value={intake.targetRole}
+                  onChange={e => upI('targetRole', e.target.value)}
+                  placeholder="Tapez ou sélectionnez un poste…"
+                />
+                <datalist id="targetRole-suggestions">
+                  <option value="Software Engineer L5 @ Google" />
+                  <option value="ML Engineer @ OpenAI" />
+                  <option value="Senior SWE @ Amazon" />
+                  <option value="Research Scientist @ MIT" />
+                  <option value="Postdoc @ Stanford" />
+                  <option value="Data Scientist Senior" />
+                  <option value="Data Analyst" />
+                  <option value="Graphiste Senior" />
+                  <option value="Product Manager" />
+                  <option value="DevOps Engineer" />
+                  <option value="Fullstack Developer" />
+                  <option value="Ingénieur en imagerie médicale" />
+                  <option value="Technicien de santé" />
+                  <option value="Chef de projet digital" />
+                  <option value="Consultant Business Intelligence" />
+                </datalist>
+              </label>
               <Sel label="Style CV" value={intake.style} onChange={v => upI('style', v as any)} options={[
                 { v:'french', l:'🇫🇷 Français — complet avec photo' },
                 { v:'american', l:'🇺🇸 Américain — concis, impact-first' },
