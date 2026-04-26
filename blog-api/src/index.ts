@@ -37,7 +37,7 @@ import cvRouter from './routes/cv';
 
 
 const app = express();
-
+app.set('trust proxy', 1);
 // ── Middlewares globaux ───────────────────────────────────────
 
 // ── HTTP Request Logger ────────────────────────────────────────
