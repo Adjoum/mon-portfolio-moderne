@@ -63,6 +63,9 @@ const AdminDashboard: React.FC = () => {
   })
 
   const [techInput, setTechInput] = useState('')
+  const [projectImageFile, setProjectImageFile] = useState<File | null>(null);
+  const [projectImagePreview, setProjectImagePreview] = useState<string>("");
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const navigate = useNavigate()
 
   // ✅ AJOUTE CE useEffect POUR VÉRIFIER L'AUTHENTIFICATION
@@ -103,9 +106,90 @@ const AdminDashboard: React.FC = () => {
       setIsLoading(false)
     }
   }
+  const isValidImageUrl = (value: string) => {
+  if (!value.trim()) return false;
 
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return value.startsWith("/");
+  }
+};
+
+const handleProjectImageFileChange = (
+  e: React.ChangeEvent<HTMLInputElement>
+) => {
+  const file = e.target.files?.[0];
+
+  if (!file) return;
+
+  const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+
+  if (!allowedTypes.includes(file.type)) {
+    alert("Format non accepté. Utilise JPG, PNG ou WEBP.");
+    return;
+  }
+
+  const maxSize = 3 * 1024 * 1024; // 3 Mo
+
+  if (file.size > maxSize) {
+    alert("Image trop lourde. Taille maximale : 3 Mo.");
+    return;
+  }
+
+  setProjectImageFile(file);
+  setProjectImagePreview(URL.createObjectURL(file));
+
+  // On vide l'URL saisie pour éviter l'ambiguïté.
+  setProjectForm((prev) => ({
+    ...prev,
+    imageurl: "",
+  }));
+};
+
+const clearProjectImageFile = () => {
+  if (projectImagePreview) {
+    URL.revokeObjectURL(projectImagePreview);
+  }
+
+  setProjectImageFile(null);
+  setProjectImagePreview("");
+};
+
+const uploadProjectImage = async (file: File) => {
+    const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
+    const safeName = projectForm.title
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "");
+
+    const fileName = `${safeName || "project"}-${Date.now()}.${fileExt}`;
+    const filePath = `projects/${fileName}`;
+
+    const { error } = await supabase.storage
+      .from("project-images")
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: file.type,
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    const { data } = supabase.storage
+      .from("project-images")
+      .getPublicUrl(filePath);
+
+    return data.publicUrl;
+  };
   // GESTION DES PROJETS
-  const handleSaveProject = async () => {
+  /*const handleSaveProject = async () => {
     try {
       // Validation basique
       if (!projectForm.title.trim()) {
@@ -160,7 +244,81 @@ const AdminDashboard: React.FC = () => {
       const errorMessage = error?.message || 'Erreur inconnue'
       alert(`Erreur lors de l'enregistrement: ${errorMessage}`)
     }
-  }
+  }   */
+  const handleSaveProject = async () => {
+    try {
+      if (!projectForm.title.trim()) {
+        alert("Le titre est obligatoire");
+        return;
+      }
+
+      setIsUploadingImage(true);
+
+      let finalImageUrl = projectForm.imageurl.trim();
+
+      if (projectImageFile) {
+        finalImageUrl = await uploadProjectImage(projectImageFile);
+      }
+
+      if (!finalImageUrl) {
+        finalImageUrl = "/api/placeholder/800/600";
+      }
+
+      if (
+        finalImageUrl !== "/api/placeholder/800/600" &&
+        !isValidImageUrl(finalImageUrl)
+      ) {
+        alert("URL image invalide. Utilise une URL complète ou charge une image.");
+        return;
+      }
+
+      const cleanData = {
+        title: projectForm.title.trim(),
+        description: projectForm.description.trim(),
+        technologies: projectForm.technologies.filter((t) => t.trim()),
+        imageurl: finalImageUrl,
+        githuburl: projectForm.githuburl.trim() || null,
+        liveurl: projectForm.liveurl.trim() || null,
+        category: projectForm.category,
+        featured: projectForm.featured,
+      };
+
+      console.log("Données à envoyer:", cleanData);
+
+      if (editingProject) {
+        const { error } = await supabase
+          .from("projects")
+          .update(cleanData)
+          .eq("id", editingProject.id);
+
+        if (error) {
+          console.error("Erreur Supabase:", error);
+          throw error;
+        }
+      } else {
+        const { error } = await supabase.from("projects").insert([cleanData]);
+
+        if (error) {
+          console.error("Erreur Supabase:", error);
+          throw error;
+        }
+      }
+
+      setShowProjectForm(false);
+      setEditingProject(null);
+      resetProjectForm();
+      clearProjectImageFile();
+      loadData();
+
+      alert("Projet enregistré avec succès !");
+    } catch (error: any) {
+      console.error("Erreur complète:", error);
+      const errorMessage = error?.message || "Erreur inconnue";
+      alert(`Erreur lors de l'enregistrement: ${errorMessage}`);
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
   const handleDeleteProject = async (id: string) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer ce projet ?')) return
@@ -176,7 +334,7 @@ const AdminDashboard: React.FC = () => {
     }
   }
 
-  const handleEditProject = (project: Project) => {
+  /*const handleEditProject = (project: Project) => {
     setEditingProject(project)
     setProjectForm({
       title: project.title || '',
@@ -189,9 +347,25 @@ const AdminDashboard: React.FC = () => {
       featured: project.featured || false
     })
     setShowProjectForm(true)
-  }
+  }  */
+  const handleEditProject = (project: Project) => {
+    clearProjectImageFile();
 
-  const resetProjectForm = () => {
+    setEditingProject(project);
+    setProjectForm({
+      title: project.title || "",
+      description: project.description || "",
+      technologies: project.technologies || [],
+      imageurl: project.imageurl || "",
+      githuburl: project.githuburl || "",
+      liveurl: project.liveurl || "",
+      category: project.category,
+      featured: project.featured || false,
+    });
+    setShowProjectForm(true);
+  };
+
+  /*const resetProjectForm = () => {
     setProjectForm({
       title: '',
       description: '',
@@ -202,7 +376,21 @@ const AdminDashboard: React.FC = () => {
       category: 'web',
       featured: false
     })
-  }
+  }  */
+  const resetProjectForm = () => {
+    clearProjectImageFile();
+
+    setProjectForm({
+      title: "",
+      description: "",
+      technologies: [],
+      imageurl: "",
+      githuburl: "",
+      liveurl: "",
+      category: "web",
+      featured: false,
+    });
+  };
 
   const addTechnology = () => {
     if (techInput.trim() && !projectForm.technologies.includes(techInput.trim())) {
@@ -497,7 +685,7 @@ const AdminDashboard: React.FC = () => {
                       <select
                         value={projectForm.category}
                         onChange={(e) => setProjectForm({ ...projectForm, category: e.target.value as any })}
-                        className="w-full px-4 py-3 glass-effect rounded-lg text-white"
+                        className="w-full px-4 py-3 glass-effect rounded-lg text-black bg-white"
                       >
                         <option value="web">Web</option>
                         <option value="mobile">Mobile</option>
@@ -517,7 +705,7 @@ const AdminDashboard: React.FC = () => {
                       />
                     </div>
 
-                    <div>
+                    {/*<div>
                       <label className="block text-sm font-medium text-gray-300 mb-2">URL Image</label>
                       <input
                         type="text"
@@ -526,6 +714,67 @@ const AdminDashboard: React.FC = () => {
                         className="w-full px-4 py-3 glass-effect rounded-lg text-white"
                         placeholder="/images/projet.jpg"
                       />
+                    </div>  */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Image du projet
+                      </label>
+
+                      <div className="space-y-3">
+                        <input
+                          type="text"
+                          value={projectForm.imageurl}
+                          onChange={(e) => {
+                            clearProjectImageFile();
+                            setProjectForm({
+                              ...projectForm,
+                              imageurl: e.target.value,
+                            });
+                          }}
+                          className="w-full px-4 py-3 glass-effect rounded-lg text-white"
+                          placeholder="https://site.com/image.jpg ou /images/projet.jpg"
+                        />
+
+                        <div className="flex items-center gap-3">
+                          <label className="px-4 py-3 glass-effect rounded-lg text-gray-200 hover:text-white cursor-pointer flex items-center gap-2 border border-white/10 hover:border-primary/50 transition-colors">
+                            <Upload size={18} className="text-primary" />
+                            Charger une image locale
+
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/jpg,image/webp"
+                              onChange={handleProjectImageFileChange}
+                              className="hidden"
+                            />
+                          </label>
+
+                          {projectImageFile && (
+                            <button
+                              type="button"
+                              onClick={clearProjectImageFile}
+                              className="px-4 py-3 bg-red-500/20 text-red-400 rounded-lg flex items-center gap-2"
+                            >
+                              <X size={16} />
+                              Retirer
+                            </button>
+                          )}
+                        </div>
+
+                        {(projectImagePreview || projectForm.imageurl) && (
+                          <div className="mt-3">
+                            <p className="text-sm text-gray-400 mb-2">Aperçu</p>
+
+                            <img
+                              src={projectImagePreview || projectForm.imageurl}
+                              alt="Aperçu du projet"
+                              className="w-full h-48 object-cover rounded-xl border border-white/10"
+                              onError={(e) => {
+                                e.currentTarget.src = "/api/placeholder/800/600";
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div>
@@ -598,12 +847,29 @@ const AdminDashboard: React.FC = () => {
                   </div>
 
                   <div className="flex gap-4 mt-6">
-                    <button
+                    {/*<button
                       onClick={handleSaveProject}
                       className="px-6 py-3 bg-gradient-to-r from-primary to-secondary rounded-lg font-semibold text-white flex items-center gap-2"
                     >
                       <Save size={20} />
                       Enregistrer
+                    </button>  */}
+                    <button
+                      onClick={handleSaveProject}
+                      disabled={isUploadingImage}
+                      className="px-6 py-3 bg-gradient-to-r from-primary to-secondary rounded-lg font-semibold text-white flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {isUploadingImage ? (
+                        <>
+                          <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white" />
+                          Upload...
+                        </>
+                      ) : (
+                        <>
+                          <Save size={20} />
+                          Enregistrer
+                        </>
+                      )}
                     </button>
                     <button
                       onClick={() => {
