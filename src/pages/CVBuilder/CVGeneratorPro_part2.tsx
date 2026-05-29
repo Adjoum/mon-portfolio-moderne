@@ -343,9 +343,15 @@ function tStanford(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
     </td></tr>
   </table>`;
 
-  const ROW = (label: string, content: string) => `<table width="100%" style="border-collapse:collapse;margin-top:9px;">
+  /*const ROW = (label: string, content: string) => `<table width="100%" style="border-collapse:collapse;margin-top:9px;">
     <tr>
       <td style="width:22%;font-size:9pt;font-weight:700;color:#666;text-align:right;padding-right:12px;vertical-align:top;">${esc(label)}</td>
+      <td style="border-left:1px solid ${pc}30;padding-left:14px;vertical-align:top;font-size:9.5pt;">${content}</td>
+    </tr>
+  </table>`;  */
+  const ROW = (label: string, content: string) => `<table width="100%" style="border-collapse:collapse;margin-top:9px;">
+    <tr>
+      <td style="width:22%;font-size:9pt;font-weight:700;color:#666;text-align:right;padding-right:12px;vertical-align:top;">${label}</td>
       <td style="border-left:1px solid ${pc}30;padding-left:14px;vertical-align:top;font-size:9.5pt;">${content}</td>
     </tr>
   </table>`;
