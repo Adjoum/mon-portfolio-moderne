@@ -1,5 +1,5 @@
 // CVGeneratorPro — Part 3: Main Component
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Popup, ImportCVPanel, DEFAULT_DESIGN,
   generateCV, verifyCV,
@@ -419,18 +419,65 @@ function CVEditPanel({
   );
 }
 
+// ── Persistance locale ─────────────────────────────────────────
+const STORAGE_KEY = 'cvgenpro:state:v1';
+
+type PersistedState = {
+  step: 'form' | 'preview';
+  intake: IntakeData;
+  cv: GeneratedCV | null;
+  template: TemplateId;
+  design: DesignConfig;
+};
+
+function loadPersisted(): Partial<PersistedState> {
+  try {
+    if (typeof window === 'undefined') return {};
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Partial<PersistedState>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) {
   // State
-  const [step,        setStep]        = useState<'form' | 'preview'>('form');
-  const [intake,      setIntake]      = useState<IntakeData>(emptyIntake());
-  const [cv,          setCv]          = useState<GeneratedCV | null>(null);
-  const [template,    setTemplate]    = useState<TemplateId>('cascade');
-  const [design,      setDesign]      = useState<DesignConfig>(DEFAULT_DESIGN);
+  //const [step,        setStep]        = useState<'form' | 'preview'>('form');
+  //const [intake,      setIntake]      = useState<IntakeData>(emptyIntake());
+  //const [cv,          setCv]          = useState<GeneratedCV | null>(null);
+
+
+    // Lu une seule fois au montage (initializer paresseux)
+  const [saved] = useState<Partial<PersistedState>>(loadPersisted);
+
+  const [step, setStep] = useState<'form' | 'preview'>(
+    saved.step === 'preview' && saved.cv ? 'preview' : 'form'
+  );
+  const [intake,   setIntake]   = useState<IntakeData>(saved.intake ?? emptyIntake());
+  const [cv,       setCv]       = useState<GeneratedCV | null>(saved.cv ?? null);
+  const [template, setTemplate] = useState<TemplateId>(saved.template ?? 'cascade');
+  const [design,   setDesign]   = useState<DesignConfig>(saved.design ?? DEFAULT_DESIGN);
+
+
+  //const [template,    setTemplate]    = useState<TemplateId>('cascade');
+  //const [design,      setDesign]      = useState<DesignConfig>(DEFAULT_DESIGN);
   const [showDesign,  setShowDesign]  = useState(false);
   const [showImport,  setShowImport]  = useState(false);
   const [activeTab,   setActiveTab]   = useState<'identity'|'experience'|'education'|'skills'|'projects'>('identity');
   const [popup,       setPopup]       = useState<PopupState>({ open: false, type: 'info', title: '' });
-  const fileRef = useRef<HTMLInputElement>(null);
+  const fileRef                       = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const payload: PersistedState = { step, intake, cv, template, design };
+    const t = setTimeout(() => {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      } catch (err) {
+        console.warn('CV : sauvegarde locale impossible (quota dépassé ?)', err);
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [step, intake, cv, template, design]);
 
   const showPopup = useCallback((p: Omit<PopupState, 'open'>) =>
     setPopup({ ...p, open: true }), []);
