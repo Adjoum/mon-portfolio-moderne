@@ -342,53 +342,9 @@ async function aiGenerateLatex(info: string, template: string, existing: string)
             - N’invente aucune information absente.
             - Si une photo est prévue dans le code ou demandée, intègre-la proprement avec graphicx.
             - Organise le CV de manière logique si nécessaire : en-tête, profil, compétences, expérience, formation, projets, certifications, langues, centres d’intérêt.
-            ▸ Si l'utilisateur veut mettre une photo OU demande de réserver l'emplacement d'une photo,
-              applique IMPÉRATIVEMENT les règles 1 et 2 ci-dessous.
-            ▸ Les règles sur le NOM (règle 3) s'appliquent TOUJOURS, photo ou pas.
-
-            1) EMPLACEMENT DE LA PHOTO
-              - En-tête sur deux colonnes (deux minipage côte à côte) : à GAUCHE nom + titre + contacts,
-                à DROITE la photo.
-              - À l'endroit exact de la photo, écris UNIQUEMENT le marqueur %%PHOTO%% (sur sa propre ligne).
-              - N'écris JAMAIS \includegraphics toi-même, et ne mets JAMAIS ce marqueur en commentaire.
-                Le système remplace %%PHOTO%% par la vraie photo (ou un cadre vide s'il n'y en a pas).
-
-            2) ALIGNEMENT VERTICAL DE LA PHOTO (très important)
-              - Le HAUT de la photo doit être au même niveau que la PREMIÈRE LIGNE du nom.
-              - Le BAS de la photo doit arriver JUSTE AU-DESSUS du cadre « Profil ».
-              - Pour y arriver : les deux minipage sont en [t] et chacune COMMENCE par \vspace*{0pt}
-                (sans ça, la photo « remonte » trop haut). Modèle à suivre :
-
-                \begin{minipage}[t]{0.70\textwidth}
-                    \vspace*{0pt}
-                    % ... bloc nom (règle 3) + titre + contacts ...
-                \end{minipage}
-                \hfill
-                \begin{minipage}[t]{0.26\textwidth}
-                    \raggedleft
-                    \vspace*{0pt}
-                    %%PHOTO%%
-                \end{minipage}
-
-            3) NOM — NE JAMAIS COUPER UN MOT, ET RÉDUIRE SI TROP LONG
-              - Césure INTERDITE : un mot qui ne tient pas passe ENTIER à la ligne suivante
-                (jamais « ADJOU-MANI » ; on veut « KOFFI WILFRIED » puis « ADJOUMANI »).
-              - Si le nom complet est trop long, sa taille de police DIMINUE automatiquement.
-              - Mets le nom dans une macro \fullname et utilise ce code EXACT :
-
-                % --- dans le préambule ---
-                \newlength{\nameW}
-                \newcommand{\fullname}{PRÉNOM NOM DE L'UTILISATEUR}
-
-                % --- au début du minipage de gauche, pour afficher le nom ---
-                \settowidth{\nameW}{\Huge\bfseries\fullname}%
-                {\bfseries\textcolor{textdark}{\raggedright\hyphenpenalty=10000\exhyphenpenalty=10000\relax
-                  \ifdim\nameW>\dimexpr2\linewidth\relax\LARGE\else\Huge\fi
-                  \fullname\par}}
-                \vspace{4pt}
-
-            ▸ Si l'utilisateur NE veut PAS de photo : n'utilise ni %%PHOTO%% ni la colonne de droite ;
-              le bloc nom occupe alors toute la largeur, mais la règle 3 reste appliquée.
+            - Pour l'emplacement de la photo, insère EXACTEMENT le marqueur %%PHOTO%% sur sa propre ligne (en général dans un minipage en haut à droite de l'en-tête).
+            - N'écris JAMAIS \includegraphics toi-même pour la photo, et ne mets JAMAIS ce marqueur en commentaire.
+            - Le système remplace automatiquement %%PHOTO%% par la photo fournie par l'utilisateur (ou par un cadre vide s'il n'y en a pas). Tu n'as donc rien d'autre à gérer pour la photo.
 
             Objectif final :
             produire un CV LaTeX propre, cohérent, moderne, élégant, professionnel et prêt à compiler immédiatement sur Overleaf.`,
@@ -440,53 +396,9 @@ async function aiImproveSelection(selection: string, instruction: string, fullCo
             - Si une photo est déjà prévue dans le code, conserve-la et améliore son intégration proprement.
             - Si le code contient des sections mal organisées, réorganise-les de façon logique : en-tête, profil, compétences, expérience, formation, projets, certifications, langues, centres d’intérêt.
             - Assure-toi que les caractères accentués en français sont correctement gérés.
-            ▸ Si l'utilisateur veut mettre une photo OU demande de réserver l'emplacement d'une photo,
-              applique IMPÉRATIVEMENT les règles 1 et 2 ci-dessous.
-            ▸ Les règles sur le NOM (règle 3) s'appliquent TOUJOURS, photo ou pas.
-
-            1) EMPLACEMENT DE LA PHOTO
-              - En-tête sur deux colonnes (deux minipage côte à côte) : à GAUCHE nom + titre + contacts,
-                à DROITE la photo.
-              - À l'endroit exact de la photo, écris UNIQUEMENT le marqueur %%PHOTO%% (sur sa propre ligne).
-              - N'écris JAMAIS \includegraphics toi-même, et ne mets JAMAIS ce marqueur en commentaire.
-                Le système remplace %%PHOTO%% par la vraie photo (ou un cadre vide s'il n'y en a pas).
-
-            2) ALIGNEMENT VERTICAL DE LA PHOTO (très important)
-              - Le HAUT de la photo doit être au même niveau que la PREMIÈRE LIGNE du nom.
-              - Le BAS de la photo doit arriver JUSTE AU-DESSUS du cadre « Profil ».
-              - Pour y arriver : les deux minipage sont en [t] et chacune COMMENCE par \vspace*{0pt}
-                (sans ça, la photo « remonte » trop haut). Modèle à suivre :
-
-                \begin{minipage}[t]{0.70\textwidth}
-                    \vspace*{0pt}
-                    % ... bloc nom (règle 3) + titre + contacts ...
-                \end{minipage}
-                \hfill
-                \begin{minipage}[t]{0.26\textwidth}
-                    \raggedleft
-                    \vspace*{0pt}
-                    %%PHOTO%%
-                \end{minipage}
-
-            3) NOM — NE JAMAIS COUPER UN MOT, ET RÉDUIRE SI TROP LONG
-              - Césure INTERDITE : un mot qui ne tient pas passe ENTIER à la ligne suivante
-                (jamais « ADJOU-MANI » ; on veut « KOFFI WILFRIED » puis « ADJOUMANI »).
-              - Si le nom complet est trop long, sa taille de police DIMINUE automatiquement.
-              - Mets le nom dans une macro \fullname et utilise ce code EXACT :
-
-                % --- dans le préambule ---
-                \newlength{\nameW}
-                \newcommand{\fullname}{PRÉNOM NOM DE L'UTILISATEUR}
-
-                % --- au début du minipage de gauche, pour afficher le nom ---
-                \settowidth{\nameW}{\Huge\bfseries\fullname}%
-                {\bfseries\textcolor{textdark}{\raggedright\hyphenpenalty=10000\exhyphenpenalty=10000\relax
-                  \ifdim\nameW>\dimexpr2\linewidth\relax\LARGE\else\Huge\fi
-                  \fullname\par}}
-                \vspace{4pt}
-
-            ▸ Si l'utilisateur NE veut PAS de photo : n'utilise ni %%PHOTO%% ni la colonne de droite ;
-              le bloc nom occupe alors toute la largeur, mais la règle 3 reste appliquée.
+            - Pour l'emplacement de la photo, insère EXACTEMENT le marqueur %%PHOTO%% sur sa propre ligne (en général dans un minipage en haut à droite de l'en-tête).
+            - N'écris JAMAIS \includegraphics toi-même pour la photo, et ne mets JAMAIS ce marqueur en commentaire.
+            - Le système remplace automatiquement %%PHOTO%% par la photo fournie par l'utilisateur (ou par un cadre vide s'il n'y en a pas). Tu n'as donc rien d'autre à gérer pour la photo.
 
             Objectif final :
             produire un CV LaTeX propre, élégant, professionnel, bien structuré et prêt à être compilé sans modification.`,
