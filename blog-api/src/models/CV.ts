@@ -54,4 +54,4 @@ CVSchema.index({ exportedAt: -1 });
 CVSchema.index({ aiValidationScore: -1 });
 CVSchema.index({ fullName: 'text', targetRole: 'text', template: 'text' });
 
-export default mongoose.model<ICV>('CV', CVSchema);
+export default mongoose.model<ICV>('CV', CVSchema);   

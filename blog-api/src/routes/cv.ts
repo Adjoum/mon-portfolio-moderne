@@ -7,6 +7,113 @@ import { spawn } from 'child_process';
 
 const router = Router();
 
+const COMPILE_TIMEOUT_MS = 30_000;
+
+function run(
+  command: string,
+  args: string[],
+  cwd: string
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd });
+
+    let stdout = '';
+    let stderr = '';
+
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error('Compilation trop longue (timeout 30s).'));
+    }, COMPILE_TIMEOUT_MS);
+
+    child.stdout.on('data', (data) => { stdout += data.toString(); });
+    child.stderr.on('data', (data) => { stderr += data.toString(); });
+
+    child.on('error', (err) => { clearTimeout(timer); reject(err); });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve({ stdout, stderr });
+      else reject(new Error(stderr || stdout || `${command} failed with code ${code}`));
+    });
+  });
+}
+
+router.post('/compile', async (req: Request, res: Response) => {
+  const code  = typeof req.body?.code  === 'string' ? req.body.code  : '';
+  const photo = typeof req.body?.photo === 'string' ? req.body.photo : '';
+
+  if (!code.trim()) {
+    return res.status(400).json({ error: 'Code LaTeX vide.' });
+  }
+
+  const workDir = path.join(os.tmpdir(), `latex-${randomUUID()}`);
+  const texPath = path.join(workDir, 'main.tex');
+  const pdfPath = path.join(workDir, 'main.pdf');
+
+  try {
+    await fs.mkdir(workDir, { recursive: true });
+    await fs.writeFile(texPath, code, 'utf8');
+
+    // ── Photo optionnelle ────────────────────────────────────
+    // Le frontend envoie toujours du JPEG → on l'enregistre en photo.jpg
+    if (photo) {
+      const match = photo.match(/^data:image\/jpe?g;base64,(.+)$/);
+      if (match) {
+        const buffer = Buffer.from(match[1], 'base64');
+        // Sécurité : on refuse une image > 8 Mo
+        if (buffer.length <= 8 * 1024 * 1024) {
+          await fs.writeFile(path.join(workDir, 'photo.jpg'), buffer);
+        }
+      }
+    }
+
+    await run(
+      'latexmk',
+      ['-pdf', '-interaction=nonstopmode', '-halt-on-error', '-file-line-error', 'main.tex'],
+      workDir
+    );
+
+    const pdfBuffer = await fs.readFile(pdfPath);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="cv.pdf"');
+    return res.send(pdfBuffer);
+  } catch (error: any) {
+    console.error('❌ CV compile error:', error);
+    return res.status(500).json({
+      error: error?.message || 'Compilation LaTeX échouée.',
+    });
+  } finally {
+    await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+export default router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*import { Router, Request, Response } from 'express';
+import { promises as fs } from 'fs';
+import os from 'os';
+import path from 'path';
+import { randomUUID } from 'crypto';
+import { spawn } from 'child_process';
+
+const router = Router();
+
 function run(
   command: string,
   args: string[],
@@ -83,7 +190,7 @@ router.post('/compile', async (req: Request, res: Response) => {
   }
 });
 
-export default router;
+export default router;   */
 
 
 

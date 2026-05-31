@@ -1,145 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 
-/*const TEMPLATES: Record<string, { name: string; emoji: string; code: string }> = {
-  overleafClassic: {
-    name: "Overleaf Classic",
-    emoji: "📄",
-    code: `\\documentclass[11pt,a4paper]{article}
 
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage[french]{babel}
-\\usepackage[a4paper,top=1.6cm,bottom=1.6cm,left=1.6cm,right=1.6cm]{geometry}
-\\usepackage{parskip}
-\\usepackage{enumitem}
-\\usepackage{xcolor}
-\\usepackage{hyperref}
-\\usepackage{array}
-\\usepackage{titlesec}
-\\usepackage{lmodern}
 
-\\definecolor{mainblue}{HTML}{0F4C81}
 
-\\hypersetup{
-  colorlinks=true,
-  urlcolor=mainblue,
-  linkcolor=mainblue
-}
 
-\\titleformat{\\section}
-{\\large\\bfseries\\color{mainblue}}
-{}{0em}{}
-[\\titlerule]
-
-\\titlespacing{\\section}{0pt}{10pt}{6pt}
-\\setlist[itemize]{leftmargin=1.2em,itemsep=2pt,topsep=2pt}
-\\pagestyle{empty}
-
-\\begin{document}
-
-\\begin{center}
-  {\\LARGE \\textbf{KOFFI WILFRIED ADJOUMANI}}\\\\[6pt]
-  {\\large Technicien Supérieur de Santé -- Imagerie Médicale \\;|\\; Data Analyst / Développeur}\\\\[8pt]
-  San-Pedro, Côte d'Ivoire \\;|\\; +225 XX XX XX XX XX \\;|\\;
-  \\href{mailto:votreemail@email.com}{votreemail@email.com}\\\\[4pt]
-  \\href{https://www.linkedin.com/in/koffi-wilfried-adjoumani/}{LinkedIn}
-  \\;|\\;
-  \\href{https://github.com/Adjoum}{GitHub}
-  \\;|\\;
-  \\href{https://agjoumani-koffi.com}{Portfolio}
-\\end{center}
-
-\\vspace{0.2cm}
-
-\\section{Profil}
-Technicien supérieur de santé spécialisé en imagerie médicale, actuellement en formation en \\textbf{Data Analytics Industriel} et en \\textbf{Big Data Analytics}. Passionné par l'analyse de données, l'intelligence artificielle, le développement web et la création de solutions numériques à fort impact.
-
-\\section{Compétences}
-\\begin{tabular}{>{\\bfseries}p{4.2cm} p{11cm}}
-Analyse de données & Excel, Power BI, SQL, Python, statistiques descriptives, tableaux de bord \\\\
-Développement web & HTML, CSS, JavaScript, TypeScript, React, Next.js, Tailwind CSS \\\\
-IA / Automatisation & Prompt engineering, outils IA, automatisation de tâches, chatbots, solutions SaaS \\\\
-Base de données & MySQL, MongoDB, Prisma, Supabase \\\\
-Outils & Git, GitHub, VS Code, Overleaf, Postman \\\\
-Qualités & Rigueur, autonomie, adaptabilité, esprit analytique, apprentissage rapide \\\\
-\\end{tabular}
-
-\\section{Expérience professionnelle}
-\\textbf{Technicien Supérieur de Santé -- Imagerie Médicale} \\hfill \\textit{Depuis 2024}\\\\
-\\textit{EPHR / CHR San-Pedro, Côte d'Ivoire}
-\\begin{itemize}
-  \\item Réalisation et suivi des examens d'imagerie médicale, notamment en tomodensitométrie (TDM).
-  \\item Accueil, préparation et prise en charge des patients dans le respect des protocoles.
-  \\item Contribution à l'amélioration de l'organisation du service et du flux de travail.
-\\end{itemize}
-
-\\section{Formation}
-\\textbf{Master 1 Big Data Analytics} \\hfill \\textit{En cours}\\\\
-\\textit{Université Virtuelle de Côte d'Ivoire (UVCI)}
-
-\\textbf{Licence 3 Data Analytics Industriel} \\hfill \\textit{En cours}\\\\
-\\textit{Institut National Polytechnique Félix Houphouët-Boigny (INPHB)}
-
-\\textbf{Diplôme d'État en Imagerie Médicale} \\hfill \\textit{Obtenu}\\\\
-\\textit{INFAS}
-
-\\section{Projets}
-\\textbf{Portfolio professionnel personnel}
-\\begin{itemize}
-  \\item Conception et développement d'un portfolio moderne pour présenter mon parcours, mes compétences et mes réalisations.
-\\end{itemize}
-
-\\textbf{Applications web et SaaS}
-\\begin{itemize}
-  \\item Développement de solutions web intégrant IA, automatisation, gestion de données et interfaces modernes.
-\\end{itemize}
-
-\\section{Langues}
-\\begin{itemize}
-  \\item Français : courant
-  \\item Anglais : intermédiaire
-\\end{itemize}
-
-\\section{Centres d'intérêt}
-Intelligence artificielle, data science, santé numérique, développement web, innovation technologique, automatisation.
-
-\\end{document}`,
-  },
-
-  minimal: {
-    name: "Minimal",
-    emoji: "✏️",
-    code: `\\documentclass[11pt,a4paper]{article}
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage[a4paper,margin=2cm]{geometry}
-\\usepackage{hyperref}
-\\pagestyle{empty}
-
-\\begin{document}
-
-{\\LARGE\\textbf{Votre Nom}} \\hfill \\href{mailto:email@example.com}{email@example.com}\\\\
-Votre poste \\hfill +225 XX XX XX XX XX
-
-\\bigskip\\hrule\\bigskip
-
-\\section*{Expérience}
-\\textbf{Poste} \\hfill 2022--présent\\\\
-Entreprise, Ville\\\\
-Description du rôle.
-
-\\bigskip
-\\section*{Formation}
-\\textbf{Diplôme} \\hfill 2022\\\\
-Institution
-
-\\bigskip
-\\section*{Compétences}
-Compétence 1, Compétence 2, Compétence 3
-
-\\end{document}`,
-  },
-};  */
 const TEMPLATES: Record<string, { name: string; emoji: string; code: string }> = {
   overleafClassic: {
     name: "Premium Hero",
@@ -198,10 +62,8 @@ const TEMPLATES: Record<string, { name: string; emoji: string; code: string }> =
 \\end{minipage}
 \\hfill
 \\begin{minipage}[t]{0.23\\textwidth}
-    \\raggedleft
-    % Décommentez la ligne suivante pour afficher une photo
-    % \\includegraphics[width=3.0cm,height=3.8cm,keepaspectratio]{photo.jpg}
-    \\colorbox{softblue}{\\parbox[c][3.8cm][c]{3.2cm}{\\centering\\textcolor{textmuted}{\\small Photo\\\\optionnelle}}}
+   \\raggedleft
+    %%PHOTO%%
 \\end{minipage}
 
 \\vspace{0.35cm}
@@ -442,34 +304,9 @@ Compétence 1, Compétence 2, Compétence 3, Compétence 4
   },
 };
 
-/*async function aiGenerateLatex(info: string, template: string, existing: string): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 3000,
-      system: `Tu es expert LaTeX et rédacteur CV haut de gamme.
-Retourne UNIQUEMENT le code LaTeX brut, sans explications ni balises markdown.
-Contraintes:
-- Compatible compilation LaTeX standard type Overleaf
-- Classe article
-- Packages autorisés: geometry, hyperref, array, xcolor, titlesec, enumitem, lmodern, babel, inputenc, fontenc, parskip
-- Mise en page professionnelle, lisible, sobre
-- Autorise accents UTF-8 normaux
-- Produit un CV élégant et compilable`,
-      messages: [
-        {
-          role: "user",
-          content: `Infos candidat:\n${info}\n\nTemplate:\n${template}\n\nCode actuel:\n${existing || "(vide)"}`,
-        },
-      ],
-    }),
-  });
 
-  const data = await res.json();
-  return data.content?.[0]?.text ?? "";
-}   */
+const PHOTO_PLACEHOLDER =
+  "\\colorbox{softblue}{\\parbox[c][3.8cm][c]{3.2cm}{\\centering\\textcolor{textmuted}{\\small Photo\\\\optionnelle}}}";
 
 async function aiGenerateLatex(info: string, template: string, existing: string): Promise<string> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -522,28 +359,6 @@ async function aiGenerateLatex(info: string, template: string, existing: string)
 }
 
 
-/*async function aiImproveSelection(selection: string, instruction: string, fullCode: string): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1800,
-      system: `Expert LaTeX CV. Retourne UNIQUEMENT le LaTeX amélioré.
-Compatible compilation LaTeX standard type Overleaf.
-Tu peux utiliser des accents, titlesec, enumitem, xcolor, babel, inputenc, fontenc.`,
-      messages: [
-        {
-          role: "user",
-          content: `Texte sélectionné:\n\`\`\`latex\n${selection}\n\`\`\`\n\nInstruction: ${instruction}\n\nContexte:\n${fullCode.slice(0, 3000)}`,
-        },
-      ],
-    }),
-  });
-
-  const data = await res.json();
-  return data.content?.[0]?.text?.replace(/```latex\n?/g, "").replace(/```\n?/g, "").trim() ?? "";
-}  */
 async function aiImproveSelection(selection: string, instruction: string, fullCode: string): Promise<string> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -594,7 +409,7 @@ async function aiImproveSelection(selection: string, instruction: string, fullCo
   return data.choices?.[0]?.message?.content?.replace(/```latex\n?/g, "").replace(/```\n?/g, "").trim() ?? "";
 }
 
-async function compileLatex(code: string): Promise<string> {
+/*async function compileLatex(code: string): Promise<string> {
   const API_BASE =
     import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -620,7 +435,35 @@ async function compileLatex(code: string): Promise<string> {
 
   const pdfBlob = await res.blob();
   return URL.createObjectURL(pdfBlob);
+}  */
+
+async function compileLatex(code: string, photo: string | null): Promise<string> {
+  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
+  const res = await fetch(`${API_BASE}/cv/compile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, photo: photo || undefined }),
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    let msg = "Échec de compilation";
+    try {
+      const data = await res.json();
+      msg = data?.error || msg;
+    } catch {
+      // rien
+    }
+    throw new Error(msg);
+  }
+
+  const pdfBlob = await res.blob();
+  return URL.createObjectURL(pdfBlob);
 }
+
+
+
 
 export default function LaTeXCVEditor() {
   const [code, setCode] = useState(TEMPLATES.overleafClassic.code);
@@ -636,12 +479,44 @@ export default function LaTeXCVEditor() {
   const [aiError, setAiError] = useState("");
   const [selectedText, setSelectedText] = useState("");
   const [monacoLoaded, setMonacoLoaded] = useState(false);
+  const [photoData, setPhotoData] = useState<string | null>(null);
+  const [photoWidth, setPhotoWidth] = useState(3.2);
+  const [showPhotoPanel, setShowPhotoPanel] = useState(false);
 
   const editorRef = useRef<HTMLDivElement>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectionRangeRef = useRef<{ start: number; end: number } | null>(null);
 
-  const doRender = useCallback(async () => {
+
+
+  // Construit le code final : remplace %%PHOTO%% par l'image (ou le placeholder)
+  const buildFinalCode = useCallback((raw: string) => {
+    const replacement = photoData
+      ? `\\includegraphics[width=${photoWidth}cm,keepaspectratio]{photo.jpg}`
+      : PHOTO_PLACEHOLDER;
+    return raw.replace(/%%PHOTO%%/g, replacement);
+  }, [photoData, photoWidth]);
+
+  // Lit la photo, la redimensionne (max 500px) et la compresse en JPEG
+  const handlePhotoUpload = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 500;
+        let w = img.width, h = img.height;
+        if (w > MAX) { h = (h * MAX) / w; w = MAX; }
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d")?.drawImage(img, 0, 0, w, h);
+        setPhotoData(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  /*const doRender = useCallback(async () => {
     setRendering(true);
     setRenderError(null);
 
@@ -655,7 +530,23 @@ export default function LaTeXCVEditor() {
     } finally {
         setRendering(false);
     }
-    }, [code, pdfUrl]);
+    }, [code, pdfUrl]);  */
+
+  const doRender = useCallback(async () => {
+    setRendering(true);
+    setRenderError(null);
+    try {
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      const nextPdfUrl = await compileLatex(buildFinalCode(code), photoData);
+      setPdfUrl(nextPdfUrl);
+    } catch (e: any) {
+      setRenderError(e.message || "Erreur de compilation");
+      setPdfUrl("");
+    } finally {
+      setRendering(false);
+    }
+  }, [code, pdfUrl, photoData, buildFinalCode]);
+
 
   useEffect(() => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -666,7 +557,7 @@ export default function LaTeXCVEditor() {
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
-  }, [code]);
+  }, [code, photoData, photoWidth]);
 
   useEffect(() => {
     const w = window as any;
@@ -806,9 +697,16 @@ export default function LaTeXCVEditor() {
     }
   };
 
-  const handleDownloadTex = () => {
+  /*const handleDownloadTex = () => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([code], { type: "text/plain" }));
+    a.download = "cv.tex";
+    a.click();
+  }; */
+
+  const handleDownloadTex = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([buildFinalCode(code)], { type: "text/plain" }));
     a.download = "cv.tex";
     a.click();
   };
@@ -894,6 +792,10 @@ export default function LaTeXCVEditor() {
             {statusText}
           </div>
 
+          <button onClick={() => setShowPhotoPanel((s) => !s)} style={btnStyle}>
+            📷 Photo
+          </button>
+
           <button onClick={() => setShowAIPanel((s) => !s)} style={btnStyle}>
             🤖 IA
           </button>
@@ -907,6 +809,42 @@ export default function LaTeXCVEditor() {
       </header>
 
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+        {showPhotoPanel && (
+          <div style={{ width: 280, flexShrink: 0, background: "#13161d", borderRight: "1px solid #21262d", display: "flex", flexDirection: "column", padding: 16, gap: 12, overflow: "auto" }}>
+            <div style={{ fontWeight: 800, fontSize: 13, color: "#e6edf3" }}>📷 Photo du CV</div>
+            <div style={{ fontSize: 11, color: "#8b949e", lineHeight: 1.6 }}>
+              La photo s'insère à l'emplacement <code>%%PHOTO%%</code> (présent dans le template « Premium Hero »).
+            </div>
+
+            <label style={{ ...btnStyle, textAlign: "center", display: "block", padding: "9px 0" }}>
+              {photoData ? "🔄 Changer la photo" : "⬆ Choisir une photo"}
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); }}
+              />
+            </label>
+
+            {photoData && (
+              <>
+                <img src={photoData} alt="aperçu" style={{ width: "100%", borderRadius: 8, border: "1px solid #30363d" }} />
+                <div style={{ fontSize: 11, color: "#8b949e" }}>Largeur : <strong>{photoWidth.toFixed(1)} cm</strong></div>
+                <input
+                  type="range" min={2} max={5} step={0.1} value={photoWidth}
+                  onChange={(e) => setPhotoWidth(parseFloat(e.target.value))}
+                  style={{ width: "100%" }}
+                />
+                <button
+                  onClick={() => setPhotoData(null)}
+                  style={{ ...btnStyle, color: "#f87171", borderColor: "#7f1d1d", background: "rgba(239,68,68,.08)" }}
+                >
+                  🗑 Retirer la photo
+                </button>
+              </>
+            )}
+          </div>
+        )}
         {showAIPanel && (
           <div
             style={{
