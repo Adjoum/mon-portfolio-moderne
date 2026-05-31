@@ -466,31 +466,28 @@ async function compileLatex(code: string, photo: string | null): Promise<string>
 function CropModal({
   src, onCancel, onConfirm,
 }: { src: string; onCancel: () => void; onConfirm: (dataUrl: string) => void }) {
-  const ASPECT = 35 / 45;          // ratio photo d'identité
-  const DISPLAY_W = 300;
+  const ASPECT = 35 / 45;
+  const MAX_W = 280, MAX_H = 360;
   const imgRef = useRef<HTMLImageElement>(null);
-  const [dispH, setDispH] = useState(0);
-  const [box, setBox] = useState({ x: 0, y: 0, w: 0 }); // px d'affichage ; h = w/ASPECT
+  const [disp, setDisp] = useState({ w: 0, h: 0 });
+  const [box, setBox] = useState({ x: 0, y: 0, w: 0 });
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
 
-  const clamp = (b: { x: number; y: number; w: number }) => {
-    const w = Math.min(b.w, DISPLAY_W, dispH * ASPECT);
+  const clampBox = (b: { x: number; y: number; w: number }, d = disp) => {
+    const w = Math.min(b.w, d.w, d.h * ASPECT);
     const h = w / ASPECT;
-    const x = Math.min(Math.max(0, b.x), DISPLAY_W - w);
-    const y = Math.min(Math.max(0, b.y), dispH - h);
-    return { x, y, w };
+    return { x: Math.min(Math.max(0, b.x), d.w - w), y: Math.min(Math.max(0, b.y), d.h - h), w };
   };
 
   const onImgLoad = () => {
     const img = imgRef.current!;
-    const h = (DISPLAY_W * img.naturalHeight) / img.naturalWidth;
-    setDispH(h);
-    const w = Math.min(DISPLAY_W * 0.6, h * ASPECT);
-    setBox(clampWith(h, { x: (DISPLAY_W - w) / 2, y: Math.max(0, (h - w / ASPECT) / 2), w }));
-  };
-  const clampWith = (h: number, b: { x: number; y: number; w: number }) => {
-    const w = Math.min(b.w, DISPLAY_W, h * ASPECT);
-    return { x: Math.min(Math.max(0, b.x), DISPLAY_W - w), y: Math.min(Math.max(0, b.y), h - w / ASPECT), w };
+    const r = img.naturalWidth / img.naturalHeight;
+    let w = MAX_W, h = MAX_W / r;
+    if (h > MAX_H) { h = MAX_H; w = MAX_H * r; }
+    const d = { w, h };
+    setDisp(d);
+    const bw = Math.min(w * 0.7, h * ASPECT);
+    setBox(clampBox({ x: (w - bw) / 2, y: Math.max(0, (h - bw / ASPECT) / 2), w: bw }, d));
   };
 
   const startDrag = (e: React.PointerEvent) => {
@@ -499,18 +496,17 @@ function CropModal({
   };
   const onDrag = (e: React.PointerEvent) => {
     if (!dragRef.current) return;
-    setBox((b) => clamp({ ...b, x: e.clientX - dragRef.current!.dx, y: e.clientY - dragRef.current!.dy }));
+    setBox((b) => clampBox({ ...b, x: e.clientX - dragRef.current!.dx, y: e.clientY - dragRef.current!.dy }));
   };
   const endDrag = () => { dragRef.current = null; };
 
   const confirm = () => {
     const img = imgRef.current!;
-    const scale = img.naturalWidth / DISPLAY_W;
+    const scale = img.naturalWidth / disp.w;
     const OUT_W = 350, OUT_H = 450;
     const canvas = document.createElement("canvas");
     canvas.width = OUT_W; canvas.height = OUT_H;
-    const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(
+    canvas.getContext("2d")!.drawImage(
       img,
       box.x * scale, box.y * scale, box.w * scale, (box.w / ASPECT) * scale,
       0, 0, OUT_W, OUT_H
@@ -518,27 +514,32 @@ function CropModal({
     onConfirm(canvas.toDataURL("image/jpeg", 0.9));
   };
 
-  const bh = box.w / ASPECT;
-
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
-      <div style={{ background: "#13161d", border: "1px solid #21262d", borderRadius: 12, padding: 18, width: 340 }}>
-        <div style={{ fontWeight: 800, color: "#e6edf3", marginBottom: 12 }}>✂️ Recadrer (photo d'identité)</div>
-        <div style={{ position: "relative", width: DISPLAY_W, margin: "0 auto", userSelect: "none", touchAction: "none" }}>
-          <img ref={imgRef} src={src} onLoad={onImgLoad} draggable={false} style={{ width: DISPLAY_W, display: "block", borderRadius: 6 }} />
-          {dispH > 0 && (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+      <div style={{ background: "#13161d", border: "1px solid #21262d", borderRadius: 12, padding: 16, width: 320, maxHeight: "92vh", display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ fontWeight: 800, color: "#e6edf3" }}>✂️ Recadrer (photo d'identité)</div>
+        <div style={{ position: "relative", width: disp.w, height: disp.h, margin: "0 auto", userSelect: "none", touchAction: "none" }}>
+          <img ref={imgRef} src={src} onLoad={onImgLoad} draggable={false} style={{ width: disp.w, height: disp.h, display: "block", borderRadius: 6 }} />
+          {disp.w > 0 && (
             <div
               onPointerDown={startDrag} onPointerMove={onDrag} onPointerUp={endDrag}
-              style={{ position: "absolute", left: box.x, top: box.y, width: box.w, height: bh, border: "2px solid #6366f1", boxShadow: "0 0 0 9999px rgba(0,0,0,.5)", cursor: "move", borderRadius: 2 }}
+              style={{ position: "absolute", left: box.x, top: box.y, width: box.w, height: box.w / ASPECT, border: "2px solid #6366f1", boxShadow: "0 0 0 9999px rgba(0,0,0,.55)", cursor: "move", borderRadius: 2 }}
             />
           )}
         </div>
-        <div style={{ fontSize: 11, color: "#8b949e", margin: "12px 0 4px" }}>Taille du cadre</div>
-        <input type="range" min={DISPLAY_W * 0.25} max={DISPLAY_W} step={1} value={box.w}
-          onChange={(e) => setBox((b) => clamp({ ...b, w: parseFloat(e.target.value) }))} style={{ width: "100%" }} />
-        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-          <button onClick={onCancel} style={{ ...btnStyle, flex: 1 }}>Annuler</button>
-          <button onClick={confirm} style={{ ...btnStyle, flex: 1, background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", border: "none" }}>Valider</button>
+        {disp.w > 0 && (
+          <div>
+            <div style={{ fontSize: 11, color: "#8b949e", marginBottom: 4 }}>Taille du cadre</div>
+            <input
+              type="range" min={Math.max(40, disp.w * 0.25)} max={disp.w} step={1} value={box.w}
+              onChange={(e) => setBox((b) => clampBox({ ...b, w: parseFloat(e.target.value) }))}
+              style={{ width: "100%" }}
+            />
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onCancel} style={{ ...btnStyle, flex: 1, padding: "9px 0" }}>Annuler</button>
+          <button onClick={confirm} style={{ ...btnStyle, flex: 1, padding: "9px 0", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", border: "none" }}>✓ Valider</button>
         </div>
       </div>
     </div>
