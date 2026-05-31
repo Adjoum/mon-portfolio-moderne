@@ -463,6 +463,89 @@ async function compileLatex(code: string, photo: string | null): Promise<string>
 }
 
 
+function CropModal({
+  src, onCancel, onConfirm,
+}: { src: string; onCancel: () => void; onConfirm: (dataUrl: string) => void }) {
+  const ASPECT = 35 / 45;          // ratio photo d'identité
+  const DISPLAY_W = 300;
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [dispH, setDispH] = useState(0);
+  const [box, setBox] = useState({ x: 0, y: 0, w: 0 }); // px d'affichage ; h = w/ASPECT
+  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+
+  const clamp = (b: { x: number; y: number; w: number }) => {
+    const w = Math.min(b.w, DISPLAY_W, dispH * ASPECT);
+    const h = w / ASPECT;
+    const x = Math.min(Math.max(0, b.x), DISPLAY_W - w);
+    const y = Math.min(Math.max(0, b.y), dispH - h);
+    return { x, y, w };
+  };
+
+  const onImgLoad = () => {
+    const img = imgRef.current!;
+    const h = (DISPLAY_W * img.naturalHeight) / img.naturalWidth;
+    setDispH(h);
+    const w = Math.min(DISPLAY_W * 0.6, h * ASPECT);
+    setBox(clampWith(h, { x: (DISPLAY_W - w) / 2, y: Math.max(0, (h - w / ASPECT) / 2), w }));
+  };
+  const clampWith = (h: number, b: { x: number; y: number; w: number }) => {
+    const w = Math.min(b.w, DISPLAY_W, h * ASPECT);
+    return { x: Math.min(Math.max(0, b.x), DISPLAY_W - w), y: Math.min(Math.max(0, b.y), h - w / ASPECT), w };
+  };
+
+  const startDrag = (e: React.PointerEvent) => {
+    dragRef.current = { dx: e.clientX - box.x, dy: e.clientY - box.y };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onDrag = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    setBox((b) => clamp({ ...b, x: e.clientX - dragRef.current!.dx, y: e.clientY - dragRef.current!.dy }));
+  };
+  const endDrag = () => { dragRef.current = null; };
+
+  const confirm = () => {
+    const img = imgRef.current!;
+    const scale = img.naturalWidth / DISPLAY_W;
+    const OUT_W = 350, OUT_H = 450;
+    const canvas = document.createElement("canvas");
+    canvas.width = OUT_W; canvas.height = OUT_H;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(
+      img,
+      box.x * scale, box.y * scale, box.w * scale, (box.w / ASPECT) * scale,
+      0, 0, OUT_W, OUT_H
+    );
+    onConfirm(canvas.toDataURL("image/jpeg", 0.9));
+  };
+
+  const bh = box.w / ASPECT;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+      <div style={{ background: "#13161d", border: "1px solid #21262d", borderRadius: 12, padding: 18, width: 340 }}>
+        <div style={{ fontWeight: 800, color: "#e6edf3", marginBottom: 12 }}>✂️ Recadrer (photo d'identité)</div>
+        <div style={{ position: "relative", width: DISPLAY_W, margin: "0 auto", userSelect: "none", touchAction: "none" }}>
+          <img ref={imgRef} src={src} onLoad={onImgLoad} draggable={false} style={{ width: DISPLAY_W, display: "block", borderRadius: 6 }} />
+          {dispH > 0 && (
+            <div
+              onPointerDown={startDrag} onPointerMove={onDrag} onPointerUp={endDrag}
+              style={{ position: "absolute", left: box.x, top: box.y, width: box.w, height: bh, border: "2px solid #6366f1", boxShadow: "0 0 0 9999px rgba(0,0,0,.5)", cursor: "move", borderRadius: 2 }}
+            />
+          )}
+        </div>
+        <div style={{ fontSize: 11, color: "#8b949e", margin: "12px 0 4px" }}>Taille du cadre</div>
+        <input type="range" min={DISPLAY_W * 0.25} max={DISPLAY_W} step={1} value={box.w}
+          onChange={(e) => setBox((b) => clamp({ ...b, w: parseFloat(e.target.value) }))} style={{ width: "100%" }} />
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <button onClick={onCancel} style={{ ...btnStyle, flex: 1 }}>Annuler</button>
+          <button onClick={confirm} style={{ ...btnStyle, flex: 1, background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", border: "none" }}>Valider</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 
 
 export default function LaTeXCVEditor() {
@@ -482,6 +565,8 @@ export default function LaTeXCVEditor() {
   const [photoData, setPhotoData] = useState<string | null>(null);
   const [photoWidth, setPhotoWidth] = useState(3.2);
   const [showPhotoPanel, setShowPhotoPanel] = useState(false);
+  const [rawPhoto, setRawPhoto] = useState<string | null>(null);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
 
   const editorRef = useRef<HTMLDivElement>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -498,7 +583,7 @@ export default function LaTeXCVEditor() {
   }, [photoData, photoWidth]);
 
   // Lit la photo, la redimensionne (max 500px) et la compresse en JPEG
-  const handlePhotoUpload = (file: File) => {
+  /*const handlePhotoUpload = (file: File) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const img = new Image();
@@ -512,6 +597,16 @@ export default function LaTeXCVEditor() {
         setPhotoData(canvas.toDataURL("image/jpeg", 0.85));
       };
       img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };  */
+
+  const handlePhotoUpload = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const url = ev.target?.result as string;
+      setRawPhoto(url);  // on garde l'original pour pouvoir re-recadrer
+      setCropSrc(url);   // ouvre la fenêtre de recadrage
     };
     reader.readAsDataURL(file);
   };
@@ -829,6 +924,11 @@ export default function LaTeXCVEditor() {
             {photoData && (
               <>
                 <img src={photoData} alt="aperçu" style={{ width: "100%", borderRadius: 8, border: "1px solid #30363d" }} />
+                {rawPhoto && (
+                  <button onClick={() => setCropSrc(rawPhoto)} style={{ ...btnStyle, textAlign: "center" }}>
+                    ✂️ Recadrer
+                  </button>
+                )}
                 <div style={{ fontSize: 11, color: "#8b949e" }}>Largeur : <strong>{photoWidth.toFixed(1)} cm</strong></div>
                 <input
                   type="range" min={2} max={5} step={0.1} value={photoWidth}
@@ -1094,6 +1194,13 @@ export default function LaTeXCVEditor() {
           ) : null}
         </div>
       </div>
+      {cropSrc && (
+        <CropModal
+          src={cropSrc}
+          onCancel={() => setCropSrc(null)}
+          onConfirm={(dataUrl) => { setPhotoData(dataUrl); setCropSrc(null); }}
+        />
+      )}
     </div>
   );
 }
