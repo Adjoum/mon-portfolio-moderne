@@ -1,7 +1,8 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { Award, Briefcase, Code, GraduationCap, Heart, Lightbulb, Rocket, Users } from 'lucide-react'
-import adjoumaniPhoto from "../assets/adjoumani.jpg"
+import adjoumaniPhoto from "../assets/adjoumani1.jpg"
+import AnimatedPhotoFrame from "../components/AnimatedPhotoFrame"
 
 const AboutPage: React.FC = () => {
   const achievements = [
@@ -21,7 +22,7 @@ const AboutPage: React.FC = () => {
     {
       icon: Heart,
       title: 'Passion',
-      description: 'Animé par une passion profonde pour le développement et la résolution de problèmes complexes.',
+      description: 'Animé par une passion profonde pour le digital et la transformation numérique intelligente.',
       color: 'from-red-500 to-pink-500'
     },
     {
@@ -41,9 +42,9 @@ const AboutPage: React.FC = () => {
   const timeline = [
     {
       year: '2024',
-      title: 'Développeur Full Stack Freelance',
-      company: 'Les Experts en Solutions Digitales (LESD)',
-      description: 'Création de solutions web et mobile innovantes pour divers clients en Côte d\'Ivoire.',
+      title: 'Master 1 Big Data Analytics & Développeur Full Stack',
+      company: 'UVCI · Les Experts en Solutions Digitales (LESD)',
+      description: 'Spécialisation en Big Data et IA, en parallèle de la création de solutions web et mobile pour des clients en Côte d\'Ivoire.',
       achievements: [
         'Développement d\'ImmoCI - plateforme immobilière',
         'Création d\'INP-HB Stories - réseau alumni',
@@ -51,7 +52,7 @@ const AboutPage: React.FC = () => {
       ]
     },
     {
-      year: '2023',
+      year: '2026',
       title: 'Projets Académiques & Personnels',
       company: 'INP-HB',
       description: 'Développement de projets innovants combinant IA, data analytics et applications web/mobile.',
@@ -62,7 +63,7 @@ const AboutPage: React.FC = () => {
       ]
     },
     {
-      year: '2022',
+      year: 'Sept 2025',
       title: 'Début du Parcours',
       company: 'INP-HB - Yamoussoukro',
       description: 'Intégration à l\'Institut National Polytechnique Houphouët-Boigny en analyse de données industrielles.',
@@ -71,6 +72,21 @@ const AboutPage: React.FC = () => {
         'Premiers projets de développement',
         'Certifications en IA et développement'
       ]
+    },
+  ]
+
+  const formations = [
+    {
+      title: 'Master 1 - Big Data Analytics',
+      school: 'Université Virtuelle de Côte d\'Ivoire (UVCI)',
+      period: 'Dec 2025 - Présent',
+      description: 'Ingénierie de la donnée, machine learning, traitement à grande échelle et intelligence numérique appliquée.'
+    },
+    {
+      title: 'Licence 3 - Data Analytics Industriels',
+      school: 'Institut National Polytechnique Houphouët-Boigny (INP-HB)',
+      period: 'Sept 2025 - Présent · Yamoussoukro',
+      description: 'Statistiques, analyse de données industrielles, bases de données et visualisation, fondations en machine learning.'
     },
   ]
 
@@ -91,23 +107,25 @@ const AboutPage: React.FC = () => {
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.8 }}
             >
-              <h1 className="text-5xl lg:text-7xl font-bold mb-6">
+              <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold mb-6">
                 <span className="gradient-text">À propos de moi</span>
               </h1>
-              <p className="text-xl text-gray-300 mb-6 leading-relaxed">
-                Je suis <strong className="text-white">Koffi Wilfried ADJOUMANI</strong>, étudiant en 3ème année d'analyse 
-                de données industrielles à l'<strong className="text-white">INP-HB</strong> de Yamoussoukro. 
-                Passionné par la technologie et l'innovation, je me spécialise dans le développement de 
-                solutions digitales complètes.
+              <p className="text-lg sm:text-xl text-gray-300 mb-6 leading-relaxed">
+                Je suis <strong className="text-white">Koffi Wilfried ADJOUMANI</strong>, étudiant en{' '}
+                <strong className="text-white">Master 1 Big Data Analytics</strong> à l'
+                <strong className="text-white">UVCI</strong> et en{' '}
+                <strong className="text-white">Licence 3 Data Analytics Industriels</strong> à l'
+                <strong className="text-white">INP-HB</strong> de Yamoussoukro. Ma passion tourne autour du
+                digital et de la <strong className="text-white">transformation numérique intelligente</strong>.
               </p>
-              <p className="text-lg text-gray-400 mb-8 leading-relaxed">
-                Mon expertise couvre le <strong className="text-white">développement web</strong> avec React 
-                et Node.js, le <strong className="text-white">développement mobile</strong> avec Flutter, 
-                l'<strong className="text-white">intelligence artificielle</strong>, et l'
-                <strong className="text-white">analyse de données</strong>. Je travaille souvent en collaboration 
-                avec mon frère au sein de notre entreprise de solutions digitales.
+              <p className="text-base sm:text-lg text-gray-400 mb-8 leading-relaxed">
+                Mon expertise couvre le <strong className="text-white">développement web</strong> (Next.js, React,
+                TypeScript), le <strong className="text-white">développement mobile</strong> avec Flutter,
+                l'<strong className="text-white">intelligence artificielle</strong> et l'
+                <strong className="text-white">analyse de données</strong>. Je conçois des produits orientés
+                marché ivoirien, du data engineering au déploiement.
               </p>
-              <div className="flex gap-4">
+              <div className="flex flex-wrap gap-4">
                 <motion.a
                   href="/contact"
                   whileHover={{ scale: 1.05 }}
@@ -127,21 +145,8 @@ const AboutPage: React.FC = () => {
               </div>
             </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
-              className="relative"
-            >
-              <div className="relative w-full h-[600px] rounded-3xl overflow-hidden">
-                <img
-                  src={adjoumaniPhoto}  //"/api/placeholder/600/800"
-                  alt="Adjoumani"
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-dark via-transparent to-transparent" />
-              </div>
-            </motion.div>
+            {/* Cadre photo animé : drone orbital + réseau de particules au survol */}
+            <AnimatedPhotoFrame src={adjoumaniPhoto} alt="Koffi Wilfried Adjoumani" radius={22} />
           </div>
         </div>
       </section>
@@ -152,7 +157,7 @@ const AboutPage: React.FC = () => {
         <div className="absolute inset-0" style={{
           backgroundImage: 'radial-gradient(circle at 20% 50%, rgba(99,102,241,0.15) 0%, transparent 50%), radial-gradient(circle at 80% 50%, rgba(236,72,153,0.15) 0%, transparent 50%)'
         }} />
-        
+
         <div className="container mx-auto relative z-10 text-center">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -167,20 +172,20 @@ const AboutPage: React.FC = () => {
             </div>
 
             {/* Titre principal */}
-            <h2 className="text-5xl lg:text-8xl font-black mb-6 leading-none tracking-tight">
+            <h2 className="text-4xl sm:text-5xl lg:text-8xl font-black mb-6 leading-none tracking-tight">
               <span className="gradient-text">Codez</span>
               <br />
               <span className="text-white">sans limites.</span>
             </h2>
 
             {/* Sous-titre */}
-            <p className="text-xl lg:text-2xl text-gray-300 max-w-3xl mx-auto mb-4 leading-relaxed">
-              Un vrai <strong className="text-white">VS Code dans le navigateur</strong>, 
-              hébergé sur le cloud. Python, C++, JavaScript, Java et plus — 
+            <p className="text-lg sm:text-xl lg:text-2xl text-gray-300 max-w-3xl mx-auto mb-4 leading-relaxed">
+              Un vrai <strong className="text-white">VS Code dans le navigateur</strong>,
+              hébergé sur le cloud. Python, C++, JavaScript, Java et plus
               avec terminal bash et packages réels.
             </p>
 
-            <p className="text-lg text-gray-500 mb-10 font-mono">
+            <p className="text-base sm:text-lg text-gray-500 mb-10 font-mono">
               pip install · npm install · gcc · java · go · rust
             </p>
 
@@ -195,7 +200,7 @@ const AboutPage: React.FC = () => {
               <span style={{ fontSize: 22 }}>⚒</span>
               Ouvrir CodeForge IDE
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M5 12h14M12 5l7 7-7 7"/>
+                <path d="M5 12h14M12 5l7 7-7 7" />
               </svg>
             </motion.a>
 
@@ -248,10 +253,10 @@ const AboutPage: React.FC = () => {
             </motion.div>
 
             {/* Stats rapides */}
-            <div className="flex justify-center gap-12 mt-12">
+            <div className="flex flex-wrap justify-center gap-8 sm:gap-12 mt-12">
               {[
                 { val: '10+', lbl: 'Langages' },
-                { val: '∞',   lbl: 'Gratuit' },
+                { val: '∞', lbl: 'Gratuit' },
                 { val: '24/7', lbl: 'Disponible' },
               ].map((s, i) => (
                 <motion.div
@@ -262,7 +267,7 @@ const AboutPage: React.FC = () => {
                   viewport={{ once: true }}
                   className="text-center"
                 >
-                  <div className="text-4xl font-black gradient-text">{s.val}</div>
+                  <div className="text-3xl sm:text-4xl font-black gradient-text">{s.val}</div>
                   <div className="text-gray-500 text-sm font-mono mt-1">{s.lbl}</div>
                 </motion.div>
               ))}
@@ -270,11 +275,11 @@ const AboutPage: React.FC = () => {
           </motion.div>
         </div>
       </section>
-      
+
       {/* Achievements Stats */}
       <section className="py-20 px-6">
         <div className="container mx-auto">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
             {achievements.map((item, index) => (
               <motion.div
                 key={index}
@@ -282,11 +287,11 @@ const AboutPage: React.FC = () => {
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: index * 0.1 }}
                 viewport={{ once: true }}
-                className="glass-effect p-8 rounded-2xl text-center hover-lift"
+                className="glass-effect p-6 sm:p-8 rounded-2xl text-center hover-lift"
               >
-                <item.icon className="w-12 h-12 mx-auto mb-4 text-primary" />
-                <h3 className="text-4xl font-bold gradient-text mb-2">{item.value}</h3>
-                <p className="text-gray-400">{item.label}</p>
+                <item.icon className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-4 text-primary" />
+                <h3 className="text-3xl sm:text-4xl font-bold gradient-text mb-2">{item.value}</h3>
+                <p className="text-gray-400 text-sm sm:text-base">{item.label}</p>
               </motion.div>
             ))}
           </div>
@@ -304,15 +309,15 @@ const AboutPage: React.FC = () => {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl lg:text-5xl font-bold mb-4">
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4">
               <span className="gradient-text">Mes Valeurs</span>
             </h2>
-            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+            <p className="text-lg sm:text-xl text-gray-400 max-w-2xl mx-auto">
               Les principes qui guident mon travail et mes projets
             </p>
           </motion.div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
             {values.map((value, index) => (
               <motion.div
                 key={index}
@@ -343,10 +348,10 @@ const AboutPage: React.FC = () => {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl lg:text-5xl font-bold mb-4">
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4">
               <span className="gradient-text">Mon Parcours</span>
             </h2>
-            <p className="text-xl text-gray-400">
+            <p className="text-lg sm:text-xl text-gray-400">
               Une chronologie de mes expériences et réalisations
             </p>
           </motion.div>
@@ -374,7 +379,7 @@ const AboutPage: React.FC = () => {
                     </span>
                     <Briefcase size={20} className="text-primary" />
                   </div>
-                  <h3 className="text-2xl font-bold text-white mb-2">{item.title}</h3>
+                  <h3 className="text-xl sm:text-2xl font-bold text-white mb-2">{item.title}</h3>
                   <p className="text-primary font-semibold mb-3">{item.company}</p>
                   <p className="text-gray-400 mb-4">{item.description}</p>
                   <ul className="space-y-2">
@@ -403,40 +408,38 @@ const AboutPage: React.FC = () => {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl lg:text-5xl font-bold mb-4">
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4">
               <span className="gradient-text">Formation</span>
             </h2>
+            <p className="text-lg sm:text-xl text-gray-400">
+              Un double cursus en data, mené en parallèle
+            </p>
           </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            viewport={{ once: true }}
-            className="max-w-3xl mx-auto glass-effect p-8 rounded-2xl"
-          >
-            <div className="flex items-start gap-6">
-              <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0">
-                <GraduationCap className="text-white" size={32} />
-              </div>
-              <div>
-                <h3 className="text-2xl font-bold text-white mb-2">
-                  Analyse de Données Industrielles
-                </h3>
-                <p className="text-primary font-semibold mb-3">
-                  Institut National Polytechnique Houphouët-Boigny (INP-HB)
-                </p>
-                <p className="text-gray-400 mb-4">
-                  2022 - Présent • San-Pedro, Côte d'Ivoire
-                </p>
-                <p className="text-gray-300">
-                  Formation approfondie en analyse de données, statistiques, machine learning, 
-                  et systèmes industriels. Développement de compétences en programmation, 
-                  bases de données, et visualisation de données.
-                </p>
-              </div>
-            </div>
-          </motion.div>
+          <div className="max-w-4xl mx-auto grid md:grid-cols-2 gap-8">
+            {formations.map((f, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: i * 0.15 }}
+                viewport={{ once: true }}
+                className="glass-effect p-8 rounded-2xl hover-lift"
+              >
+                <div className="flex items-start gap-5">
+                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0">
+                    <GraduationCap className="text-white" size={28} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl sm:text-2xl font-bold text-white mb-2">{f.title}</h3>
+                    <p className="text-primary font-semibold mb-2">{f.school}</p>
+                    <p className="text-gray-500 text-sm mb-4">{f.period}</p>
+                    <p className="text-gray-300">{f.description}</p>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
         </div>
       </section>
     </motion.div>
