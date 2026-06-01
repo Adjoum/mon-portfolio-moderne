@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Brain } from 'lucide-react'
+import { Brain, Cpu } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Edit, Trash2, Save, X, Upload, Eye, Download, FileText, Briefcase, Award, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import type { Project, Skill } from '../lib/supabase'
 import AdminLogin from '../components/AdminLogin';
 import VisitorStats from '../components/VisitorStats'
+import AILabManager from '../components/AILabManager'
 
 
 
 
-type TabType = 'projects' | 'skills' | 'cv' | 'visitors'
+type TabType = 'projects' | 'skills' | 'cv' | 'visitors' | 'ailab'
 
 interface ProjectForm {
   title: string
@@ -31,6 +32,7 @@ interface SkillForm {
 }
 
 const AdminDashboard: React.FC = () => {
+
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('projects')
@@ -67,6 +69,10 @@ const AdminDashboard: React.FC = () => {
   const [projectImagePreview, setProjectImagePreview] = useState<string>("");
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const navigate = useNavigate()
+  const INACTIVITY_LIMIT = 30 * 60 * 1000 // 30 minutes
+
+
+
 
   // ✅ AJOUTE CE useEffect POUR VÉRIFIER L'AUTHENTIFICATION
   useEffect(() => {
@@ -188,63 +194,7 @@ const uploadProjectImage = async (file: File) => {
 
     return data.publicUrl;
   };
-  // GESTION DES PROJETS
-  /*const handleSaveProject = async () => {
-    try {
-      // Validation basique
-      if (!projectForm.title.trim()) {
-        alert('Le titre est obligatoire')
-        return
-      }
-
-      // Nettoyer les données avant envoi
-      const cleanData = {
-        title: projectForm.title.trim(),
-        description: projectForm.description.trim(),
-        technologies: projectForm.technologies.filter(t => t.trim()),
-        imageurl: projectForm.imageurl.trim() || '/api/placeholder/800/600',
-        githuburl: projectForm.githuburl.trim() || null,
-        liveurl: projectForm.liveurl.trim() || null,
-        category: projectForm.category,
-        featured: projectForm.featured
-      }
-
-      console.log('Données à envoyer:', cleanData)
-      
-      if (editingProject) {
-        // Mise à jour
-        const { error } = await supabase
-          .from('projects')
-          .update(cleanData)
-          .eq('id', editingProject.id)
-        
-        if (error) {
-          console.error('Erreur Supabase:', error)
-          throw error
-        }
-      } else {
-        // Création
-        const { error } = await supabase
-          .from('projects')
-          .insert([cleanData])
-        
-        if (error) {
-          console.error('Erreur Supabase:', error)
-          throw error
-        }
-      }
-      
-      setShowProjectForm(false)
-      setEditingProject(null)
-      resetProjectForm()
-      loadData()
-      alert('Projet enregistré avec succès !')
-    } catch (error: any) {
-      console.error('Erreur complète:', error)
-      const errorMessage = error?.message || 'Erreur inconnue'
-      alert(`Erreur lors de l'enregistrement: ${errorMessage}`)
-    }
-  }   */
+  
   const handleSaveProject = async () => {
     try {
       if (!projectForm.title.trim()) {
@@ -334,20 +284,6 @@ const uploadProjectImage = async (file: File) => {
     }
   }
 
-  /*const handleEditProject = (project: Project) => {
-    setEditingProject(project)
-    setProjectForm({
-      title: project.title || '',
-      description: project.description || '',
-      technologies: project.technologies || [],
-      imageurl: project.imageurl || '',
-      githuburl: project.githuburl || '',
-      liveurl: project.liveurl || '',
-      category: project.category,
-      featured: project.featured || false
-    })
-    setShowProjectForm(true)
-  }  */
   const handleEditProject = (project: Project) => {
     clearProjectImageFile();
 
@@ -365,18 +301,6 @@ const uploadProjectImage = async (file: File) => {
     setShowProjectForm(true);
   };
 
-  /*const resetProjectForm = () => {
-    setProjectForm({
-      title: '',
-      description: '',
-      technologies: [],
-      imageurl: '',
-      githuburl: '',
-      liveurl: '',
-      category: 'web',
-      featured: false
-    })
-  }  */
   const resetProjectForm = () => {
     clearProjectImageFile();
 
@@ -506,6 +430,52 @@ const uploadProjectImage = async (file: File) => {
   }
 
 
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    let loggedOut = false
+    let lastActivity = Date.now()
+
+    const logoutForInactivity = async () => {
+      if (loggedOut) return
+      loggedOut = true
+      await supabase.auth.signOut()
+      setIsAuthenticated(false)
+      setActiveTab('projects')
+      alert('Session expirée pour inactivité. Veuillez vous reconnecter.')
+    }
+
+    const markActivity = () => { lastActivity = Date.now() }
+
+    const activityEvents: Array<keyof WindowEventMap> = [
+      'mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click',
+    ]
+    activityEvents.forEach((e) =>
+      window.addEventListener(e, markActivity, { passive: true })
+    )
+
+    // Vérifie l'inactivité réelle toutes les 15 s (robuste face à la veille / onglet en arrière-plan)
+    const intervalId = window.setInterval(() => {
+      if (Date.now() - lastActivity >= INACTIVITY_LIMIT) logoutForInactivity()
+    }, 15_000)
+
+    // Vérifie aussi dès qu'on revient sur l'onglet (cas du PC qui sort de veille)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible'
+          && Date.now() - lastActivity >= INACTIVITY_LIMIT) {
+        logoutForInactivity()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      window.clearInterval(intervalId)
+      activityEvents.forEach((e) => window.removeEventListener(e, markActivity))
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [isAuthenticated])
+
+
   // Afficher le loader pendant la vérification
   if (isCheckingAuth) {
     return (
@@ -599,6 +569,20 @@ const uploadProjectImage = async (file: File) => {
             <Users size={20} />
             Visiteurs
           </button>
+
+          {/* Nouveau bouton pour l'AILab */}
+          <button
+            onClick={() => setActiveTab('ailab')}
+            className={`px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all ${
+              activeTab === 'ailab'
+                ? 'bg-gradient-to-r from-primary to-secondary text-white'
+                : 'glass-effect text-gray-300 hover:text-white'
+            }`}
+          >
+            <Cpu size={20} />
+            AILab
+          </button>
+
           {/* Bouton accès Knowledge Base */}
           <motion.button
             onClick={() => navigate('/admin/knowledge')}
@@ -705,16 +689,6 @@ const uploadProjectImage = async (file: File) => {
                       />
                     </div>
 
-                    {/*<div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">URL Image</label>
-                      <input
-                        type="text"
-                        value={projectForm.imageurl}
-                        onChange={(e) => setProjectForm({ ...projectForm, imageurl: e.target.value })}
-                        className="w-full px-4 py-3 glass-effect rounded-lg text-white"
-                        placeholder="/images/projet.jpg"
-                      />
-                    </div>  */}
                     <div>
                       <label className="block text-sm font-medium text-gray-300 mb-2">
                         Image du projet
@@ -847,13 +821,7 @@ const uploadProjectImage = async (file: File) => {
                   </div>
 
                   <div className="flex gap-4 mt-6">
-                    {/*<button
-                      onClick={handleSaveProject}
-                      className="px-6 py-3 bg-gradient-to-r from-primary to-secondary rounded-lg font-semibold text-white flex items-center gap-2"
-                    >
-                      <Save size={20} />
-                      Enregistrer
-                    </button>  */}
+                    
                     <button
                       onClick={handleSaveProject}
                       disabled={isUploadingImage}
@@ -1158,6 +1126,10 @@ const uploadProjectImage = async (file: File) => {
             >
               <VisitorStats />
             </motion.div>
+          )}
+
+          {activeTab === 'ailab' && (
+            <AILabManager />
           )}
         </AnimatePresence>
       </div>

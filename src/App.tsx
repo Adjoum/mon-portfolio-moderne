@@ -36,6 +36,10 @@ const AdminLoginPage = lazy(() => import('./pages/AdminLoginPage'))
 const KnowledgeAdmin = lazy(() => import('./pages/KnowledgeAdmin'))
 const LaTeXCVEditor = lazy(() => import('./pages/CVBuilder/LaTeXEditor'))
 const CVGenerator = lazy(() => import('./pages/CVBuilder/CVGenerator'))
+const SitePlanPage = lazy(() => import('./pages/SitePlanPage'))
+
+
+
 
 
 
@@ -165,6 +169,7 @@ const AnimatedRoutes: React.FC = () => {
             <Route path="/admin/knowledge"        element={<KnowledgeAdmin />} />
             <Route path="/terms"                  element={<TermsPage />} />
             <Route path="/privacy"                element={<PrivacyPage />} />
+            <Route path="/sitemap"                element={<SitePlanPage />} />
 
             {/* ── Nouvelles pages Outils ── */}
             <Route path="/tools"                  element={<ToolsHubPage />} />

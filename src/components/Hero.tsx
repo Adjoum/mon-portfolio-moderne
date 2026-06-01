@@ -3,7 +3,8 @@ import { motion, useScroll, useTransform } from 'framer-motion'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Sphere, MeshDistortMaterial } from '@react-three/drei'
 import { ReactTyped } from "react-typed";
-import { ChevronDown, Github, Linkedin, Facebook, Mail, Code, Database, Brain, Smartphone } from 'lucide-react'
+import { ChevronDown, Mail, Code, Database, Brain, Smartphone } from 'lucide-react'
+import { SiGithub, SiLinkedin, SiFacebook, SiX } from 'react-icons/si'
 //import { href } from 'react-router-dom';
 
 const AnimatedSphere = () => {
@@ -159,7 +160,7 @@ const Hero: React.FC = () => {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.8, delay: 0.8 }}
           >
-            Étudiant en 3ème année d'analyse de données industrielles à l'INP-HB, 
+            Étudiant en analyse de données à INP-HB/UVCI, 
             je transforme des idées complexes en solutions digitales élégantes et performantes.
           </motion.p>
 
@@ -170,20 +171,22 @@ const Hero: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 1 }}
           >
-            <motion.button
+            <motion.a
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
+              href="/projects"
               className="px-8 py-4 bg-gradient-to-r from-primary to-secondary rounded-full font-semibold text-white shadow-lg neon-glow hover-lift"
             >
               Voir mes projets
-            </motion.button>
-            <motion.button
+            </motion.a>
+            <motion.a
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
+              href="/cv"
               className="px-8 py-4 glass-effect rounded-full font-semibold text-white border border-white/20 hover:bg-white/10 transition-all"
             >
               Télécharger CV
-            </motion.button>
+            </motion.a>
           </motion.div>
 
           {/* Liens sociaux */}
@@ -194,9 +197,10 @@ const Hero: React.FC = () => {
             transition={{ duration: 0.8, delay: 1.2 }}
           >
             {[
-              { icon: Github, href: "https://github.com/Adjoum" },
-              { icon: Linkedin, href: "https://www.linkedin.com/in/koffi-wilfried-adjoumani/" },
-              {icon: Facebook, href: "https://web.facebook.com/profile.php?id=100084939496635"},
+              { icon: SiGithub, href: "https://github.com/Adjoum" },
+              { icon: SiLinkedin, href: "https://www.linkedin.com/in/koffi-wilfried-adjoumani/" },
+              {icon: SiFacebook, href: "https://web.facebook.com/profile.php?id=100084939496635"},
+              { icon: SiX, href: "https://x.com/home" },
               { icon: Mail, href: "mailto:contact@adjoumani-koffi.com" }
             ].map((social, index) => (
               <motion.a

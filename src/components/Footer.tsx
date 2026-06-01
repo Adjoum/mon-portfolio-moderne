@@ -1,6 +1,7 @@
 import React from 'react'
 import { motion } from 'framer-motion'
-import { Github, Linkedin, Mail, X, Facebook, Heart, ArrowUp } from 'lucide-react'
+import { Mail, ArrowUp } from 'lucide-react' //Heart,
+import { SiGithub, SiLinkedin, SiFacebook, SiX } from 'react-icons/si'
 import { Link } from 'react-router-dom'
 import { AIAgent } from './AIAgent';
 
@@ -9,12 +10,40 @@ const Footer: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const socialLinks = [
+  /*const socialLinks = [
     { icon: Github, href: 'https://github.com/Adjoum', label: 'GitHub' },
     { icon: Linkedin, href: 'https://www.linkedin.com/in/koffi-wilfried-adjoumani/', label: 'LinkedIn' },
     {icon: Facebook, href: "https://web.facebook.com/profile.php?id=100084939496635", label: 'Facebook'},
     { icon: X, href: 'https://x.com/home', label: 'X' },
     { icon: Mail, href: 'mailto:contact@adjoumani-koffi.com', label: 'Email' },
+  ]  */
+
+  const socialLinks = [
+    {
+      icon: SiGithub,
+      href: 'https://github.com/Adjoum',
+      label: 'GitHub',
+    },
+    {
+      icon: SiLinkedin,
+      href: 'https://www.linkedin.com/in/koffi-wilfried-adjoumani/',
+      label: 'LinkedIn',
+    },
+    {
+      icon: SiFacebook,
+      href: 'https://web.facebook.com/profile.php?id=100084939496635',
+      label: 'Facebook',
+    },
+    {
+      icon: SiX,
+      href: 'https://x.com/home',
+      label: 'X',
+    },
+    {
+      icon: Mail,
+      href: 'mailto:contact@adjoumani-koffi.com',
+      label: 'Email',
+    },
   ]
 
   const quickLinks = [
@@ -133,9 +162,9 @@ const Footer: React.FC = () => {
               transition={{ duration: 0.6 }}
               className="text-gray-400 text-sm flex items-center gap-2"
             >
-              © {new Date().getFullYear()} Adjoumani. Fait avec{' '}
-              <Heart size={16} className="text-red-500 animate-pulse" fill="currentColor" /> 
-              {' '}en Côte d'Ivoire
+              © {new Date().getFullYear()} Adjoumani . Fait avec  passion {' '}
+              {/*<Heart size={16} className="text-red-500 animate-pulse" fill="currentColor" /> */}
+              - Côte d'Ivoire
             </motion.p>
             <motion.div
               initial={{ opacity: 0 }}

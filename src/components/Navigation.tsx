@@ -31,10 +31,10 @@ interface ToolItem {
 const mainNavItems: NavItem[] = [
   { name: 'Accueil',     href: '/',        icon: Home },
   { name: 'À propos',    href: '/about',   icon: User },
-  { name: 'Projets',     href: '/projects',icon: Briefcase },
-  { name: 'Compétences', href: '/skills',  icon: Code },
   { name: 'CV',          href: '/cv',      icon: Download },
+  { name: 'Projets',     href: '/projects',icon: Briefcase },
   { name: 'IA Lab',      href: '/ai-lab',  icon: Brain },
+  { name: 'Compétences', href: '/skills',  icon: Code },
   { name: 'Contact',     href: '/contact', icon: Mail },
 ]
 
