@@ -28,7 +28,7 @@ const baseName = (name: string): string => name.replace(/\.[^/.]+$/, '');
  * Enveloppe un fragment HTML dans un document stylé, pour que les PDF générés
  * depuis du Markdown / Word soient lisibles (typo, marges, code, tableaux).
  */
-const wrapHtmlForPdf = (innerHtml: string, title: string): string => `
+const wrapHtmlForPdf = (innerHtml: string, _title: string): string => `
   <div style="
     font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     color: #1a1a2e;
