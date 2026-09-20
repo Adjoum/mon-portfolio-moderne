@@ -37,6 +37,7 @@ const KnowledgeAdmin = lazy(() => import('./pages/KnowledgeAdmin'))
 const LaTeXCVEditor = lazy(() => import('./pages/CVBuilder/LaTeXEditor'))
 const CVGenerator = lazy(() => import('./pages/CVBuilder/CVGenerator'))
 const SitePlanPage = lazy(() => import('./pages/SitePlanPage'))
+const FileConverter = lazy(() => import('./components/tools/FileConverter'));
 
 
 
@@ -187,6 +188,7 @@ const AnimatedRoutes: React.FC = () => {
             <Route path="/latex-cv-editor"             element={<LaTeXCVEditor />} />
             
             <Route path="/cv-generator"           element={<CVGenerator onGoHome={() => navigate('/')} />} />
+            <Route path="/file-converter"         element={<FileConverter />} />
 
             {/* ── 404 ── */}
             <Route path="*"                       element={<NotFoundPage />} />
