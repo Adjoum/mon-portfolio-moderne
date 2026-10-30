@@ -144,6 +144,18 @@ for (const t of inv.tables.filter(t => t.schema === 'public' && !t.rls)) {
 const docBucket = inv.buckets.find(b => b.id === 'portfolio-public-documents');
 if (docBucket) add('warning', `Bucket portfolio-public-documents déjà présent (${docBucket.objects} objet(s))`);
 for (const b of inv.buckets) add('info', `Bucket ${b.id} : ${b.public ? 'public' : 'privé'}, ${b.objects} objet(s), ${(b.bytes / 1024 / 1024).toFixed(1)} Mo`);
+// Images existantes face aux limites que P0.A1 applique à project-images (JPEG, PNG, WebP ; 3 Mo)
+const images = inv.buckets.find(b => b.id === 'project-images');
+if (images?.types) {
+  const outside = Object.entries(images.types).filter(([mime]) => !['image/jpeg', 'image/png', 'image/webp'].includes(mime));
+  const count = outside.reduce((n, [, c]) => n + c, 0);
+  const largest = `${(images.largest_bytes / 1024 / 1024).toFixed(1)} Mo`;
+  if (count || images.over_3mb) {
+    add('warning', `project-images : ${count} fichier(s) hors JPEG/PNG/WebP${count ? ` (${outside.map(([m, c]) => `${m} ×${c}`).join(', ')})` : ''} et ${images.over_3mb} de plus de 3 Mo (le plus grand : ${largest}). Ils resteraient affichés ; seul un nouvel envoi de ce genre serait refusé. Limites à décider avant P0.A1`);
+  } else {
+    add('info', `project-images : les fichiers existants respectent déjà les limites prévues (JPEG/PNG/WebP, 3 Mo au plus ; le plus grand : ${largest})`);
+  }
+}
 
 // ── Volumétrie (sauvegarde) ──
 const publicRows = inv.tables.filter(t => t.schema === 'public').reduce((n, t) => n + t.rows, 0);

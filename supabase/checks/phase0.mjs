@@ -57,9 +57,11 @@ export function summarizeInventory(inv) {
     }
   }
 
-  out.push('', '### Buckets', '', '| Bucket | Public | Objets | Taille | Limite | Types |', '|---|---|---|---|---|---|');
+  out.push('', '### Buckets', '', '| Bucket | Public | Objets | Taille | Limite | Types autorisés | Fichiers existants | Plus grand | > 3 Mo |', '|---|---|---|---|---|---|---|---|---|');
   for (const b of inv.buckets) {
-    out.push(`| ${cell(b.id)} | ${b.public ? 'oui' : 'non'} | ${b.objects} | ${(b.bytes / 1024 / 1024).toFixed(1)} Mo | ${b.file_size_limit ?? 'aucune'} | ${cell(b.allowed_mime_types?.join(', ') ?? 'tous')} |`);
+    const existing = Object.entries(b.types ?? {}).map(([mime, n]) => `${mime} ×${n}`).join(', ') || '—';
+    const largest = b.largest_bytes !== undefined ? `${(b.largest_bytes / 1024 / 1024).toFixed(1)} Mo` : '?';
+    out.push(`| ${cell(b.id)} | ${b.public ? 'oui' : 'non'} | ${b.objects} | ${(b.bytes / 1024 / 1024).toFixed(1)} Mo | ${b.file_size_limit ?? 'aucune'} | ${cell(b.allowed_mime_types?.join(', ') ?? 'tous')} | ${cell(existing)} | ${largest} | ${b.over_3mb ?? '?'} |`);
   }
 
   const fns = inv.functions.filter(f => f.schema === 'public');

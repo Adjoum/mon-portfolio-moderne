@@ -87,7 +87,16 @@ select jsonb_pretty(jsonb_build_object(
                    group by 1, 2, 3) g),
   'buckets', (select coalesce(jsonb_agg(jsonb_build_object('id', b.id, 'public', b.public, 'file_size_limit', b.file_size_limit, 'allowed_mime_types', b.allowed_mime_types,
                                                             'objects', (select count(*) from storage.objects o where o.bucket_id = b.id),
-                                                            'bytes', (select coalesce(sum((o.metadata ->> 'size')::bigint), 0) from storage.objects o where o.bucket_id = b.id))
+                                                            'bytes', (select coalesce(sum((o.metadata ->> 'size')::bigint), 0) from storage.objects o where o.bucket_id = b.id),
+                                                            -- Fichiers existants (nombres seulement, aucun nom) : types et tailles,
+                                                            -- à comparer aux limites prévues avant de les appliquer
+                                                            'types', (select coalesce(jsonb_object_agg(t.mime, t.n), '{}') from (
+                                                                        select coalesce(o.metadata ->> 'mimetype', 'inconnu') as mime, count(*) as n
+                                                                        from storage.objects o
+                                                                        where o.bucket_id = b.id and o.name not like '%.emptyFolderPlaceholder'
+                                                                        group by 1) t),
+                                                            'largest_bytes', (select coalesce(max((o.metadata ->> 'size')::bigint), 0) from storage.objects o where o.bucket_id = b.id),
+                                                            'over_3mb', (select count(*) from storage.objects o where o.bucket_id = b.id and (o.metadata ->> 'size')::bigint > 3145728))
                                          order by b.id), '[]')
               from storage.buckets b),
   'auth', jsonb_build_object(

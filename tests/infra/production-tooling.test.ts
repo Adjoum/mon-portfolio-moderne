@@ -18,7 +18,7 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
 
 type Table = { schema: string; name: string; rls: boolean; force_rls: boolean; rows: number }
 type Policy = { schema: string; table: string; name: string; permissive: string; roles: string[]; cmd: string; using: string | null; with_check: string | null }
-type Bucket = { id: string; public?: boolean; file_size_limit: number | string | null; allowed_mime_types: string[] | null; objects?: number; bytes?: number }
+type Bucket = { id: string; public?: boolean; file_size_limit: number | string | null; allowed_mime_types: string[] | null; objects?: number; bytes?: number; types?: Record<string, number>; largest_bytes?: number; over_3mb?: number }
 type Inventory = {
   server: Record<string, string | number | boolean | unknown[]>
   tables: Table[]; policies: Policy[]; buckets: Bucket[]
@@ -102,6 +102,17 @@ describe('comparaison de l’inventaire avec les migrations', () => {
     expect(compare(inventory(inv => { inv.server.log_statement = 'all'; inv.server.log_parameter_max_length = '0' })).status).toBe(0)
   })
 
+  it('images existantes de project-images comparées aux limites prévues (JPEG/PNG/WebP, 3 Mo)', () => {
+    const images = (types: Record<string, number>, over: number) => compare(inventory(inv => {
+      inv.buckets = [{ id: 'project-images', public: true, file_size_limit: null, allowed_mime_types: null, objects: 5, bytes: 1,
+                       types, largest_bytes: 4194304, over_3mb: over }]
+    }))
+    const outside = images({ 'image/png': 3, 'image/gif': 1, 'image/svg+xml': 1 }, 1)
+    expect(outside.status).toBe(0)
+    expect(outside.out).toMatch(/project-images : 2 fichier\(s\) hors JPEG\/PNG\/WebP \(image\/gif ×1, image\/svg\+xml ×1\) et 1 de plus de 3 Mo \(le plus grand : 4\.0 Mo\)/)
+    expect(images({ 'image/jpeg': 2, 'image/webp': 3 }, 0).out).toMatch(/respectent déjà les limites prévues/)
+  })
+
   it('PostgreSQL 15 : accepté, restauration annoncée par le client 17', () => {
     const r = compare(inventory(inv => { inv.server.version = '15.14'; inv.server.version_num = 150014 }))
     expect(r.status).toBe(0)
@@ -120,14 +131,15 @@ describe('rapport de phase 0 (synthèse de l’inventaire)', () => {
       inv.tables.push({ schema: 'public', name: 'skills', rls: false, force_rls: false, rows: 4 })
       inv.policies.push({ schema: 'storage', table: 'objects', name: 'Public read project images', permissive: 'PERMISSIVE',
                           roles: ['public'], cmd: 'SELECT', using: "bucket_id = 'project-images'", with_check: null })
-      inv.buckets = [{ id: 'project-images', public: true, file_size_limit: null, allowed_mime_types: null, objects: 9, bytes: 2097152 }]
+      inv.buckets = [{ id: 'project-images', public: true, file_size_limit: null, allowed_mime_types: null, objects: 9, bytes: 2097152,
+                       types: { 'image/png': 7, 'image/gif': 2 }, largest_bytes: 1048576, over_3mb: 0 }]
     }))
     expect(md).toMatch(/PostgreSQL 17\.6 \(majeure 17\)/)
     expect(md).toMatch(/Administrateurs \(admin_users\) : 1 ; avec un TOTP vérifié : 1/)
     expect(md).toMatch(/\| visits \| oui \| 2908 \| 1 \|/)
     expect(md).toMatch(/\| skills \| \*\*NON\*\* \| 4 \| 0 \|/)
     expect(md).toMatch(/### Politiques du stockage \(1\)[\s\S]*Public read project images/)
-    expect(md).toMatch(/\| project-images \| oui \| 9 \| 2\.0 Mo \| aucune \| tous \|/)
+    expect(md).toMatch(/\| project-images \| oui \| 9 \| 2\.0 Mo \| aucune \| tous \| image\/png ×7, image\/gif ×2 \| 1\.0 Mo \| 0 \|/)
   })
 
   it('administrateur sans TOTP : seul blocage toléré avant la phase 1, jamais combiné à un autre', () => {
