@@ -25,12 +25,15 @@ export interface FakeOpenAI {
   url: string;
   calls: ReceivedCall[];
   behavior: FakeBehavior;
+  /** Requêtes bloquées (hang) dont le client a coupé la connexion */
+  abortedCalls(): number;
   close(): Promise<void>;
 }
 
 export async function startFakeOpenAI(): Promise<FakeOpenAI> {
   const state = { calls: [] as ReceivedCall[], behavior: { kind: 'ok' } as FakeBehavior };
   const pending = new Set<http.ServerResponse>();
+  let aborted = 0;
 
   const server = http.createServer((req, res) => {
     let raw = '';
@@ -47,7 +50,11 @@ export async function startFakeOpenAI(): Promise<FakeOpenAI> {
         res.end(JSON.stringify(body));
       };
 
-      if (b.kind === 'hang') { pending.add(res); return; }
+      if (b.kind === 'hang') {
+        pending.add(res);
+        res.on('close', () => { if (!res.writableEnded) aborted++; });
+        return;
+      }
       if (b.kind === 'error') return json(b.status, b.body);
       if (b.kind === 'malformed') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{not json'); return; }
       if (b.kind === 'filtered') return json(200, { choices: [{ message: { content: '' }, finish_reason: 'content_filter' }] });
@@ -68,6 +75,7 @@ export async function startFakeOpenAI(): Promise<FakeOpenAI> {
     calls: state.calls,
     get behavior() { return state.behavior; },
     set behavior(b) { state.behavior = b; },
+    abortedCalls: () => aborted,
     close: () => new Promise<void>(resolve => {
       for (const res of pending) res.destroy();
       server.closeAllConnections?.();

@@ -1,7 +1,8 @@
 // P0.A2 — Passerelle IA : délais maximaux et niveau d'authentification par fonctionnalité.
 // Fonctionnalités de test injectées (délai court, niveau admin) pour ne pas attendre 30-85 s.
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
+import type { AddressInfo } from 'net';
 import request from 'supertest';
 import { createApp } from '../src/app';
 import { createMemoryQuotaService } from '../src/ai/services/quotas';
@@ -30,6 +31,7 @@ const base = (id: string, overrides: Partial<FeatureDefinition>): FeatureDefinit
 const features = {
   'test.slow':  base('test.slow', {}),
   'test.admin': base('test.admin', { authLevel: 'admin', timeoutMs: 5000 }),
+  'test.admin-free': base('test.admin-free', { timeoutMs: 5000 }),
 };
 
 let fake: FakeOpenAI;
@@ -81,6 +83,36 @@ describe('délai maximal', () => {
     await request(app).post('/api/ai/run/test.slow').send({ input: { q: 'a' } });
     fake.behavior = { kind: 'ok' };
     expect((await request(app).post('/api/ai/run/test.slow').send({ input: { q: 'b' } })).status).toBe(200);
+  });
+});
+
+describe('déconnexion du visiteur', () => {
+  it('l’appel en cours vers le fournisseur est interrompu et la concurrence libérée', async () => {
+    fake.behavior = { kind: 'hang' };
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise(resolve => server.once('listening', resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const before = fake.abortedCalls();
+    const client = new AbortController();
+    const pending = fetch(`http://127.0.0.1:${port}/api/ai/run/test.admin-free`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: { q: 'x' } }),
+      signal: client.signal,
+    }).catch(err => err);
+
+    await vi.waitFor(() => expect(fake.calls).toHaveLength(1));
+    client.abort();
+    await pending;
+
+    // Bien avant le délai maximal de 5 s de cette fonctionnalité
+    await vi.waitFor(() => expect(fake.abortedCalls()).toBe(before + 1), { timeout: 1500 });
+
+    fake.behavior = { kind: 'ok' };
+    const res = await request(app).post('/api/ai/run/test.admin-free').send({ input: { q: 'y' } });
+    expect(res.status).toBe(200);
+    await new Promise(resolve => server.close(resolve));
   });
 });
 
