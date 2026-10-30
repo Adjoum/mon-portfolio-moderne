@@ -484,12 +484,13 @@ const App = {
     btn.textContent='⏳ Génération...'; btn.disabled=true;
     out.style.display='block'; out.textContent='Génération en cours...'; out.style.color='var(--text2)';
 
-    // Appel IA uniquement via blog-api (/api/groq/generate) : aucune clé dans le navigateur
-    const API_URL = 'https://api.adjoumani-koffi.com'; // en prod
-    // const API_URL = 'http://localhost:5000'; // en dev
+    // Appel IA uniquement via blog-api : aucune clé dans le navigateur. L'adresse de l'API vient
+    // de config.js, généré à partir de VITE_API_URL (serveur Vite en développement, build sinon).
+    const apiUrl = window.INKSPACE_CONFIG && window.INKSPACE_CONFIG.apiUrl;
     try {
+      if(!apiUrl) throw new Error('adresse du service IA non configurée');
 
-      const res = await fetch(`${API_URL}/api/groq/generate`, {
+      const res = await fetch(`${apiUrl}/groq/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })

@@ -8,7 +8,7 @@ import path from 'node:path';
 const GEMINI_KEY = 'CANARY-gemini-key-browser-0001';
 
 export async function runAiDashboardScenarios(admin, ctx) {
-  const { check, API, fakes, sqlValue } = ctx;
+  const { check, API, WEB, fakes, sqlValue } = ctx;
   const shots = process.env.E2E_SHOTS ?? os.tmpdir();
   const tab = name => admin.getByRole('button', { name, exact: true }).click();
   const seen = text => admin.getByText(text).first().waitFor({ timeout: 20000 });
@@ -116,6 +116,19 @@ export async function runAiDashboardScenarios(admin, ctx) {
   await tab('Historique');
   await seen('Clé enregistrée');
   check('navigateur : statistiques et historique affichés', true);
+
+  // ── InkSpace : adresse de l'API issue de la configuration du build ──
+  const ink = await admin.context().newPage();
+  const inkCalls = [];
+  ink.on('request', r => { if (r.url().includes('/groq/generate')) inkCalls.push(r.url()); });
+  await ink.goto(`${WEB}/inkspace/index.html`);
+  await ink.waitForFunction(() => typeof App !== 'undefined' && !!window.INKSPACE_CONFIG, null, { timeout: 20000 });
+  await ink.evaluate(() => { document.getElementById('ai-prompt').value = 'Les planètes'; return App.submitAI(); });
+  const inkOutput = await ink.locator('#ai-output').innerText();
+  check('navigateur : InkSpace appelle l’API configurée au build, jamais la production',
+    inkCalls.length === 1 && inkCalls[0] === `${API}/api/groq/generate`, inkCalls.join(' ') || 'aucun appel');
+  check('navigateur : InkSpace affiche le message du serveur (fournisseur sans clé)', /momentanément indisponible/.test(inkOutput), inkOutput.slice(0, 80));
+  await ink.close();
 
   // ── Persistance après rechargement ──
   await admin.reload();

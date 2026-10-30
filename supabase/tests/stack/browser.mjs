@@ -19,7 +19,7 @@ export async function runBrowserScenarios(ctx) {
 
   console.log('▶ Construction du bundle de test (URL locales uniquement)');
   const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'p0cv-web-'));
-  const build = spawnSync(process.execPath, [path.join(ROOT, 'node_modules/vite/bin/vite.js'), 'build', '--outDir', dist, '--emptyOutDir'], {
+  const build = spawnSync(process.execPath, [path.join(ROOT, 'node_modules/vite/bin/vite.js'), 'build', '--mode', 'banc', '--outDir', dist, '--emptyOutDir'], {
     cwd: ROOT, encoding: 'utf8',
     env: { ...process.env, VITE_API_URL: `${API}/api`, VITE_SUPABASE_URL: GATEWAY, VITE_SUPABASE_ANON_KEY: ANON_KEY },
   });
@@ -161,7 +161,7 @@ export async function runBrowserScenarios(ctx) {
     const afterRestore = await active();
     check('restauration depuis le dashboard', afterRestore.id !== published.id);
 
-    await runAiDashboardScenarios(admin, { check, API, fakes, sqlValue });
+    await runAiDashboardScenarios(admin, { check, API, WEB, fakes, sqlValue });
     await admin.context().close();
 
     console.log('▶ Redéploiement simulé');
