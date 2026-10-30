@@ -1,169 +1,22 @@
 // blog-api/src/routes/groq.ts
+// URL historiques d'InkSpace et de NovaMind : simples adaptateurs de la passerelle IA.
+// Le fournisseur et le modèle sont résolus par fonctionnalité : le nom de la route ne
+// préjuge plus de Groq. Seul le format de réponse attendu par ces clients est conservé.
+
 import { Router } from 'express';
-import { groqAssignmentFor } from '../ai/services/assignments';
+import { featureLimiter, respondWithFeature } from './ai';
+import type { AiGateway } from '../ai/services/gateway';
 
-const router = Router();
+export function createGroqRouter(gateway: AiGateway) {
+  const router = Router();
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+  // InkSpace (app statique) lit choices[0].message.content
+  router.post('/generate', featureLimiter(gateway, 'inkspace.generate'), (req, res) =>
+    respondWithFeature(gateway, 'inkspace.generate', req, res, content => ({ choices: [{ message: { content } }] })));
 
-interface GroqResponse {
-  error?: { message: string };
-  choices?: { message: { content: string } }[];
+  // NovaMind reçoit directement le diagramme, validé par la passerelle
+  router.post('/generate-diagram', featureLimiter(gateway, 'novamind.diagram'), (req, res) =>
+    respondWithFeature(gateway, 'novamind.diagram', req, res, content => JSON.parse(content)));
+
+  return router;
 }
-
-// POST /api/groq/generate — proxy sécurisé vers Groq
-router.post('/generate', async (req, res) => {
-  try {
-    const { prompt } = req.body;
-    if (!prompt || typeof prompt !== 'string') {
-      return res.status(400).json({ error: 'prompt requis' });
-    }
-
-    const GROQ_API_KEY = process.env.GROQ_API_KEY;
-    if (!GROQ_API_KEY) {
-      return res.status(500).json({ error: 'Clé Groq non configurée' });
-    }
-
-    const assignment = groqAssignmentFor('inkspace.generate');
-    if (!assignment) return res.status(503).json({ error: 'Service IA momentanément indisponible' });
-
-    const response = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: assignment.model,
-        ...assignment.params,
-        messages: [
-          {
-            role: 'system',
-            content: `Tu es un assistant pédagogique pour un tableau blanc (InkSpace).
-              Réponds UNIQUEMENT en JSON valide, sans backtick ni markdown :
-              {"type":"list","title":"Titre court","items":["item1","item2",...],"note":"conseil optionnel"}
-              Maximum 8 items. Sois concis, pédagogique, en français.`
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.7
-      })
-    });
-
-    const data = await response.json() as GroqResponse;
-
-    if (data.error) {
-      return res.status(400).json({ error: data.error.message });
-    }
-
-    res.json(data);
-
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Erreur inconnue';
-    res.status(500).json({ error: message });
-  }
-});
-
-
-
-
-
-
-const AI_SYSTEM = `Tu es un expert en diagrammes d'analyse (mind map, Ishikawa, SWOT, 5 Pourquoi…).
-Réponds UNIQUEMENT avec du JSON valide, sans markdown, sans \`\`\`json, sans commentaires.
-
-Format EXACT — respecte chaque champ :
-{
-  "diagramType": "mind",
-  "nodes": {
-    "n1": {
-      "id": "n1", "x": 600, "y": 400,
-      "label": "Idée centrale", "color": "#6EE7F7",
-      "width": 200, "height": 80, "icon": "🧠",
-      "isRoot": true, "isEffect": false,
-      "notes": "", "tags": [], "priority": "normal", "collapsed": false
-    }
-  },
-  "edges": [
-    { "id": "e1", "from": "n1", "to": "n2", "style": "curve", "dashed": false }
-  ]
-}
-
-Règles :
-- diagramType : "mind" | "ishikawa" | "swot" | "five_why" | "tree" | "concept"
-- Ishikawa : nœud problème → isEffect:true, isRoot:false (JAMAIS isRoot:true pour Ishikawa)
-- 8 à 14 nœuds selon la complexité
-- Positions : x ∈ [100, 1200], y ∈ [80, 780]
-- Couleurs : #6EE7F7 #A78BFA #F472B6 #34D399 #FBBF24 #F87171 #60A5FA #C084FC
-- IDs : "n1", "n2"… et "e1", "e2"… (courts, sans espaces)
-- Réponds UNIQUEMENT avec le JSON — rien avant, rien après.`;
-
-router.post('/generate-diagram', async (req, res) => {
-  try {
-    const { prompt } = req.body;
-    if (!prompt || typeof prompt !== 'string') {
-      return res.status(400).json({ error: 'prompt requis' });
-    }
-
-    const GROQ_API_KEY = process.env.GROQ_API_KEY;
-    if (!GROQ_API_KEY) {
-      return res.status(500).json({ error: 'Clé Groq non configurée' });
-    }
-
-    const assignment = groqAssignmentFor('novamind.diagram');
-    if (!assignment) return res.status(503).json({ error: 'Service IA momentanément indisponible' });
-
-    const response = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: assignment.model,
-        ...assignment.params,
-        messages: [
-          { role: 'system', content: AI_SYSTEM },
-          { role: 'user',   content: `Génère un diagramme sur : ${prompt}` }
-        ],
-        temperature: 0.7,
-        max_tokens:  1400,
-      }),
-    });
-
-    const data = await response.json() as any;
-
-    if (data.error) {
-      return res.status(400).json({ error: data.error.message });
-    }
-
-    // Extraire et nettoyer le JSON brut
-    const raw   = data.choices?.[0]?.message?.content || '';
-    const clean = raw
-      .replace(/^```[a-zA-Z]*\s*/i, '')
-      .replace(/\s*```\s*$/i, '')
-      .trim();
-
-    // Valider le JSON avant de renvoyer
-    const parsed = JSON.parse(clean);
-    if (!parsed.nodes || !Array.isArray(parsed.edges)) {
-      return res.status(500).json({ error: 'Réponse LLM invalide' });
-    }
-
-    // Retourner le diagramme parsé directement
-    res.json(parsed);
-
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Erreur inconnue';
-    res.status(500).json({ error: message });
-  }
-});
-
-
-
-export default router;
-
-

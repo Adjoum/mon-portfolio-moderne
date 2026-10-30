@@ -2,12 +2,13 @@
 // Passerelle IA publique
 //   GET  /api/ai/features            → disponibilité de chaque fonctionnalité (sans fournisseur ni modèle)
 //   POST /api/ai/run/:featureId      → { input } → { content, requestId }
+// Les URL historiques (/api/agent/chat, /api/groq/*) réutilisent featureLimiter et respondWithFeature.
 // Le corps est limité par app.ts (256 Ko ; 6 Mo pour cv.import.ocr).
 // Erreurs : { error, code, requestId } — jamais de message de fournisseur ni de détail interne.
 
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { ipKeyGenerator } from 'express-rate-limit';
-import { aiLimiter } from '../middleware/rateLimit';
+import { aiFeatureLimiter, aiLimiter } from '../middleware/rateLimit';
 import { requireSupabaseAdmin, type SupabaseAdminRequest } from '../middleware/supabaseAdmin';
 import { AiError, newRequestId, type AiGateway } from '../ai/services/gateway';
 
@@ -34,6 +35,56 @@ function sendError(res: Response, requestId: string, err: AiError) {
   res.status(err.status).json(body);
 }
 
+/** Limiteur par minute propre à une fonctionnalité */
+export function featureLimiter(gateway: AiGateway, featureId: string) {
+  const feature = gateway.feature(featureId);
+  return feature ? aiFeatureLimiter(feature.id, feature.rateLimitPerMinute) : aiLimiter;
+}
+
+function subjectOf(req: SupabaseAdminRequest): string {
+  return req.supabaseAdmin?.userId ? `user:${req.supabaseAdmin.userId}` : `ip:${ipKeyGenerator(req.ip ?? '127.0.0.1')}`;
+}
+
+/**
+ * Exécute une fonctionnalité avec un corps déjà au format de la passerelle ({ input }),
+ * puis met le résultat au format attendu par le client appelant.
+ */
+async function execute(
+  gateway: AiGateway,
+  featureId: string,
+  body: unknown,
+  req: SupabaseAdminRequest,
+  res: Response,
+  format: (content: string, requestId: string) => unknown,
+) {
+  const requestId = newRequestId();
+  res.setHeader('Cache-Control', 'no-store');
+
+  // Annulation de l'appel au fournisseur si le visiteur se déconnecte
+  const controller = new AbortController();
+  res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+
+  try {
+    const { content } = await gateway.run(featureId, body, { subject: subjectOf(req), signal: controller.signal, requestId });
+    res.json(format(content, requestId));
+  } catch (err) {
+    if (err instanceof AiError) return sendError(res, requestId, err);
+    console.error(`[AI] ${requestId} erreur inattendue:`, (err as Error)?.message);
+    sendError(res, requestId, new AiError(500, 'SERVER_ERROR'));
+  }
+}
+
+/** URL historique : le corps de la requête est l'entrée de la fonctionnalité */
+export function respondWithFeature(
+  gateway: AiGateway,
+  featureId: string,
+  req: Request,
+  res: Response,
+  format: (content: string) => unknown,
+) {
+  return execute(gateway, featureId, { input: req.body }, req, res, format);
+}
+
 export function createAiRouter(gateway: AiGateway) {
   const router = Router();
 
@@ -49,31 +100,13 @@ export function createAiRouter(gateway: AiGateway) {
     next();
   };
 
-  router.post('/run/:featureId', aiLimiter, authForFeature, async (req: SupabaseAdminRequest, res) => {
-    const requestId = newRequestId();
-    res.setHeader('Cache-Control', 'no-store');
+  // Limiteurs créés au démarrage : express-rate-limit refuse une création pendant une requête
+  const limiters = new Map(gateway.features().map(f => [f.id, aiFeatureLimiter(f.id, f.rateLimitPerMinute)]));
+  const limitForFeature = (req: Request, res: Response, next: NextFunction) =>
+    (limiters.get(String(req.params.featureId)) ?? aiLimiter)(req, res, next);
 
-    // Annulation de l'appel au fournisseur si le visiteur se déconnecte
-    const controller = new AbortController();
-    res.on('close', () => { if (!res.writableEnded) controller.abort(); });
-
-    const subject = req.supabaseAdmin?.userId
-      ? `user:${req.supabaseAdmin.userId}`
-      : `ip:${ipKeyGenerator(req.ip ?? '127.0.0.1')}`;
-
-    try {
-      const { content } = await gateway.run(String(req.params.featureId), req.body, {
-        subject,
-        signal: controller.signal,
-        requestId,
-      });
-      res.json({ content, requestId });
-    } catch (err) {
-      if (err instanceof AiError) return sendError(res, requestId, err);
-      console.error(`[AI] ${requestId} erreur inattendue:`, (err as Error)?.message);
-      sendError(res, requestId, new AiError(500, 'SERVER_ERROR'));
-    }
-  });
+  router.post('/run/:featureId', limitForFeature, authForFeature, (req: SupabaseAdminRequest, res) =>
+    execute(gateway, String(req.params.featureId), req.body, req, res, (content, requestId) => ({ content, requestId })));
 
   return router;
 }

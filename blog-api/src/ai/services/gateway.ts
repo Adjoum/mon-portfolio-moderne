@@ -122,6 +122,10 @@ export function createAiGateway(overrides: Partial<AiGatewayDeps> = {}) {
   }
 
   return {
+    features(): FeatureDefinition[] {
+      return Object.values(deps.features);
+    },
+
     feature(featureId: string): FeatureDefinition | null {
       return Object.prototype.hasOwnProperty.call(deps.features, featureId) ? deps.features[featureId] : null;
     },
@@ -181,23 +185,26 @@ export function createAiGateway(overrides: Partial<AiGatewayDeps> = {}) {
       }
 
       // ── Appel ──
-      const built = feature.buildRequest(input);
-      const inputChars = built.system.length + built.messages
-        .flatMap(m => m.content)
-        .reduce((n, p) => n + (p.type === 'text' ? p.text.length : 0), 0);
       const started = Date.now();
       const signal = AbortSignal.any([ctx.signal, AbortSignal.timeout(feature.timeoutMs)]);
+      let inputChars = 0;
 
       try {
+        const built = await feature.buildRequest(input, { signal });
+        inputChars = built.system.length + built.messages
+          .flatMap(m => m.content)
+          .reduce((n, p) => n + (p.type === 'text' ? p.text.length : 0), 0);
+
         const result = await adapter.generate(
           { ...built, maxOutputTokens: feature.maxOutputTokens, params: assignment.params ?? {} },
           { apiKey, model: assignment.model, signal },
         );
+        const content = feature.parseOutput ? feature.parseOutput(result.content) : result.content;
         logUsage({
           ...meta, outcome: 'ok', latencyMs: Date.now() - started, inputChars,
-          outputChars: result.content.length, inputTokens: result.usage?.inputTokens, outputTokens: result.usage?.outputTokens,
+          outputChars: content.length, inputTokens: result.usage?.inputTokens, outputTokens: result.usage?.outputTokens,
         });
-        return { content: result.content };
+        return { content };
       } catch (err) {
         const providerError = err instanceof ProviderError ? err : new ProviderError('unknown', undefined, (err as Error)?.name);
         logUsage({

@@ -148,9 +148,9 @@ export const AIAgent: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: msg,
-          history: messages.filter(
-            (m) => m.role !== 'assistant' || messages.indexOf(m) > 0
-          ),
+          history: messages
+            .filter((m) => m.role !== 'assistant' || messages.indexOf(m) > 0)
+            .slice(-6),
         }),
       });
 

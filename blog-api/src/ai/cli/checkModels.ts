@@ -28,12 +28,9 @@ async function main() {
     const limits = [r.contextWindow && `contexte ${r.contextWindow}`, r.maxCompletionTokens && `sortie max ${r.maxCompletionTokens}`].filter(Boolean).join(', ');
     console.log(`${r.feature.padEnd(20)} ${`${r.provider}:${r.model}`.padEnd(30)} ${r.status.padEnd(12)} validée=${String(r.validated).padEnd(5)} en service=${r.effectiveModel ?? 'aucun'}${limits ? `  (${limits})` : ''}`);
   }
-  const retired = [...new Set(rows.filter(r => r.effectiveModelListed === false).map(r => r.effectiveModel))];
-  if (retired.length) console.log(`
-⚠️  Modèle en service absent de la liste du fournisseur : ${retired.join(', ')} (fonctionnalités probablement en panne)`);
   const warnings = misnamedKeys();
   if (warnings.length) console.log(`\n⚠️  Nom de variable à corriger (ignoré sous Linux) : ${warnings.join(' ; ')}`);
-  process.exitCode = rows.every(r => r.status === 'found') && warnings.length === 0 && retired.length === 0 ? 0 : 1;
+  process.exitCode = rows.every(r => r.status === 'found') && warnings.length === 0 ? 0 : 1;
 }
 
 main().catch((err: Error) => {

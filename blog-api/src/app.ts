@@ -26,9 +26,9 @@ import commentsRouter from './routes/comments';
 import authRouter     from './routes/auth';
 import uploadRouter   from './routes/upload';
 import tagsRouter     from './routes/tags';
-import groqRouter from './routes/groq';
+import { createGroqRouter } from './routes/groq';
 import knowledgeRouter from './routes/knowledge';
-import agentRouter from './routes/agent';
+import { createAgentRouter } from './routes/agent';
 import cvRouter from './routes/cv';
 import { createAiRouter } from './routes/ai';
 import adminCvRouter from './routes/adminCv';
@@ -42,6 +42,8 @@ export interface AppOptions {
 export function createApp(options: AppOptions = {}) {
   const app = express();
   app.set('trust proxy', 1);
+  app.disable('x-powered-by');
+  const aiGateway = createAiGateway(options.ai);
   // ── Middlewares globaux ───────────────────────────────────────
 
   // ── HTTP Request Logger ────────────────────────────────────────
@@ -70,13 +72,14 @@ export function createApp(options: AppOptions = {}) {
   });
 
   //app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
+  const devOrigins = process.env.NODE_ENV === 'production'
+    ? []
+    : ['http://localhost', 'http://localhost:80', 'http://localhost:5173'];
   app.use(cors({
     origin: [
       'https://adjoumani-koffi.com',
       'https://www.adjoumani-koffi.com',
-      'http://localhost',
-      'http://localhost:80',
-      'http://localhost:5173',
+      ...devOrigins,
       process.env.FRONTEND_URL || '',
     ].filter(Boolean),
     credentials: true,
@@ -89,7 +92,10 @@ export function createApp(options: AppOptions = {}) {
   // Passerelle IA : 256 Ko, sauf la lecture d'image (data URL d'au plus 4 Mo)
   app.use('/api/ai/run/cv.import.ocr', express.json({ limit: '6mb' }));
   app.use('/api/ai', express.json({ limit: '256kb' }));
-  app.use(express.json({ limit: '10mb' }));
+  // URL historiques des assistants : entrées texte uniquement
+  app.use('/api/agent/chat', express.json({ limit: '128kb' }));
+  app.use('/api/groq', express.json({ limit: '16kb' }));
+  app.use(express.json({ limit: '2mb' }));
   app.use(cookieParser());
   // Servir les images uploadées localement
   app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
@@ -126,21 +132,22 @@ export function createApp(options: AppOptions = {}) {
   app.use('/api/upload',   uploadLimiter,  uploadRouter);
   app.use('/api/auth',     authLimiter,    authRouter);
   app.use('/api/tags',     tagsRouter);
-  app.use('/api/groq', groqRouter);
+  app.use('/api/groq', createGroqRouter(aiGateway));
   app.use('/api/agent/knowledge', knowledgeRouter);
-  app.use('/api/agent', agentRouter);
+  app.use('/api/agent', createAgentRouter(aiGateway));
   app.use('/api/cv', cvRouter);
-  app.use('/api/ai', createAiRouter(createAiGateway(options.ai)));
+  app.use('/api/ai', createAiRouter(aiGateway));
   app.use('/api/admin/cv', adminCvRouter);
 
 
   // ── Health check ─────────────────────────────────────────────
+  // Public et minimal : aucun état interne (D19). /ready sert au diagnostic de démarrage.
   app.get('/api/health', (_req, res) => {
-    res.json({
-      status:   'ok',
-      mongodb:  mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-      uptime:   process.uptime(),
-    });
+    res.json({ status: 'ok' });
+  });
+  app.get('/api/health/ready', (_req, res) => {
+    const ready = mongoose.connection.readyState === 1;
+    res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'starting' });
   });
 
   // ── Erreurs : réponse JSON neutre, jamais de pile ni de message interne ──

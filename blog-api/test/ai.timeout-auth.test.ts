@@ -21,6 +21,7 @@ const base = (id: string, overrides: Partial<FeatureDefinition>): FeatureDefinit
   promptVersion: 'test.v1',
   bodyLimit: 'small',
   timeoutMs: 300,
+  rateLimitPerMinute: 10_000,
   maxOutputTokens: 16,
   quotas: { perSubjectPerDay: 100, globalPerDay: 100, concurrency: 1 },
   parseInput: raw => ({ q: text(strictObject(raw, 'input', ['q']), 'q', { max: 100, required: true }) }),

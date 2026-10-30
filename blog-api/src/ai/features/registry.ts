@@ -5,13 +5,13 @@
 // Seule l'AFFECTATION (fournisseur, modèle), indépendante par fonctionnalité, sera
 // modifiable depuis le dashboard (P1/P2) : données dans config/initial-assignments.json.
 //
-// Fonctionnalités IA existantes encore servies par leurs routes historiques (Groq),
-// à durcir en P0.A3 puis à brancher sur cette passerelle en P1.D :
-//   agent.chat (/api/agent/chat), inkspace.generate (/api/groq/generate),
-//   novamind.diagram (/api/groq/generate-diagram)
+// Toutes les fonctionnalités IA passent par cette passerelle. Les URL historiques
+// (/api/agent/chat, /api/groq/*) n'en sont que des adaptateurs de format.
 
 import type { NormalizedRequest } from '../providers/types';
 import { InputError, strictObject, text, oneOf, imageDataUrl } from './validate';
+import { searchKnowledge } from './knowledgeContext';
+import { normalizeDiagramOutput, normalizeInkspaceOutput } from './outputs';
 import {
   CV_PROMPT_VERSION, cvGenerateSystem, cvGenerateUser, CV_REVIEW_SYSTEM,
   CV_OCR_SYSTEM, CV_OCR_USER, CV_STRUCTURE_SYSTEM, type CvIntake,
@@ -20,10 +20,12 @@ import {
   LATEX_PROMPT_VERSION, LATEX_GENERATE_SYSTEM, LATEX_IMPROVE_SYSTEM,
   latexGenerateUser, latexImproveUser,
 } from './prompts/latex.v1';
+import { ASSISTANTS_PROMPT_VERSION, INKSPACE_SYSTEM, NOVAMIND_SYSTEM, agentSystem } from './prompts/assistants.v1';
 
 export const FEATURE_IDS = [
   'cv.generate', 'cv.review', 'cv.import.structure', 'cv.import.ocr',
   'latex.generate', 'latex.improve',
+  'agent.chat', 'inkspace.generate', 'novamind.diagram',
 ] as const;
 export type FeatureId = (typeof FEATURE_IDS)[number];
 
@@ -40,6 +42,11 @@ export interface FeatureQuotas {
 
 export type BuiltRequest = Pick<NormalizedRequest, 'system' | 'messages'>;
 
+export interface BuildContext {
+  /** Annulé si le visiteur se déconnecte */
+  signal: AbortSignal;
+}
+
 export interface FeatureDefinition<Input = any> {
   id: string;
   section: string;
@@ -52,11 +59,28 @@ export interface FeatureDefinition<Input = any> {
   timeoutMs: number;
   maxOutputTokens: number;
   quotas: FeatureQuotas;
+  /** Requêtes par minute et par IP */
+  rateLimitPerMinute: number;
   parseInput(raw: unknown): Input;
-  buildRequest(input: Input): BuiltRequest;
+  /** Exécutée après les quotas : peut interroger une source externe (recherche de contexte) */
+  buildRequest(input: Input, ctx: BuildContext): BuiltRequest | Promise<BuiltRequest>;
+  /** Contrôle et normalise la sortie du modèle ; lève une ProviderError si elle est inexploitable */
+  parseOutput?(content: string): string;
 }
 
+
 const userText = (value: string): BuiltRequest['messages'] => [{ role: 'user', content: [{ type: 'text', text: value }] }];
+
+/** Historique de l'assistant : le widget peut envoyer toute la conversation, seul le dernier échange part au modèle */
+const MAX_HISTORY_RECEIVED = 200;
+const HISTORY_SENT = 6;
+
+interface AgentInput {
+  message: string;
+  history: { role: 'user' | 'assistant'; content: string }[];
+}
+
+const isChatRole = (value: unknown): value is AgentInput['history'][number]['role'] => value === 'user' || value === 'assistant';
 
 const SHORT = 200;   // champs d'identité
 const LONG  = 6000;  // champs descriptifs
@@ -76,6 +100,7 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     timeoutMs: 85_000,
     maxOutputTokens: 4500,
     quotas: { perSubjectPerDay: 3, globalPerDay: 150, concurrency: 3 },
+    rateLimitPerMinute: 6,
     parseInput(raw): CvIntake {
       const o = strictObject(raw, 'input', [...INTAKE_SHORT, ...INTAKE_LONG, 'style', 'lang', 'importedContent', 'updateInstructions']);
       const intake = {
@@ -103,6 +128,7 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     timeoutMs: 30_000,
     maxOutputTokens: 800,
     quotas: { perSubjectPerDay: 5, globalPerDay: 200, concurrency: 4 },
+    rateLimitPerMinute: 6,
     parseInput(raw) {
       const o = strictObject(raw, 'input', ['cv', 'lang']);
       const lang = oneOf(o, 'lang', ['fr', 'en'] as const, 'fr');
@@ -133,6 +159,7 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     timeoutMs: 45_000,
     maxOutputTokens: 2000,
     quotas: { perSubjectPerDay: 3, globalPerDay: 150, concurrency: 3 },
+    rateLimitPerMinute: 6,
     parseInput(raw) {
       const o = strictObject(raw, 'input', ['text']);
       const value = text(o, 'text', { max: 60_000, required: true });
@@ -155,6 +182,7 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     timeoutMs: 60_000,
     maxOutputTokens: 2000,
     quotas: { perSubjectPerDay: 1, globalPerDay: 50, concurrency: 2 },
+    rateLimitPerMinute: 6,
     parseInput(raw) {
       const o = strictObject(raw, 'input', ['image']);
       return { image: imageDataUrl(o, 'image', 4 * 1024 * 1024) };
@@ -179,6 +207,7 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     timeoutMs: 85_000,
     maxOutputTokens: 3000,
     quotas: { perSubjectPerDay: 3, globalPerDay: 100, concurrency: 2 },
+    rateLimitPerMinute: 6,
     parseInput(raw) {
       const o = strictObject(raw, 'input', ['info', 'template', 'existing']);
       return {
@@ -204,6 +233,7 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     timeoutMs: 60_000,
     maxOutputTokens: 1800,
     quotas: { perSubjectPerDay: 15, globalPerDay: 400, concurrency: 4 },
+    rateLimitPerMinute: 6,
     parseInput(raw) {
       const o = strictObject(raw, 'input', ['selection', 'instruction', 'context']);
       return {
@@ -216,6 +246,86 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
       system: LATEX_IMPROVE_SYSTEM,
       messages: userText(latexImproveUser(selection, instruction, context)),
     }),
+  },
+
+  'agent.chat': {
+    id: 'agent.chat',
+    section: 'Assistant Clone IA',
+    authLevel: 'public',
+    personalData: false,
+    requiredCapabilities: ['text'],
+    promptVersion: ASSISTANTS_PROMPT_VERSION,
+    bodyLimit: 'small',
+    timeoutMs: 30_000,
+    maxOutputTokens: 1000,
+    quotas: { perSubjectPerDay: 40, globalPerDay: 2000, concurrency: 6 },
+    rateLimitPerMinute: 12,
+    parseInput(raw): AgentInput {
+      const o = strictObject(raw, 'input', ['message', 'history']);
+      const message = text(o, 'message', { max: 2000, required: true });
+      const rawHistory = o.history ?? [];
+      if (!Array.isArray(rawHistory) || rawHistory.length > MAX_HISTORY_RECEIVED) throw new InputError('history', 'liste attendue');
+      // Seuls user et assistant sont acceptés : le rôle système appartient au serveur
+      const history = rawHistory.map((entry, index) => {
+        const field = `history[${index}]`;
+        const item = strictObject(entry, field, ['role', 'content']);
+        if (!isChatRole(item.role)) throw new InputError(`${field}.role`, 'rôle non autorisé');
+        return { role: item.role, content: text(item, 'content', { max: 4000, required: true }) };
+      });
+      return { message, history: history.slice(-HISTORY_SENT) };
+    },
+    async buildRequest({ message, history }: AgentInput, { signal }) {
+      return {
+        system: agentSystem(await searchKnowledge(message, signal)),
+        messages: [
+          ...history.map(({ role, content }) => ({ role, content: [{ type: 'text' as const, text: content }] })),
+          ...userText(message),
+        ],
+      };
+    },
+  },
+
+  'inkspace.generate': {
+    id: 'inkspace.generate',
+    section: 'InkSpace',
+    authLevel: 'public',
+    personalData: false,
+    requiredCapabilities: ['text'],
+    promptVersion: ASSISTANTS_PROMPT_VERSION,
+    bodyLimit: 'small',
+    timeoutMs: 30_000,
+    maxOutputTokens: 1200,
+    quotas: { perSubjectPerDay: 20, globalPerDay: 500, concurrency: 3 },
+    rateLimitPerMinute: 8,
+    parseInput(raw) {
+      const o = strictObject(raw, 'input', ['prompt']);
+      return { prompt: text(o, 'prompt', { max: 4000, required: true }) };
+    },
+    buildRequest: ({ prompt }: { prompt: string }) => ({ system: INKSPACE_SYSTEM, messages: userText(prompt) }),
+    parseOutput: normalizeInkspaceOutput,
+  },
+
+  'novamind.diagram': {
+    id: 'novamind.diagram',
+    section: 'NovaMind',
+    authLevel: 'public',
+    personalData: false,
+    requiredCapabilities: ['text'],
+    promptVersion: ASSISTANTS_PROMPT_VERSION,
+    bodyLimit: 'small',
+    timeoutMs: 45_000,
+    maxOutputTokens: 2400,
+    quotas: { perSubjectPerDay: 15, globalPerDay: 400, concurrency: 3 },
+    rateLimitPerMinute: 6,
+    parseInput(raw) {
+      const o = strictObject(raw, 'input', ['prompt']);
+      return { prompt: text(o, 'prompt', { max: 4000, required: true }) };
+    },
+    buildRequest: ({ prompt }: { prompt: string }) => ({
+      system: NOVAMIND_SYSTEM,
+      messages: userText(`Génère un diagramme sur : ${prompt}`),
+    }),
+    parseOutput: normalizeDiagramOutput,
   },
 };
 

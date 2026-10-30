@@ -202,7 +202,7 @@ describe('fournisseur non configuré ou fonctionnalité désactivée', () => {
   it('GET /api/ai/features : disponibilité sans fournisseur ni modèle', async () => {
     let res = await request(app).get('/api/ai/features');
     expect(res.status).toBe(200);
-    expect(res.body.features).toHaveLength(6);
+    expect(res.body.features).toHaveLength(Object.keys(FEATURES).length);
     expect(res.body.features.every((f: { available: boolean }) => f.available)).toBe(true);
     expect(JSON.stringify(res.body)).not.toMatch(/openai|gpt|groq|anthropic|gemini|model|provider/i);
 

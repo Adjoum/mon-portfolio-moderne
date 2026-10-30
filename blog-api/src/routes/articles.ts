@@ -6,6 +6,9 @@ import { requireAdmin, authMiddleware, type AuthRequest } from '../middleware/au
 
 const router = Router();
 
+// Champs publics de l'auteur : jamais d'e-mail ni de mot de passe
+const AUTHOR_FIELDS = 'username avatar bio role';
+
 // GET /api/articles — liste paginée avec jointures
 router.get('/', async (req, res) => {
   try {
@@ -15,7 +18,7 @@ router.get('/', async (req, res) => {
     if (featured) filter.featured = true;
     if (search) filter.$text = { $search: String(search) };
     if (tag) {
-      const tagDoc = await Tag.findOne({ slug: tag });
+      const tagDoc = await Tag.findOne({ slug: String(tag) });
       if (tagDoc) filter.tags = tagDoc._id;
     }
     const [articles, total] = await Promise.all([
@@ -86,7 +89,7 @@ router.post('/', authMiddleware, requireAdmin, async (req, res) => {
     });
     await article.save();
     if (tags?.length) await Tag.updateMany({ _id: { $in: tags } }, { $inc: { count: 1 } });
-    res.status(201).json(await article.populate(['author', 'tags']));
+    res.status(201).json(await article.populate([{ path: 'author', select: AUTHOR_FIELDS }, 'tags']));
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -102,7 +105,7 @@ router.put('/:id', authMiddleware, requireAdmin, async (req, res) => {
     const article = await Article.findByIdAndUpdate(
       req.params.id, update,
       { returnDocument: 'after', runValidators: true }
-    ).populate(['author', 'tags']);
+    ).populate([{ path: 'author', select: AUTHOR_FIELDS }, 'tags']);
     if (!article) return res.status(404).json({ error: 'Introuvable' });
     res.json(article);
   } catch (err: any) {

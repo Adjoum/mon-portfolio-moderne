@@ -17,8 +17,6 @@ export interface ModelCheckRow {
   validated: boolean;
   /** Modèle réellement utilisé à ce jour (null : fonctionnalité indisponible) */
   effectiveModel: string | null;
-  /** false : le modèle réellement en service n'est plus proposé par le fournisseur */
-  effectiveModelListed?: boolean;
   status: ModelCheckStatus;
   contextWindow?: number;
   maxCompletionTokens?: number;
@@ -77,9 +75,6 @@ export async function checkConfiguredModels(
       status: !info ? 'not_found' : info.active === false ? 'inactive' : 'found',
       contextWindow: info?.contextWindow,
       maxCompletionTokens: info?.maxCompletionTokens,
-      effectiveModelListed: effectiveModel && effective?.provider === candidate.provider
-        ? models.some(m => m.id === effectiveModel)
-        : undefined,
     });
   }
   return rows;

@@ -7,8 +7,7 @@
 //
 // Brouillon / publication (doc 09 §4) : une affectation ne s'exécute que si elle figure
 // dans AI_VALIDATED_ASSIGNMENTS (fonctionnalité=fournisseur:modèle). Changer de modèle
-// la remet donc à « non validée ». Tant qu'elle ne l'est pas, l'affectation précédente
-// éventuelle reste en service (aucune coupure, aucun appel à un modèle non vérifié).
+// la remet donc à « non validée » : aucun appel n'est possible tant qu'elle ne l'est pas.
 
 import seed from '../config/initial-assignments.json';
 import { isProviderId } from '../providers/registry';
@@ -20,7 +19,7 @@ export interface Assignment {
   provider: ProviderId;
   model: string;
   params?: AssignmentParams;
-  source: 'seed' | 'env' | 'previous';
+  source: 'seed' | 'env';
   validated: boolean;
 }
 
@@ -32,7 +31,6 @@ interface SeedEntry {
   provider: string;
   model: string;
   params?: AssignmentParams;
-  previous?: { provider: string; model: string };
 }
 
 const SEED = seed as unknown as Record<string, SeedEntry>;
@@ -77,21 +75,6 @@ export function isValidated(featureId: string, a: { provider: string; model: str
 export const envAssignmentResolver: AssignmentResolver = {
   resolve(featureId) {
     const candidate = candidateFor(featureId);
-    if (!candidate) return null;
-    if (isValidated(featureId, candidate)) return { ...candidate, validated: true };
-
-    const previous = SEED[featureId]?.previous;
-    if (previous && isProviderId(previous.provider)) {
-      return { provider: previous.provider, model: previous.model, source: 'previous', validated: true };
-    }
-    return { ...candidate, validated: false };
+    return candidate ? { ...candidate, validated: isValidated(featureId, candidate) } : null;
   },
 };
-
-export type LegacyGroqFeature = 'agent.chat' | 'inkspace.generate' | 'novamind.diagram';
-
-/** Routes Groq historiques (à brancher sur la passerelle en P1.D). null = indisponible */
-export function groqAssignmentFor(featureId: LegacyGroqFeature): { model: string; params: AssignmentParams } | null {
-  const a = envAssignmentResolver.resolve(featureId);
-  return a?.provider === 'groq' && a.validated ? { model: a.model, params: a.params ?? {} } : null;
-}

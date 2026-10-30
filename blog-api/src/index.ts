@@ -38,21 +38,9 @@ function shutdown(signal: string) {
   }, 5000);
 }
 
-// Auto-ping anti-sleep (Render Free)
-if (process.env.NODE_ENV === 'production') {
-  const SELF_URL = process.env.RENDER_EXTERNAL_URL || '';
-  setInterval(async () => {
-    try {
-      await fetch(`${SELF_URL}/api/health`);
-      console.log('🏓 Self-ping ok');
-    } catch (e) {
-      console.warn('⚠️ Self-ping failed:', e);
-    }
-  }, 10 * 60 * 1000); // toutes les 10 min
-} 
 // ── Lancement ────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
-const BASE_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+const BASE_URL = `http://localhost:${PORT}`;
 const server = app.listen(PORT, () =>
   console.log(`🚀 Blog API ${BASE_URL}`)
 );

@@ -3,7 +3,7 @@
 // Implémentation manuelle légère + express-rate-limit
 
 import { type Request, type Response, type NextFunction } from 'express';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator, type RateLimitRequestHandler } from 'express-rate-limit';
 import type { AuthRequest } from './auth';
 import type { SupabaseAdminRequest } from './supabaseAdmin';
 
@@ -154,6 +154,25 @@ export const aiLimiter = rateLimit({
   legacyHeaders:   false,
   handler:         rateLimitHandler,
 });
+
+// ── 6e. Limite par fonctionnalité IA — par IP et par minute ───
+// AI_RATE_LIMIT_PER_MINUTE remplace toutes les valeurs du registre.
+const aiFeatureLimiters = new Map<string, RateLimitRequestHandler>();
+
+export function aiFeatureLimiter(featureId: string, perMinute: number): RateLimitRequestHandler {
+  let limiter = aiFeatureLimiters.get(featureId);
+  if (!limiter) {
+    limiter = rateLimit({
+      windowMs:        60 * 1000,
+      max:             Number(process.env.AI_RATE_LIMIT_PER_MINUTE) || perMinute,
+      standardHeaders: true,
+      legacyHeaders:   false,
+      handler:         rateLimitHandler,
+    });
+    aiFeatureLimiters.set(featureId, limiter);
+  }
+  return limiter;
+}
 
 // ── 7. Middleware de validation du contenu ────────────────────
 // Rejeter les commentaires trop courts ou trop longs

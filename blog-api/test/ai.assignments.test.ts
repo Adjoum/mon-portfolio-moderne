@@ -11,14 +11,13 @@ import { PROVIDERS } from '../src/ai/providers/registry';
 import { PROVIDER_IDS } from '../src/ai/providers/types';
 import { FEATURE_IDS } from '../src/ai/features/registry';
 import { createMemoryQuotaService } from '../src/ai/services/quotas';
-import { envAssignmentResolver, candidateFor, groqAssignmentFor } from '../src/ai/services/assignments';
+import { envAssignmentResolver, candidateFor } from '../src/ai/services/assignments';
 import { checkConfiguredModels } from '../src/ai/services/modelCheck';
 import { startFakeOpenAI, type FakeOpenAI } from './helpers/fakeOpenAI';
 import { SECRET_CANARIES, findLeakedSecret } from './helpers/canaries';
 
 const OPENAI_MODEL = seed['cv.generate'].model;
 const GROQ_MODEL   = seed['agent.chat'].model;
-const LIVE_GROQ    = seed['agent.chat'].previous.model;
 
 const INPUT = { cv: { personal: { name: 'Awa' } }, lang: 'fr' };
 
@@ -148,35 +147,15 @@ describe('réponse vide d’un modèle à raisonnement', () => {
   });
 });
 
-describe('routes Groq en service', () => {
-  let spy: { mock: { calls: unknown[][] }; mockRestore(): void } | undefined;
-  afterEach(() => { spy?.mockRestore(); spy = undefined; });
-
-  it('non validée : le modèle en service est conservé, sans coupure', () => {
-    expect(envAssignmentResolver.resolve('agent.chat')).toMatchObject({ model: LIVE_GROQ, source: 'previous', validated: true });
-    expect(groqAssignmentFor('inkspace.generate')?.model).toBe(LIVE_GROQ);
+describe('assistants : plus aucun repli vers un modèle ancien', () => {
+  it('non validée : aucun modèle en service, jamais un repli silencieux', () => {
+    expect(envAssignmentResolver.resolve('agent.chat')).toMatchObject({ model: GROQ_MODEL, validated: false });
   });
 
-  it('validée : le nouveau modèle prend le relais, fonctionnalité par fonctionnalité', () => {
+  it('validation fonctionnalité par fonctionnalité', () => {
     process.env.AI_VALIDATED_ASSIGNMENTS = `agent.chat=groq:${GROQ_MODEL}`;
-    expect(groqAssignmentFor('agent.chat')?.model).toBe(GROQ_MODEL);
-    expect(groqAssignmentFor('novamind.diagram')?.model).toBe(LIVE_GROQ);
-  });
-
-  it('POST /api/groq/generate utilise le modèle résolu côté serveur', async () => {
-    spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ choices: [] }), { status: 200 })) as unknown as typeof spy;
-    await request(createApp()).post('/api/groq/generate').send({ prompt: 'bonjour', model: 'tentative-client' });
-    const init = spy!.mock.calls[0][1] as RequestInit;
-    expect(JSON.parse(String(init.body)).model).toBe(LIVE_GROQ);
-  });
-
-  it('affectation vers un autre fournisseur : indisponible plutôt que modèle inadapté', async () => {
-    process.env.AI_ASSIGNMENT_INKSPACE_GENERATE = `openai:${OPENAI_MODEL}`;
-    process.env.AI_VALIDATED_ASSIGNMENTS = `inkspace.generate=openai:${OPENAI_MODEL}`;
-    spy = vi.spyOn(globalThis, 'fetch') as unknown as typeof spy;
-    const res = await request(createApp()).post('/api/groq/generate').send({ prompt: 'bonjour' });
-    expect(res.status).toBe(503);
-    expect(spy).not.toHaveBeenCalled();
+    expect(envAssignmentResolver.resolve('agent.chat')?.validated).toBe(true);
+    expect(envAssignmentResolver.resolve('novamind.diagram')?.validated).toBe(false);
   });
 });
 
@@ -193,8 +172,7 @@ describe('vérification gratuite par métadonnées', () => {
     const rows = await checkConfiguredModels({ openai: openai.url, groq: groq.url });
     expect(rows).toHaveLength(9);
     expect(rows.every(r => r.status === 'found')).toBe(true);
-    expect(rows.find(r => r.feature === 'agent.chat')).toMatchObject({ maxCompletionTokens: 65536, effectiveModel: LIVE_GROQ, effectiveModelListed: false });
-    expect(rows.find(r => r.feature === 'cv.review')?.effectiveModelListed).toBeUndefined();
+    expect(rows.find(r => r.feature === 'agent.chat')).toMatchObject({ maxCompletionTokens: 65536, effectiveModel: null });
     expect(openai.calls).toHaveLength(0);
     expect(groq.calls).toHaveLength(0);
   });
