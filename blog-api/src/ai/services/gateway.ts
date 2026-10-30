@@ -7,7 +7,7 @@
 // Fournisseur non configuré → refus neutre, AUCUN appel réseau.
 
 import crypto from 'crypto';
-import { FEATURES, type FeatureDefinition, type FeatureId } from '../features/registry';
+import { FEATURES, type FeatureDefinition } from '../features/registry';
 import { InputError } from '../features/validate';
 import { PROVIDERS } from '../providers/registry';
 import { ProviderError, type ProviderAdapter, type ProviderDescriptor, type ProviderId } from '../providers/types';
@@ -33,6 +33,8 @@ export interface AiGatewayDeps {
   quotas: QuotaService;
   /** Remplace l'URL de base d'un fournisseur (tests uniquement, injecté dans le code) */
   baseUrlOverrides?: Partial<Record<ProviderId, string>>;
+  /** false : exécute les affectations non validées (tests uniquement, injecté dans le code) */
+  requireValidatedAssignment?: boolean;
 }
 
 export interface RunContext {
@@ -88,6 +90,7 @@ export function createAiGateway(overrides: Partial<AiGatewayDeps> = {}) {
     providers: PROVIDERS,
     resolver:  envAssignmentResolver,
     quotas:    createMemoryQuotaService(),
+    requireValidatedAssignment: true,
     ...overrides,
   };
   const adapters = new Map<ProviderId, ProviderAdapter>();
@@ -107,8 +110,10 @@ export function createAiGateway(overrides: Partial<AiGatewayDeps> = {}) {
   /** Fonctionnalité exploitable maintenant ? (sans exposer fournisseur ni modèle) */
   function resolveTarget(feature: FeatureDefinition) {
     if (process.env.AI_ENABLED === 'false' || disabledFeatures().has(feature.id)) return { reason: 'disabled' as const };
-    const assignment = deps.resolver.resolve(feature.id as FeatureId);
+    const assignment = deps.resolver.resolve(feature.id);
     if (!assignment) return { reason: 'not_configured' as const };
+    // Affectation non vérifiée : aucun appel (et donc aucune facturation) possible
+    if (deps.requireValidatedAssignment && !assignment.validated) return { reason: 'not_configured' as const };
     const adapter = adapterFor(assignment.provider);
     const apiKey  = process.env[deps.providers[assignment.provider].apiKeyEnv]?.trim();
     if (!adapter || !apiKey) return { reason: 'not_configured' as const };
@@ -185,7 +190,7 @@ export function createAiGateway(overrides: Partial<AiGatewayDeps> = {}) {
 
       try {
         const result = await adapter.generate(
-          { ...built, maxOutputTokens: feature.maxOutputTokens, params: {} },
+          { ...built, maxOutputTokens: feature.maxOutputTokens, params: assignment.params ?? {} },
           { apiKey, model: assignment.model, signal },
         );
         logUsage({

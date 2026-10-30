@@ -53,12 +53,21 @@ export interface CallContext {
   signal: AbortSignal;
 }
 
+export interface ModelInfo {
+  id: string;
+  contextWindow?: number;
+  maxCompletionTokens?: number;
+  active?: boolean;
+}
+
 export interface ProviderAdapter {
   id: ProviderId;
   supportedParams: ReadonlySet<GenerationParam>;
   /** Entrée image acceptée par l'adaptateur (le modèle doit aussi la supporter) */
   supportsImages: boolean;
   generate(req: NormalizedRequest, ctx: CallContext): Promise<NormalizedResponse>;
+  /** Métadonnées uniquement (aide à la vérification, jamais de liste figée) : sans facturation */
+  listModels?(ctx: Pick<CallContext, 'apiKey' | 'signal'>): Promise<ModelInfo[]>;
 }
 
 /** Description statique d'un fournisseur : URL de base FIXÉE dans le code (jamais configurable à distance) */

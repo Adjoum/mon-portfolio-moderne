@@ -1,10 +1,10 @@
 // blog-api/src/routes/agent.ts
 import { Router } from 'express';
 import { Pinecone } from '@pinecone-database/pinecone';
+import { groqAssignmentFor } from '../ai/services/assignments';
 
 const router = Router();
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL   = 'llama-3.3-70b-versatile';
 
 // Initialiser Pinecone
 const pinecone = new Pinecone({
@@ -18,6 +18,9 @@ router.post('/chat', async (req, res) => {
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'message requis' });
     }
+
+    const assignment = groqAssignmentFor('agent.chat');
+    if (!assignment) return res.status(503).json({ error: 'Service IA momentanément indisponible' });
 
     // 1. Rechercher dans Pinecone (integrated embedding — pas besoin de vecteur)
     const index = pinecone.index(process.env.PINECONE_INDEX!);
@@ -74,7 +77,8 @@ router.post('/chat', async (req, res) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: GROQ_MODEL,
+        model: assignment.model,
+        ...assignment.params,
         messages,
         temperature: 0.6,
         max_tokens: 600,

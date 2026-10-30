@@ -1,0 +1,12 @@
+{
+  "_comment": "DONNÉES initiales d'affectation (pas des constantes de code). Surcharge par AI_ASSIGNMENT_<FEATURE>=fournisseur:modèle ; table ai_feature_assignments en P1.B ; dashboard en P2. 'previous' = affectation en service conservée tant que la nouvelle n'est pas validée (AI_VALIDATED_ASSIGNMENTS).",
+  "cv.generate":         { "provider": "openai", "model": "gpt-6-astra", "params": { "reasoning_effort": "low" } },
+  "cv.review":           { "provider": "openai", "model": "gpt-6-astra", "params": { "reasoning_effort": "low" } },
+  "cv.import.structure": { "provider": "openai", "model": "gpt-6-astra", "params": { "reasoning_effort": "low" } },
+  "cv.import.ocr":       { "provider": "openai", "model": "gpt-6-astra", "params": { "reasoning_effort": "low" } },
+  "latex.generate":      { "provider": "openai", "model": "gpt-6-astra", "params": { "reasoning_effort": "low" } },
+  "latex.improve":       { "provider": "openai", "model": "gpt-6-astra", "params": { "reasoning_effort": "low" } },
+  "agent.chat":          { "provider": "groq", "model": "openai/gpt-oss-120b", "params": { "reasoning_effort": "low" }, "previous": { "provider": "groq", "model": "llama-3.3-70b-versatile" } },
+  "inkspace.generate":   { "provider": "groq", "model": "openai/gpt-oss-120b", "params": { "reasoning_effort": "low" }, "previous": { "provider": "groq", "model": "llama-3.3-70b-versatile" } },
+  "novamind.diagram":    { "provider": "groq", "model": "openai/gpt-oss-120b", "params": { "reasoning_effort": "low" }, "previous": { "provider": "groq", "model": "llama-3.3-70b-versatile" } }
+}

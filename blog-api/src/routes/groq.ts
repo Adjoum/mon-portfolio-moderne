@@ -1,10 +1,10 @@
 // blog-api/src/routes/groq.ts
 import { Router } from 'express';
+import { groqAssignmentFor } from '../ai/services/assignments';
 
 const router = Router();
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL   = 'llama-3.3-70b-versatile';
 
 interface GroqResponse {
   error?: { message: string };
@@ -24,6 +24,9 @@ router.post('/generate', async (req, res) => {
       return res.status(500).json({ error: 'Clé Groq non configurée' });
     }
 
+    const assignment = groqAssignmentFor('inkspace.generate');
+    if (!assignment) return res.status(503).json({ error: 'Service IA momentanément indisponible' });
+
     const response = await fetch(GROQ_API_URL, {
       method: 'POST',
       headers: {
@@ -31,7 +34,8 @@ router.post('/generate', async (req, res) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: GROQ_MODEL,
+        model: assignment.model,
+        ...assignment.params,
         messages: [
           {
             role: 'system',
@@ -109,6 +113,9 @@ router.post('/generate-diagram', async (req, res) => {
       return res.status(500).json({ error: 'Clé Groq non configurée' });
     }
 
+    const assignment = groqAssignmentFor('novamind.diagram');
+    if (!assignment) return res.status(503).json({ error: 'Service IA momentanément indisponible' });
+
     const response = await fetch(GROQ_API_URL, {
       method: 'POST',
       headers: {
@@ -116,7 +123,8 @@ router.post('/generate-diagram', async (req, res) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: GROQ_MODEL,
+        model: assignment.model,
+        ...assignment.params,
         messages: [
           { role: 'system', content: AI_SYSTEM },
           { role: 'user',   content: `Génère un diagramme sur : ${prompt}` }

@@ -25,13 +25,23 @@ export interface FakeOpenAI {
   url: string;
   calls: ReceivedCall[];
   behavior: FakeBehavior;
+  /** Liste renvoyée par GET /v1/models (métadonnées, sans facturation) */
+  models: Record<string, unknown>[];
+  modelListStatus: number;
+  modelListCalls(): number;
   /** Requêtes bloquées (hang) dont le client a coupé la connexion */
   abortedCalls(): number;
   close(): Promise<void>;
 }
 
 export async function startFakeOpenAI(): Promise<FakeOpenAI> {
-  const state = { calls: [] as ReceivedCall[], behavior: { kind: 'ok' } as FakeBehavior };
+  const state = {
+    calls: [] as ReceivedCall[],
+    behavior: { kind: 'ok' } as FakeBehavior,
+    models: [] as Record<string, unknown>[],
+    modelListStatus: 200,
+    modelListCalls: 0,
+  };
   const pending = new Set<http.ServerResponse>();
   let aborted = 0;
 
@@ -39,6 +49,12 @@ export async function startFakeOpenAI(): Promise<FakeOpenAI> {
     let raw = '';
     req.on('data', chunk => { raw += chunk; });
     req.on('end', () => {
+      if (req.method === 'GET' && req.url === '/v1/models') {
+        state.modelListCalls++;
+        res.writeHead(state.modelListStatus, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ data: state.models }));
+        return;
+      }
       if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
         res.writeHead(404).end();
         return;
@@ -76,6 +92,11 @@ export async function startFakeOpenAI(): Promise<FakeOpenAI> {
     get behavior() { return state.behavior; },
     set behavior(b) { state.behavior = b; },
     abortedCalls: () => aborted,
+    get models() { return state.models; },
+    set models(m) { state.models = m; },
+    get modelListStatus() { return state.modelListStatus; },
+    set modelListStatus(s) { state.modelListStatus = s; },
+    modelListCalls: () => state.modelListCalls,
     close: () => new Promise<void>(resolve => {
       for (const res of pending) res.destroy();
       server.closeAllConnections?.();

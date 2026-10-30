@@ -13,7 +13,7 @@ afterAll(async () => { await fake.close(); });
 
 describe('limiteur IA par IP', () => {
   it('4e requête de la minute → 429 avant tout traitement', async () => {
-    const app = createApp({ ai: { baseUrlOverrides: { openai: fake.url }, quotas: createMemoryQuotaService() } });
+    const app = createApp({ ai: { baseUrlOverrides: { openai: fake.url }, quotas: createMemoryQuotaService(), requireValidatedAssignment: false } });
     const statuses: number[] = [];
     for (let i = 0; i < 4; i++) {
       statuses.push((await request(app).post('/api/ai/run/latex.improve')

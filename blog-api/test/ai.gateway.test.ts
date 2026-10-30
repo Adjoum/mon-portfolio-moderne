@@ -8,6 +8,7 @@ import { createMemoryQuotaService } from '../src/ai/services/quotas';
 import { FEATURES } from '../src/ai/features/registry';
 import { CV_REVIEW_SYSTEM } from '../src/ai/features/prompts/cv.v1';
 import { LATEX_IMPROVE_SYSTEM } from '../src/ai/features/prompts/latex.v1';
+import seed from '../src/ai/config/initial-assignments.json';
 import { startFakeOpenAI, type FakeOpenAI } from './helpers/fakeOpenAI';
 import { findLeakedSecret, SECRET_CANARIES } from './helpers/canaries';
 import { allConsoleOutput } from './helpers/audit';
@@ -36,7 +37,7 @@ const freshIp = () => `198.51.100.${(++ipCounter % 250) + 2}`;
 
 beforeAll(async () => {
   fake = await startFakeOpenAI();
-  app = createApp({ ai: { baseUrlOverrides: { openai: fake.url }, quotas } });
+  app = createApp({ ai: { baseUrlOverrides: { openai: fake.url }, quotas, requireValidatedAssignment: false } });
 });
 afterAll(async () => {
   await fake.close();
@@ -64,10 +65,11 @@ describe('proxy avec réponses simulées', () => {
   it('modèle, limite de tokens et clé décidés par le serveur', async () => {
     await run('cv.review', { input: VALID_INPUTS['cv.review'] });
     const call = fake.calls[0];
-    expect(call.body.model).toBe('gpt-4o-mini');
-    expect(call.body.max_tokens).toBe(FEATURES['cv.review'].maxOutputTokens);
+    expect(call.body.model).toBe(seed['cv.review'].model);
+    expect(call.body.max_completion_tokens).toBe(FEATURES['cv.review'].maxOutputTokens);
+    expect(call.body.max_tokens).toBeUndefined();   // refusé par les modèles à raisonnement
     expect(call.headers.authorization).toBe(`Bearer ${SECRET_CANARIES.OPENAI_API_KEY}`);
-    expect(Object.keys(call.body).sort()).toEqual(['max_tokens', 'messages', 'model']);
+    expect(Object.keys(call.body).sort()).toEqual(['max_completion_tokens', 'messages', 'model', 'reasoning_effort']);
   });
 
   it('la photo n’est jamais transmise au fournisseur (cv.review)', async () => {
@@ -177,8 +179,8 @@ describe('fournisseur non configuré ou fonctionnalité désactivée', () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  it('fournisseur sans adaptateur dans cette version (groq) → 503, aucun appel', async () => {
-    process.env.AI_ASSIGNMENT_CV_GENERATE = 'groq:llama-quelconque';
+  it('fournisseur sans adaptateur dans cette version (xai) → 503, aucun appel', async () => {
+    process.env.AI_ASSIGNMENT_CV_GENERATE = 'xai:modele-quelconque';
     const res = await run('cv.generate', { input: VALID_INPUTS['cv.generate'] });
     expect(res.status).toBe(503);
     expect(fake.calls).toHaveLength(0);
@@ -283,7 +285,7 @@ describe('erreurs du fournisseur : aucune fuite', () => {
   });
 
   it('fournisseur injoignable → 502 neutre', async () => {
-    const dead = createApp({ ai: { baseUrlOverrides: { openai: 'http://127.0.0.1:1' }, quotas: createMemoryQuotaService() } });
+    const dead = createApp({ ai: { baseUrlOverrides: { openai: 'http://127.0.0.1:1' }, quotas: createMemoryQuotaService(), requireValidatedAssignment: false } });
     const res = await request(dead).post('/api/ai/run/cv.review').send({ input: VALID_INPUTS['cv.review'] });
     expect(res.status).toBe(502);
     expect(res.body.code).toBe('AI_PROVIDER_ERROR');
@@ -298,7 +300,7 @@ describe('journalisation', () => {
     const usage = logs.split('\n').find(l => l.startsWith('[AI_USAGE]') && l.includes('cv.generate') && l.includes('"ok"'));
     expect(usage).toBeDefined();
     const event = JSON.parse(usage!.slice('[AI_USAGE] '.length));
-    expect(event).toMatchObject({ feature: 'cv.generate', provider: 'openai', model: 'gpt-4o', outcome: 'ok' });
+    expect(event).toMatchObject({ feature: 'cv.generate', provider: 'openai', model: seed['cv.generate'].model, outcome: 'ok' });
     expect(event.subject).toMatch(/^[0-9a-f]{16}$/);
     expect(logs).not.toContain(marker);
     expect(logs).not.toContain('203.0.113.99');
@@ -311,7 +313,7 @@ describe('URL de développement (faux fournisseur local)', () => {
     const saved = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
     process.env.AI_DEV_PROVIDER_BASE_URL_OPENAI = fake.url;
-    const prodApp = createApp({ ai: { quotas: createMemoryQuotaService() } });
+    const prodApp = createApp({ ai: { quotas: createMemoryQuotaService(), requireValidatedAssignment: false } });
     const res = await request(prodApp).post('/api/ai/run/cv.review').send({ input: VALID_INPUTS['cv.review'] });
     process.env.NODE_ENV = saved;
     expect(fake.calls).toHaveLength(0);   // l'URL réelle est utilisée (bloquée dans les tests)
@@ -320,7 +322,7 @@ describe('URL de développement (faux fournisseur local)', () => {
 
   it('refusée hors boucle locale', async () => {
     process.env.AI_DEV_PROVIDER_BASE_URL_OPENAI = 'https://evil.example';
-    const devApp = createApp({ ai: { quotas: createMemoryQuotaService() } });
+    const devApp = createApp({ ai: { quotas: createMemoryQuotaService(), requireValidatedAssignment: false } });
     await request(devApp).post('/api/ai/run/cv.review').send({ input: VALID_INPUTS['cv.review'] });
     expect(fake.calls).toHaveLength(0);
   });

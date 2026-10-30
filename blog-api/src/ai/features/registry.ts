@@ -2,7 +2,8 @@
 // Registre des fonctionnalités IA : identifiants techniques stables, définis dans le code.
 // Pour chacune : niveau d'authentification, schéma d'entrée strict, prompt système serveur,
 // limites (tokens, durée, taille du corps), quotas par défaut, capacités requises.
-// Seule l'AFFECTATION (fournisseur, modèle) sera modifiable depuis le dashboard (P1/P2).
+// Seule l'AFFECTATION (fournisseur, modèle), indépendante par fonctionnalité, sera
+// modifiable depuis le dashboard (P1/P2) : données dans config/initial-assignments.json.
 //
 // Fonctionnalités IA existantes encore servies par leurs routes historiques (Groq),
 // à durcir en P0.A3 puis à brancher sur cette passerelle en P1.D :

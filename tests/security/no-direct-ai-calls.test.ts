@@ -27,6 +27,8 @@ describe('sources servies au navigateur', () => {
     for (const host of CONFIG.providerHosts) expect(code, host).not.toContain(host)
     expect(code).not.toMatch(/VITE_[A-Z_]*(OPENAI|ANTHROPIC|GROQ|GEMINI|XAI|OPENROUTER|PINECONE|SECRET|PRIVATE|SERVICE_ROLE)/)
     for (const { name, regex } of CONFIG.keyPatterns) expect(code, name).not.toMatch(new RegExp(regex))
+    // Le navigateur ne connaît aucun identifiant de modèle : ils sont résolus côté serveur
+    expect(code).not.toMatch(/['"`]gpt-d|gpt-oss|llama-d/)
   })
 
   it.each(DEAD_FILES)('%s (code mort) n’est importé nulle part', (dead) => {

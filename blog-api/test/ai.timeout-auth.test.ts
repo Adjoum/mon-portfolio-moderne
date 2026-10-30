@@ -44,7 +44,7 @@ beforeAll(async () => {
   app = createApp({
     ai: {
       features,
-      resolver: { resolve: () => ({ provider: 'openai', model: 'modele-test', source: 'default' }) },
+      resolver: { resolve: () => ({ provider: 'openai', model: 'modele-test', source: 'seed', validated: true }) },
       baseUrlOverrides: { openai: fake.url },
       quotas: createMemoryQuotaService(),
     },
