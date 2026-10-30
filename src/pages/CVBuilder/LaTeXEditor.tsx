@@ -443,6 +443,10 @@ async function aiImproveSelection(selection: string, instruction: string, fullCo
   return URL.createObjectURL(pdfBlob);
 }  */
 
+// Compilation PDF côté serveur désactivée (audit sécurité P0, faille S2) :
+// elle reviendra via un conteneur isolé (latex-runner). L'export .tex reste disponible.
+const LATEX_PREVIEW_AVAILABLE = false;
+
 async function compileLatex(code: string, photo: string | null): Promise<string> {
   const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -635,6 +639,7 @@ export default function LaTeXCVEditor() {
     }, [code, pdfUrl]);  */
 
   const doRender = useCallback(async () => {
+    if (!LATEX_PREVIEW_AVAILABLE) return;
     setRendering(true);
     setRenderError(null);
     try {
@@ -816,7 +821,8 @@ export default function LaTeXCVEditor() {
   const copyCode = () => navigator.clipboard.writeText(code);
 
   const statusColor = rendering ? "#f59e0b" : renderError ? "#ef4444" : pdfUrl ? "#22c55e" : "#6b7280";
-  const statusText = rendering ? "Compilation..." : renderError ? "Erreur" : pdfUrl ? "PDF prêt" : "En attente";
+  const statusText = !LATEX_PREVIEW_AVAILABLE ? "Aperçu indisponible"
+    : rendering ? "Compilation..." : renderError ? "Erreur" : pdfUrl ? "PDF prêt" : "En attente";
 
   return (
     <div
@@ -1196,7 +1202,27 @@ export default function LaTeXCVEditor() {
                 }}
             >
                 <div style={{ fontSize: 32 }}>📄</div>
-                <div>Le PDF compilé apparaîtra ici</div>
+                {LATEX_PREVIEW_AVAILABLE ? (
+                  <div>Le PDF compilé apparaîtra ici</div>
+                ) : (
+                  <div style={{ maxWidth: 360, textAlign: "center", lineHeight: 1.6 }}>
+                    L'aperçu PDF est momentanément indisponible.
+                    <br />
+                    Téléchargez le fichier <strong>.tex</strong> puis compilez-le sur Overleaf
+                    ou avec votre distribution LaTeX.
+                    <div style={{ marginTop: 12 }}>
+                      <button
+                        onClick={handleDownloadTex}
+                        style={{
+                          padding: "6px 14px", borderRadius: 7, fontSize: 12, fontWeight: 700,
+                          cursor: "pointer", border: "1px solid #21262d", background: "#1f6feb", color: "#fff",
+                        }}
+                      >
+                        ⬇ Télécharger .tex
+                      </button>
+                    </div>
+                  </div>
+                )}
             </div>
           ) : null}
         </div>
