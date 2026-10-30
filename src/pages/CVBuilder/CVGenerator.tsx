@@ -8,6 +8,7 @@ import {
 } from './CVGeneratorPro_part1';
 import { renderTemplate, TEMPLATE_META } from './CVGeneratorPro_part2';
 import { DesignPanelFull } from './CVLiveEditor';
+import { useAiAvailability } from '../../hooks/useAiAvailability';
 
 // ── Empty intake ───────────────────────────────────────────────
 const emptyIntake = (): IntakeData => ({
@@ -449,6 +450,7 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
 
     // Lu une seule fois au montage (initializer paresseux)
   const [saved] = useState<Partial<PersistedState>>(loadPersisted);
+  const aiAvailable = useAiAvailability();
 
   const [step, setStep] = useState<'form' | 'preview'>(
     saved.step === 'preview' && saved.cv ? 'preview' : 'form'
@@ -521,7 +523,7 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
         showPopup({ type: 'success', title: '✅ CV généré avec succès !', message: `CV de ${generated.experience?.length || 0} expérience(s) et ${generated.skills?.length || 0} catégorie(s) de compétences. Choisissez un template et personnalisez le design.` });
       }, 300);
     } catch (e: any) {
-      showPopup({ type: 'error', title: '❌ Erreur de génération', message: e.message || 'Vérifiez votre clé OpenAI dans le fichier .env (VITE_OPENAI_API_KEY).' });
+      showPopup({ type: 'error', title: '❌ Erreur de génération', message: e.message || 'La génération par l\'IA a échoué. Réessayez dans quelques instants.' });
     }
   };
 
@@ -800,8 +802,18 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
         )}
       </div>
 
+      {/* Fonction IA indisponible : prévenir avant l'action */}
+      {!aiAvailable('cv.generate') && (
+        <div className="gp-info-box" role="status" style={{ borderColor: 'rgba(245,158,11,.5)', color: '#fbbf24', marginBottom: 12 }}>
+          ⚠️ La génération de CV par l'IA est momentanément indisponible. Vos informations restent
+          enregistrées dans ce navigateur ; réessayez plus tard.
+          {!aiAvailable('cv.review') && ' La vérification IA avant export est également suspendue.'}
+        </div>
+      )}
+
       {/* Generate button */}
-      <button className="gp-generate-btn" onClick={handleGenerate}>
+      <button className="gp-generate-btn" onClick={handleGenerate} disabled={!aiAvailable('cv.generate')}
+        style={!aiAvailable('cv.generate') ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}>
         ⚡ Générer mon CV professionnel avec l'IA
       </button>
     </div>

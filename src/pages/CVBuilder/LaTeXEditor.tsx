@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { runAiFeature } from "../../lib/aiClient";
+import { useAiAvailability } from "../../hooks/useAiAvailability";
 
 
 
@@ -308,111 +310,18 @@ Compétence 1, Compétence 2, Compétence 3, Compétence 4
 const PHOTO_PLACEHOLDER =
   "\\colorbox{softblue}{\\parbox[c][3.8cm][c]{3.2cm}{\\centering\\textcolor{textmuted}{\\small Photo\\\\optionnelle}}}";
 
+// Fonctions IA de l'éditeur : exécutées par blog-api (latex.generate / latex.improve).
+// Prompts et modèle sont définis côté serveur ; aucune clé dans le navigateur.
 async function aiGenerateLatex(info: string, template: string, existing: string): Promise<string> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${(import.meta as any).env?.VITE_OPENAI_API_KEY ?? ""}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      max_tokens: 3000,
-      messages: [
-        {
-          role: "system",
-          content: `Tu es un expert en LaTeX et en rédaction de CV professionnels haut de gamme.
-            Retourne UNIQUEMENT le code LaTeX final complet, sans aucune explication, sans commentaire, sans balises markdown et sans texte hors du code.
-
-            Contraintes techniques :
-            - Le document doit être entièrement compatible avec une compilation LaTeX standard sur Overleaf.
-            - Le document doit utiliser la classe article.
-            - Utilise uniquement des packages stables et compatibles avec pdflatex.
-            - Packages autorisés : geometry, hyperref, array, xcolor, titlesec, enumitem, lmodern, babel, inputenc, fontenc, parskip, graphicx, tabularx, multicol.
-            - Les accents UTF-8 normaux sont autorisés et doivent être correctement gérés.
-            - Le code produit doit être directement compilable sans modification.
-
-            Contraintes de contenu et de mise en page :
-            - Le CV doit avoir une mise en page professionnelle, lisible, élégante et sobre.
-            - Améliore la hiérarchie visuelle, l’alignement, l’espacement, la structure des sections et la présentation générale.
-            - Optimise la densité du contenu pour éviter les espaces inutiles et limiter le nombre de pages si possible.
-            - Corrige automatiquement les éventuelles erreurs de syntaxe LaTeX.
-            - Corrige les maladresses évidentes de structure ou de formulation si elles apparaissent dans le contenu.
-            - Préserve fidèlement le sens des informations fournies.
-            - N’invente aucune information absente.
-            - Si une photo est prévue dans le code ou demandée, intègre-la proprement avec graphicx.
-            - Organise le CV de manière logique si nécessaire : en-tête, profil, compétences, expérience, formation, projets, certifications, langues, centres d’intérêt.
-            - Pour l'emplacement de la photo, insère EXACTEMENT le marqueur %%PHOTO%% sur sa propre ligne (en général dans un minipage en haut à droite de l'en-tête).
-            - N'écris JAMAIS \includegraphics toi-même pour la photo, et ne mets JAMAIS ce marqueur en commentaire.
-            - Le système remplace automatiquement %%PHOTO%% par la photo fournie par l'utilisateur (ou par un cadre vide s'il n'y en a pas). Tu n'as donc rien d'autre à gérer pour la photo.
-
-            Objectif final :
-            produire un CV LaTeX propre, cohérent, moderne, élégant, professionnel et prêt à compiler immédiatement sur Overleaf.`,
-        },
-        {
-          role: "user",
-          content: `Infos candidat:\n${info}\n\nTemplate:\n${template}\n\nCode actuel:\n${existing || "(vide)"}`,
-        },
-      ],
-    }),
-  });
-
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
+  return runAiFeature("latex.generate", { info, template, existing });
 }
 
 
 async function aiImproveSelection(selection: string, instruction: string, fullCode: string): Promise<string> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${(import.meta as any).env?.VITE_OPENAI_API_KEY ?? ""}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      max_tokens: 1800,
-      messages: [
-        {
-          role: "system",
-          content: `Tu es un expert en rédaction de CV professionnels et en LaTeX avancé.
-
-            Ta mission :
-            améliorer le code LaTeX d’un CV existant pour le rendre plus professionnel, plus lisible, plus élégant et mieux structuré, tout en conservant les informations importantes du candidat.
-
-            Règles impératives :
-            - Retourne UNIQUEMENT le code LaTeX final.
-            - N’ajoute aucune explication, aucun commentaire, aucun texte avant ou après le code.
-            - Le code doit être directement compilable avec une compilation LaTeX standard type Overleaf.
-            - N’utilise que des packages largement compatibles avec Overleaf et pdflatex.
-            - Tu peux utiliser si nécessaire : titlesec, enumitem, xcolor, babel, inputenc, fontenc, hyperref, geometry, array, tabularx, graphicx, multicol.
-            - Conserve un style sobre, moderne, professionnel et adapté à un CV.
-            - Améliore la hiérarchie visuelle, l’espacement, l’alignement, la clarté des sections et la présentation globale.
-            - Optimise la mise en page pour limiter les débordements inutiles et réduire le nombre de pages si possible.
-            - Corrige toute erreur de syntaxe LaTeX.
-            - Corrige aussi les fautes évidentes de structure ou de formulation si elles apparaissent dans le contenu.
-            - Préserve fidèlement le sens du contenu d’origine.
-            - N’invente pas d’informations absentes.
-            - Si une photo est déjà prévue dans le code, conserve-la et améliore son intégration proprement.
-            - Si le code contient des sections mal organisées, réorganise-les de façon logique : en-tête, profil, compétences, expérience, formation, projets, certifications, langues, centres d’intérêt.
-            - Assure-toi que les caractères accentués en français sont correctement gérés.
-            - Pour l'emplacement de la photo, insère EXACTEMENT le marqueur %%PHOTO%% sur sa propre ligne (en général dans un minipage en haut à droite de l'en-tête).
-            - N'écris JAMAIS \includegraphics toi-même pour la photo, et ne mets JAMAIS ce marqueur en commentaire.
-            - Le système remplace automatiquement %%PHOTO%% par la photo fournie par l'utilisateur (ou par un cadre vide s'il n'y en a pas). Tu n'as donc rien d'autre à gérer pour la photo.
-
-            Objectif final :
-            produire un CV LaTeX propre, élégant, professionnel, bien structuré et prêt à être compilé sans modification.`,
-        },
-        {
-          role: "user",
-          content: `Texte sélectionné:\n\`\`\`latex\n${selection}\n\`\`\`\n\nInstruction: ${instruction}\n\nContexte:\n${fullCode.slice(0, 3000)}`,
-        },
-      ],
-    }),
+  const content = await runAiFeature("latex.improve", {
+    selection, instruction, context: fullCode.slice(0, 3000),
   });
-
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content?.replace(/```latex\n?/g, "").replace(/```\n?/g, "").trim() ?? "";
+  return content.replace(/```latex\n?/g, "").replace(/```\n?/g, "").trim();
 }
 
 /*async function compileLatex(code: string): Promise<string> {
@@ -571,6 +480,7 @@ export default function LaTeXCVEditor() {
   const [aiInstruction, setAiInstruction] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
+  const aiAvailable = useAiAvailability();
   const [selectedText, setSelectedText] = useState("");
   const [monacoLoaded, setMonacoLoaded] = useState(false);
   const [photoData, setPhotoData] = useState<string | null>(null);
@@ -1012,7 +922,7 @@ export default function LaTeXCVEditor() {
 
                   <button
                     onClick={handleAIGenerate}
-                    disabled={aiLoading || !aiInfo.trim()}
+                    disabled={aiLoading || !aiInfo.trim() || !aiAvailable("latex.generate")}
                     style={{
                       width: "100%",
                       padding: "10px 0",
@@ -1054,7 +964,7 @@ export default function LaTeXCVEditor() {
 
                   <button
                     onClick={handleAIImprove}
-                    disabled={aiLoading || !selectedText.trim() || !aiInstruction.trim()}
+                    disabled={aiLoading || !selectedText.trim() || !aiInstruction.trim() || !aiAvailable("latex.improve")}
                     style={{
                       width: "100%",
                       padding: "10px 0",
@@ -1071,6 +981,24 @@ export default function LaTeXCVEditor() {
                     {aiLoading ? "⏳ Amélioration..." : "✨ Améliorer la sélection"}
                   </button>
                 </>
+              )}
+
+              {!aiAvailable(aiMode === "generate" ? "latex.generate" : "latex.improve") && (
+                <div
+                  role="status"
+                  style={{
+                    marginTop: 10,
+                    padding: "8px 10px",
+                    borderRadius: 7,
+                    background: "rgba(245,158,11,.08)",
+                    border: "1px solid rgba(245,158,11,.3)",
+                    fontSize: 11,
+                    color: "#fbbf24",
+                  }}
+                >
+                  ℹ️ Cette fonction IA est momentanément indisponible. L'édition manuelle et le
+                  téléchargement du fichier .tex restent disponibles.
+                </div>
               )}
 
               {aiError && (

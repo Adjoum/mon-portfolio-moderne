@@ -9,6 +9,7 @@
 //    ⑥ Système de popups responsives centrées
 // ═══════════════════════════════════════════════════════════════
 import { useState, useRef } from 'react';
+import { runAiFeature, AiFeatureError } from '../../lib/aiClient';
 
 // ── Types core ─────────────────────────────────────────────────
 interface Project {
@@ -77,30 +78,15 @@ export interface IntakeData {
 }
 
 // ── AI helpers ─────────────────────────────────────────────────
-const OPENAI_KEY = () => ((import.meta as any).env?.VITE_OPENAI_API_KEY ?? '') as string;
+// Toutes les fonctions IA passent par blog-api (src/lib/aiClient.ts) : prompts,
+// modèle, limites et quotas sont définis côté serveur. Aucune clé dans le navigateur.
 
-async function callGPT(
-  system: string, user: string, model = 'gpt-4o', max = 4000,
-  images?: string[]
-): Promise<string> {
-  const key = OPENAI_KEY();
-  if (!key) throw new Error('Clé VITE_OPENAI_API_KEY manquante dans .env');
+/** Limites appliquées par le serveur (blog-api/src/ai/features/registry.ts) */
+const MAX_IMPORTED_CHARS = 12_000;
+const MAX_STRUCTURE_CHARS = 8000;
 
-  const content: any[] = [{ type: 'text', text: user }];
-  images?.forEach(img => content.unshift({ type: 'image_url', image_url: { url: img, detail: 'high' } }));
-
-  const r = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model, max_tokens: max,
-      messages: [{ role: 'system', content: system }, { role: 'user', content }],
-    }),
-  });
-  if (!r.ok) { const e = await r.json(); throw new Error(e.error?.message ?? `HTTP ${r.status}`); }
-  const d = await r.json();
-  return d.choices?.[0]?.message?.content ?? '';
-}
+const truncate = (text: string, max: number) =>
+  text.length > max ? text.slice(0, max) + '\n[tronqué]' : text;
 
 const cleanJSON = (raw: string) =>
   raw.replace(/^```[a-z]*\n?/, '').replace(/```\s*$/, '').trim();
@@ -331,31 +317,59 @@ async function extractTextFromDOCX(file: File): Promise<string> {
   return (result as any).value as string;
 }
 
-// ── Image → texte via GPT-4o Vision (CV scannés uniquement) ──
+// ── Image : réduite côté navigateur avant envoi ───────────────
+// Cible < 900 Ko (passe même avec la limite par défaut de 1 Mo de nginx) ;
+// plafond serveur : 4 Mo. Paliers de réduction successifs.
+const OCR_TARGET_CHARS = 900_000;
+const OCR_STEPS = [{ side: 2000, quality: 0.85 }, { side: 1600, quality: 0.8 }, { side: 1280, quality: 0.75 }];
+
+async function fitImageForOcr(dataUrl: string): Promise<string> {
+  const img = new Image();
+  await new Promise<void>((resolve, reject) => {
+    img.onload  = () => resolve();
+    img.onerror = () => reject(new Error('Image illisible'));
+    img.src = dataUrl;
+  });
+  if (dataUrl.length <= OCR_TARGET_CHARS && Math.max(img.width, img.height) <= OCR_STEPS[0].side) return dataUrl;
+
+  let resized = dataUrl;
+  for (const { side, quality } of OCR_STEPS) {
+    const scale = Math.min(1, side / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width  = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    resized = canvas.toDataURL('image/jpeg', quality);
+    if (resized.length <= OCR_TARGET_CHARS) return resized;
+  }
+  return resized; // au-delà de la cible : le serveur décidera (4 Mo maximum)
+}
+
+// ── Image → texte via l'IA vision (CV scannés uniquement) ──
 async function extractCVFromImage(base64: string, mimeType: string): Promise<string> {
   const VISION = ['image/jpeg','image/jpg','image/png','image/gif','image/webp'];
   if (!VISION.some(m => mimeType.startsWith(m))) {
     throw new Error('Type image non supporté: ' + mimeType);
   }
-  return callGPT(
-    `Tu es expert en lecture de CV. Extrais TOUT le contenu de ce CV image.
-Retourne le texte structuré: NOM, TITRE, CONTACT, RÉSUMÉ, EXPÉRIENCES (dates+entreprises), FORMATION, COMPÉTENCES.`,
-    'Extrais intégralement le contenu de ce CV.',
-    'gpt-4o', 2000, [base64]
-  );
+  return runAiFeature('cv.import.ocr', { image: await fitImageForOcr(base64) });
 }
 
-// ── Structuration du texte brut par GPT-4o-mini ───────────────
-async function structureCVText(rawText: string): Promise<string> {
+// ── Structuration du texte brut par l'IA ───────────────────────
+// Si la fonction IA est indisponible, le texte brut est conservé (l'import reste possible)
+async function structureCVTextWithFallback(rawText: string): Promise<{ text: string; structured: boolean }> {
   if (!rawText.trim()) throw new Error('Aucun texte extrait — document peut-être protégé ou scanné.');
-  const txt = rawText.length > 8000 ? rawText.slice(0, 8000) + '\n[tronqué]' : rawText;
-  return callGPT(
-    `Tu es expert CV. Ce texte a été extrait automatiquement d'un PDF ou Word.
-Réorganise-le en sections claires: NOM · TITRE · CONTACT · RÉSUMÉ · EXPÉRIENCES (dates+entreprises) · FORMATION · COMPÉTENCES · LANGUES.
-Corrige les artéfacts (espaces parasites, retours mal placés). Retourne le texte propre et structuré.`,
-    `Texte extrait:\n${txt}`,
-    'gpt-4o-mini', 2000
-  );
+  try {
+    return { text: await runAiFeature('cv.import.structure', { text: rawText }), structured: true };
+  } catch (e) {
+    if (e instanceof AiFeatureError && e.unavailable) {
+      return { text: truncate(rawText.trim(), MAX_STRUCTURE_CHARS), structured: false };
+    }
+    throw e;
+  }
+}
+
+async function structureCVText(rawText: string): Promise<string> {
+  return (await structureCVTextWithFallback(rawText)).text;
 }
 
 // Alias de compatibilité
@@ -373,10 +387,12 @@ function ImportCVPanel({
   const [extracted,  setExtracted]  = useState('');
   const [updates,    setUpdates]    = useState('');
   const [error,      setError]      = useState('');
+  const [notice,     setNotice]     = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const processFile = async (file: File) => {
     setError('');
+    setNotice('');
     setLoading(true);
 
     const name = file.name.toLowerCase();
@@ -419,7 +435,7 @@ function ImportCVPanel({
       }
       // ── Image (CV scanné / photo) ──────────────────────────
       else if (mime.startsWith('image/')) {
-        setLoadMsg('🔍 Analyse visuelle du CV (GPT-4o Vision)…');
+        setLoadMsg('🔍 Analyse visuelle du CV par l’IA…');
         const reader = new FileReader();
         const base64 = await new Promise<string>((res, rej) => {
           reader.onload  = ev => res(ev.target?.result as string);
@@ -441,10 +457,13 @@ function ImportCVPanel({
         return;
       }
 
-      // ── Structuration du texte via GPT ─────────────────────
+      // ── Structuration du texte par l'IA (repli : texte brut) ─
       setLoadMsg('🤖 Structuration par l\u2019IA…');
-      const structured = await structureCVText(rawText);
-      setExtracted(structured);
+      const { text, structured } = await structureCVTextWithFallback(rawText);
+      setExtracted(text);
+      if (!structured) {
+        setNotice('Structuration par l’IA momentanément indisponible : le texte brut a été importé. Relisez-le avant de générer.');
+      }
 
     } catch (e: any) {
       const msg = (e as Error).message ?? 'Erreur inconnue';
@@ -474,6 +493,14 @@ function ImportCVPanel({
         <div className="import-error">
           <span>⚠️ {error}</span>
           <button onClick={() => setError('')} className="import-error-close">✕</button>
+        </div>
+      )}
+
+      {/* Fonction IA indisponible : repli explicite */}
+      {notice && (
+        <div className="import-error" role="status" style={{ borderColor: 'rgba(245,158,11,.5)', color: '#fbbf24' }}>
+          <span>ℹ️ {notice}</span>
+          <button onClick={() => setNotice('')} className="import-error-close">✕</button>
         </div>
       )}
 
@@ -698,120 +725,28 @@ function DesignPanel({ design, onChange }: { design: DesignConfig; onChange: (d:
 //  ⑤ AI VERIFICATION
 // ══════════════════════════════════════════════════════════════
 async function verifyCV(cv: GeneratedCV, lang: 'fr' | 'en'): Promise<AIVerifyResult> {
-  const text = JSON.stringify(cv, null, 2);
-  const raw = await callGPT(
-    `Tu es un expert recruteur FAANG/académique et coach CV. Analyse ce CV et retourne UNIQUEMENT ce JSON:
-{
-  "score": <0-100>,
-  "grade": "<Excellent|Très Bon|Bon|Passable|À retravailler>",
-  "approved": <score >= 75>,
-  "categories": [
-    {"name":"Impact & Métriques","score":<0-100>,"comment":"<max 80 chars>","icon":"📊"},
-    {"name":"Clarté & Lisibilité","score":<0-100>,"comment":"<max 80 chars>","icon":"✍️"},
-    {"name":"ATS & Mots-clés","score":<0-100>,"comment":"<max 80 chars>","icon":"🤖"},
-    {"name":"Expérience & Formation","score":<0-100>,"comment":"<max 80 chars>","icon":"🎓"},
-    {"name":"Accroche & Positionnement","score":<0-100>,"comment":"<max 80 chars>","icon":"🎯"}
-  ],
-  "globalTip": "<conseil global max 150 chars>",
-  "suggestions": ["<suggestion 1>","<suggestion 2>","<suggestion 3>"]
-}`,
-    `CV à analyser (langue: ${lang}):\n${text.slice(0, 3000)}`,
-    'gpt-4o-mini', 800
-  );
+  // La photo n'est jamais envoyée à l'IA (le serveur la retire aussi)
+  const { photo: _photo, ...personal } = cv.personal as GeneratedCV['personal'] & { photo?: string };
+  void _photo;
+  const raw = await runAiFeature('cv.review', { cv: { ...cv, personal }, lang });
   return JSON.parse(cleanJSON(raw)) as AIVerifyResult;
 }
 
 // ══════════════════════════════════════════════════════════════
-//  GENERATE CV — IA génère tout
+//  GENERATE CV — IA génère tout (prompt défini côté serveur : cv.generate)
 // ══════════════════════════════════════════════════════════════
 async function generateCV(intake: IntakeData): Promise<GeneratedCV> {
-  const lang = intake.lang === 'fr';
-  const hasImport = !!intake.importedContent;
-
-  const sys = `Expert rédacteur CV haut de gamme — FAANG, académique, recherche.
-Style: ${intake.style === 'french' ? 'CV français complet, détaillé' : 'American résumé, impact-first, 1-2 pages'}.
-Langue: ${lang ? 'FRANÇAIS exclusivement' : 'ENGLISH only'}.
-RETOURNE UNIQUEMENT DU JSON VALIDE, SANS MARKDOWN.`;
-
-  const importCtx = hasImport
-    ? `\n\nCONTENU CV IMPORTÉ:\n${intake.importedContent}\n\nMISES À JOUR DEMANDÉES: ${intake.updateInstructions || 'Améliorer et moderniser le contenu'}` : '';
-
-  const projectsCtx = intake.rawProjects
-    ? `\n\nPROJETS (format: Nom | Description | Lien | GitHub | Technologies):\n${intake.rawProjects}` : '';
-
-  const prompt = `
-Candidat:
-- Nom: ${intake.name} | Titre: ${intake.title}
-- Poste visé: ${intake.targetRole} | Expérience: ${intake.yearsExp} ans
-- Ville: ${intake.city} | Email: ${intake.email} | Phone: ${intake.phone}
-- LinkedIn: ${intake.linkedin} | GitHub: ${intake.github}
-- Expériences: ${intake.rawExps}
-- Formation: ${intake.rawEdu}
-- Compétences: ${intake.rawSkills}
-- Réalisation clé: ${intake.keyAchievement}${importCtx}${projectsCtx}
-
-JSON EXACT requis:
-{
-  "personal": {
-    "name": "${intake.name || 'Prénom Nom'}",
-    "title": "${intake.title || intake.targetRole}",
-    "email": "${intake.email}",
-    "phone": "${intake.phone}",
-    "city": "${intake.city}",
-    "linkedin": "${intake.linkedin}",
-    "github": "${intake.github}",
-    "website": "",
-    "summary": "<accroche 3-4 lignes percutantes, 1ère personne, mentionne poste visé + réalisation clé>"
-  },
-  "experience": [{
-    "role": "<titre exact>",
-    "company": "<entreprise>",
-    "location": "<ville>",
-    "start": "<mois/année>",
-    "end": "<mois/année ou présent>",
-    "current": true,
-    "bullets": [
-      "<verb d'action fort + résultat chiffré>",
-      "<impact business ou technique>",
-      "<leadership/collaboration ou méthode>",
-      "<réalisation notable>"
-    ],
-    "techs": ["<tech1>","<tech2>"]
-  }],
-  "education": [{
-    "degree": "<diplôme>", "field": "<spécialité>",
-    "school": "<école>", "city": "<ville>", "year": "<année>", "mention": "<mention>"
-  }],
-  "skills": [
-    {"cat": "<Langages>", "items": ["Python","Java","Go","TypeScript"]},
-    {"cat": "<Frameworks>", "items": ["React","FastAPI","Spring"]},
-    {"cat": "<Cloud & DevOps>", "items": ["AWS","Docker","Kubernetes","Terraform"]},
-    {"cat": "<Outils>", "items": ["Git","Jira","Figma","LaTeX"]}
-  ],
-  "languages": [
-    {"lang": "${lang?'Français':'French'}", "level": "${lang?'Langue maternelle':'Native'}"},
-    {"lang": "${lang?'Anglais':'English'}", "level": "${lang?'Courant (B2+)':'Fluent (B2+)'}"}
-  ],
-  "projects": [{
-    "name": "<nom projet>",
-    "desc": "<description 1-2 lignes impactante>",
-    "impact": "<métriques ou résultats>",
-    "techs": ["<tech1>"],
-    "link": "<url ou vide>",
-    "github": "<github url ou vide>"
-  }],
-  "certifications": [{"name": "<cert>", "issuer": "<issuer>", "year": "<year>", "url": ""}],
-  "awards": [{"name": "<award>", "org": "<org>", "year": "<year>"}],
-  "interests": ["<intérêt 1>", "<intérêt 2>", "<intérêt 3>"]
-}
-
-RÈGLES:
-- 3-4 bullets RÉELS par expérience, verbe d'action fort, impact chiffré
-- Si données manquantes: inventer de façon cohérente avec le secteur ${intake.sector}
-- ${hasImport ? 'Intégrer TOUTES les infos du CV importé + les mises à jour demandées' : 'Enrichir les données fournies'}
-- JSON pur SANS commentaires ni markdown`;
-
-  const raw = await callGPT(sys, prompt, 'gpt-4o', 4500);
+  const raw = await runAiFeature('cv.generate', {
+    name: intake.name, title: intake.title, email: intake.email, phone: intake.phone,
+    city: intake.city, linkedin: intake.linkedin, github: intake.github,
+    targetRole: intake.targetRole, yearsExp: intake.yearsExp, sector: intake.sector,
+    style: intake.style, lang: intake.lang,
+    rawExps: intake.rawExps, rawEdu: intake.rawEdu, rawSkills: intake.rawSkills,
+    keyAchievement: intake.keyAchievement, rawProjects: intake.rawProjects,
+    importedContent: intake.importedContent ? truncate(intake.importedContent, MAX_IMPORTED_CHARS) : '',
+    updateInstructions: intake.updateInstructions ?? '',
+    // la photo reste dans le navigateur : elle est ajoutée au CV après génération
+  });
   const parsed = JSON.parse(cleanJSON(raw)) as GeneratedCV;
   if (intake.photo) parsed.personal.photo = intake.photo;
   return parsed;
