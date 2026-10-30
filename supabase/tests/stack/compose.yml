@@ -1,0 +1,79 @@
+# Pile Supabase locale de test (P0.CV) : services réels, jetable, ports sur la boucle locale.
+# Aucune donnée ni clé réelle. Projet isolé : n'interagit avec aucune autre pile Supabase.
+# Lancée par supabase/tests/stack/run.mjs.
+name: p0cv-stack
+
+x-secrets: &jwt_secret ${STACK_JWT_SECRET}
+
+services:
+  db:
+    image: public.ecr.aws/supabase/postgres:17.6.1.167
+    environment:
+      POSTGRES_PASSWORD: ${STACK_DB_PASSWORD}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  auth:
+    image: public.ecr.aws/supabase/gotrue:v2.197.0
+    ports: ["127.0.0.1:58331:9999"]
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: ${STACK_PUBLIC_URL}/auth/v1
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${STACK_DB_PASSWORD}@db:5432/postgres
+      GOTRUE_SITE_URL: http://127.0.0.1:5173
+      GOTRUE_JWT_SECRET: *jwt_secret
+      GOTRUE_JWT_ISSUER: ${STACK_PUBLIC_URL}/auth/v1
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_MFA_TOTP_ENROLL_ENABLED: "true"
+      GOTRUE_MFA_TOTP_VERIFY_ENABLED: "true"
+      GOTRUE_MFA_MAX_ENROLLED_FACTORS: "10"
+      GOTRUE_RATE_LIMIT_VERIFY: "1000"
+      GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "1000"
+      GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: "false"
+
+  rest:
+    image: public.ecr.aws/supabase/postgrest:v14.15
+    ports: ["127.0.0.1:58332:3000"]
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${STACK_DB_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: *jwt_secret
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: *jwt_secret
+      PGRST_APP_SETTINGS_JWT_EXP: "3600"
+
+  storage:
+    image: public.ecr.aws/supabase/storage-api:v1.73.1
+    ports: ["127.0.0.1:58333:5000"]
+    environment:
+      ANON_KEY: ${STACK_ANON_KEY}
+      SERVICE_KEY: ${STACK_SERVICE_KEY}
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: *jwt_secret
+      AUTH_JWT_SECRET: *jwt_secret
+      AUTH_JWT_ALGORITHM: HS256
+      DATABASE_URL: postgres://supabase_storage_admin:${STACK_DB_PASSWORD}@db:5432/postgres
+      FILE_SIZE_LIMIT: "52428800"
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+    volumes:
+      - storage-data:/var/lib/storage
+
+volumes:
+  storage-data:
