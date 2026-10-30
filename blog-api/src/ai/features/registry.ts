@@ -8,7 +8,7 @@
 // Toutes les fonctionnalités IA passent par cette passerelle. Les URL historiques
 // (/api/agent/chat, /api/groq/*) n'en sont que des adaptateurs de format.
 
-import type { NormalizedRequest } from '../providers/types';
+import type { NormalizedRequest, OutputFormat } from '../providers/types';
 import { InputError, strictObject, text, oneOf, imageDataUrl } from './validate';
 import { searchKnowledge } from './knowledgeContext';
 import { normalizeDiagramOutput, normalizeInkspaceOutput } from './outputs';
@@ -29,7 +29,7 @@ export const FEATURE_IDS = [
 ] as const;
 export type FeatureId = (typeof FEATURE_IDS)[number];
 
-export type Capability = 'text' | 'vision';
+export type Capability = 'text' | 'json' | 'vision';
 
 export interface FeatureQuotas {
   /** Requêtes par sujet (IP ou utilisateur) et par jour UTC */
@@ -54,6 +54,7 @@ export interface FeatureDefinition<Input = any> {
   /** Données personnelles envoyées au fournisseur (pour la politique de confidentialité et le secours) */
   personalData: boolean;
   requiredCapabilities: Capability[];
+  output: OutputFormat;
   promptVersion: string;
   bodyLimit: 'small' | 'large';
   timeoutMs: number;
@@ -94,7 +95,8 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     section: 'CV Generator',
     authLevel: 'public',
     personalData: true,
-    requiredCapabilities: ['text'],
+    requiredCapabilities: ['text', 'json'],
+    output: 'json',
     promptVersion: CV_PROMPT_VERSION,
     bodyLimit: 'small',
     timeoutMs: 85_000,
@@ -122,7 +124,8 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     section: 'CV Generator',
     authLevel: 'public',
     personalData: true,
-    requiredCapabilities: ['text'],
+    requiredCapabilities: ['text', 'json'],
+    output: 'json',
     promptVersion: CV_PROMPT_VERSION,
     bodyLimit: 'small',
     timeoutMs: 30_000,
@@ -154,6 +157,7 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     authLevel: 'public',
     personalData: true,
     requiredCapabilities: ['text'],
+    output: 'text',
     promptVersion: CV_PROMPT_VERSION,
     bodyLimit: 'small',
     timeoutMs: 45_000,
@@ -177,6 +181,7 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     authLevel: 'public',
     personalData: true,
     requiredCapabilities: ['text', 'vision'],
+    output: 'text',
     promptVersion: CV_PROMPT_VERSION,
     bodyLimit: 'large',
     timeoutMs: 60_000,
@@ -202,6 +207,7 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     authLevel: 'public',
     personalData: true,
     requiredCapabilities: ['text'],
+    output: 'text',
     promptVersion: LATEX_PROMPT_VERSION,
     bodyLimit: 'small',
     timeoutMs: 85_000,
@@ -228,6 +234,7 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     authLevel: 'public',
     personalData: true,
     requiredCapabilities: ['text'],
+    output: 'text',
     promptVersion: LATEX_PROMPT_VERSION,
     bodyLimit: 'small',
     timeoutMs: 60_000,
@@ -254,6 +261,7 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     authLevel: 'public',
     personalData: false,
     requiredCapabilities: ['text'],
+    output: 'text',
     promptVersion: ASSISTANTS_PROMPT_VERSION,
     bodyLimit: 'small',
     timeoutMs: 30_000,
@@ -290,7 +298,8 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     section: 'InkSpace',
     authLevel: 'public',
     personalData: false,
-    requiredCapabilities: ['text'],
+    requiredCapabilities: ['text', 'json'],
+    output: 'json',
     promptVersion: ASSISTANTS_PROMPT_VERSION,
     bodyLimit: 'small',
     timeoutMs: 30_000,
@@ -310,7 +319,8 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     section: 'NovaMind',
     authLevel: 'public',
     personalData: false,
-    requiredCapabilities: ['text'],
+    requiredCapabilities: ['text', 'json'],
+    output: 'json',
     promptVersion: ASSISTANTS_PROMPT_VERSION,
     bodyLimit: 'small',
     timeoutMs: 45_000,

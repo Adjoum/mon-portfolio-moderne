@@ -72,11 +72,9 @@ describe('données initiales', () => {
     for (const f of files) expect(fs.readFileSync(f, 'utf8'), f).not.toMatch(/gpt-\d|gpt-oss|llama-\d/);
   });
 
-  it('xAI, Gemini, OpenRouter et Anthropic restent prévus mais sans adaptateur actif', () => {
+  it('les six fournisseurs disposent d’un adaptateur', () => {
     expect(PROVIDER_IDS).toHaveLength(6);
-    for (const id of ['xai', 'gemini', 'openrouter', 'anthropic'] as const) {
-      expect(PROVIDERS[id].createAdapter, id).toBeUndefined();
-    }
+    for (const id of PROVIDER_IDS) expect(typeof PROVIDERS[id].createAdapter, id).toBe('function');
   });
 });
 
@@ -183,7 +181,7 @@ describe('vérification gratuite par métadonnées', () => {
     expect(openai.modelListCalls() - before).toBe(1);
   });
 
-  it('modèle absent, clé refusée, clé manquante, fournisseur sans adaptateur', async () => {
+  it('modèle absent, clé refusée, clé manquante', async () => {
     openai.models = [{ id: 'autre-modele' }];
     groq.modelListStatus = 401;
     let rows = await checkConfiguredModels({ openai: openai.url, groq: groq.url });
@@ -194,7 +192,7 @@ describe('vérification gratuite par métadonnées', () => {
     process.env.AI_ASSIGNMENT_LATEX_GENERATE = 'gemini:modele';
     rows = await checkConfiguredModels({ openai: openai.url, groq: groq.url });
     expect(rows.find(r => r.feature === 'cv.review')?.status).toBe('no_key');
-    expect(rows.find(r => r.feature === 'latex.generate')?.status).toBe('no_adapter');
+    expect(rows.find(r => r.feature === 'latex.generate')?.status).toBe('no_key');
   });
 
   it('le résultat ne contient aucune clé', async () => {

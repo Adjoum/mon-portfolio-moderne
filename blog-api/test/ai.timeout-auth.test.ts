@@ -18,6 +18,7 @@ const base = (id: string, overrides: Partial<FeatureDefinition>): FeatureDefinit
   authLevel: 'public',
   personalData: false,
   requiredCapabilities: ['text'],
+  output: 'text',
   promptVersion: 'test.v1',
   bodyLimit: 'small',
   timeoutMs: 300,

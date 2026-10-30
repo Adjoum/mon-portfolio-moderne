@@ -8,7 +8,7 @@ import { PROVIDERS } from '../providers/registry';
 import { ProviderError, type ModelInfo, type ProviderId } from '../providers/types';
 import { candidateFor, envAssignmentResolver, SEEDED_FEATURE_IDS, isValidated } from './assignments';
 
-export type ModelCheckStatus = 'found' | 'not_found' | 'inactive' | 'no_key' | 'no_adapter' | 'auth_error' | 'unreachable' | 'invalid_assignment';
+export type ModelCheckStatus = 'found' | 'not_found' | 'inactive' | 'no_key' | 'auth_error' | 'unreachable' | 'invalid_assignment';
 
 export interface ModelCheckRow {
   feature: string;
@@ -33,10 +33,9 @@ export async function checkConfiguredModels(
     if (!lists.has(provider)) {
       const descriptor = PROVIDERS[provider];
       const apiKey = process.env[descriptor.apiKeyEnv]?.trim();
-      const adapter = descriptor.createAdapter?.(baseUrlOverrides[provider] ?? descriptor.baseUrl);
+      const adapter = descriptor.createAdapter(baseUrlOverrides[provider] ?? descriptor.baseUrl);
       let result: Promise<ModelInfo[] | ModelCheckStatus>;
-      if (!adapter?.listModels) result = Promise.resolve<ModelCheckStatus>('no_adapter');
-      else if (!apiKey) result = Promise.resolve<ModelCheckStatus>('no_key');
+      if (!apiKey) result = Promise.resolve<ModelCheckStatus>('no_key');
       else {
         result = adapter.listModels({ apiKey, signal: AbortSignal.timeout(TIMEOUT_MS) }).catch((err: unknown) =>
           err instanceof ProviderError && err.code === 'auth' ? 'auth_error' as const : 'unreachable' as const);

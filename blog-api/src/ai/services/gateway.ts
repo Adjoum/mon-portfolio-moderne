@@ -97,7 +97,7 @@ export function createAiGateway(overrides: Partial<AiGatewayDeps> = {}) {
 
   function adapterFor(provider: ProviderId): ProviderAdapter | null {
     const descriptor = deps.providers[provider];
-    if (!descriptor?.createAdapter) return null;
+    if (!descriptor) return null;
     let adapter = adapters.get(provider);
     if (!adapter) {
       const baseUrl = deps.baseUrlOverrides?.[provider] ?? devBaseUrl(provider) ?? descriptor.baseUrl;
@@ -196,7 +196,7 @@ export function createAiGateway(overrides: Partial<AiGatewayDeps> = {}) {
           .reduce((n, p) => n + (p.type === 'text' ? p.text.length : 0), 0);
 
         const result = await adapter.generate(
-          { ...built, maxOutputTokens: feature.maxOutputTokens, params: assignment.params ?? {} },
+          { ...built, maxOutputTokens: feature.maxOutputTokens, params: assignment.params ?? {}, output: feature.output },
           { apiKey, model: assignment.model, signal },
         );
         const content = feature.parseOutput ? feature.parseOutput(result.content) : result.content;

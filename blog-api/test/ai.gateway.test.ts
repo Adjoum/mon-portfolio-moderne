@@ -69,7 +69,7 @@ describe('proxy avec réponses simulées', () => {
     expect(call.body.max_completion_tokens).toBe(FEATURES['cv.review'].maxOutputTokens);
     expect(call.body.max_tokens).toBeUndefined();   // refusé par les modèles à raisonnement
     expect(call.headers.authorization).toBe(`Bearer ${SECRET_CANARIES.OPENAI_API_KEY}`);
-    expect(Object.keys(call.body).sort()).toEqual(['max_completion_tokens', 'messages', 'model', 'reasoning_effort']);
+    expect(Object.keys(call.body).sort()).toEqual(['max_completion_tokens', 'messages', 'model', 'reasoning_effort', 'response_format']);
   });
 
   it('la photo n’est jamais transmise au fournisseur (cv.review)', async () => {

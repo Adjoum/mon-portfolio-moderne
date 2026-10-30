@@ -11,6 +11,7 @@
 
 import seed from '../config/initial-assignments.json';
 import { isProviderId } from '../providers/registry';
+import { isValidModelId } from '../providers/modelId';
 import type { GenerationParam, ProviderId } from '../providers/types';
 
 export type AssignmentParams = Partial<Record<GenerationParam, number | string>>;
@@ -35,9 +36,6 @@ interface SeedEntry {
 
 const SEED = seed as unknown as Record<string, SeedEntry>;
 
-/** Identifiant de modèle en saisie libre : seul le format est contrôlé */
-export const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
-
 export const SEEDED_FEATURE_IDS = Object.keys(SEED).filter(k => !k.startsWith('_'));
 
 export function envVarFor(featureId: string): string {
@@ -57,7 +55,7 @@ export function candidateFor(featureId: string): Omit<Assignment, 'validated'> |
     const sep = raw.indexOf(':');
     const provider = raw.slice(0, sep);
     const model = raw.slice(sep + 1);
-    if (sep > 0 && isProviderId(provider) && MODEL_ID_RE.test(model)) {
+    if (sep > 0 && isProviderId(provider) && isValidModelId(model)) {
       return { provider, model, params: entry?.provider === provider ? entry.params : undefined, source: 'env' };
     }
     console.error(`[AI] ${envVarFor(featureId)} invalide : fonctionnalité désactivée`);
