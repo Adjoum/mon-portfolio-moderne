@@ -3,7 +3,8 @@
 #   docker compose up -d --build             API + frontend (MongoDB externe, Atlas par exemple)
 #   docker compose --profile dev up -d       ajoute MongoDB local et son interface
 #
-# Secrets : uniquement dans .env.docker (non versionné, modèle : .env.docker.example).
+# Secrets : uniquement dans .env.docker (non versionné, modèle : .env.docker.example) ;
+# tests locaux : .env.docker.test, avec API_ENV_FILE et --env-file .env.docker.test.
 # Tous les ports sont liés à 127.0.0.1 : sur la VM, nginx sert de frontal.
 
 services:
@@ -15,7 +16,9 @@ services:
       dockerfile: Dockerfile
     container_name: blog-api
     restart: unless-stopped
-    env_file: .env.docker
+    # Secrets de l'API (non versionnés). API_ENV_FILE permet un fichier de test local
+    # (.env.docker.test) sans toucher à celui de la VM.
+    env_file: ${API_ENV_FILE:-.env.docker}
     environment:
       - NODE_ENV=production
       - PORT=5000

@@ -19,6 +19,7 @@ dist-ssr
 .env.test.local
 .env.production.local
 .env.docker
+.env.docker.test
 
 # Logs
 npm-debug.log*

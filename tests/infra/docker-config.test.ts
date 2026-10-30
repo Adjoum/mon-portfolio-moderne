@@ -27,8 +27,9 @@ describe('docker-compose.yml', () => {
   })
 
   it('les secrets de l’API viennent d’un fichier d’environnement non versionné', () => {
-    expect(compose).toMatch(/env_file:\s*\.env\.docker/)
+    expect(compose).toMatch(/env_file:\s*\$\{API_ENV_FILE:-\.env\.docker\}/)
     expect(read('.gitignore')).toMatch(/^\.env\.docker$/m)
+    expect(read('.gitignore')).toMatch(/^\.env\.docker\.test$/m)
   })
 })
 
