@@ -7,3 +7,9 @@ dist
 *.log
 .git
 .gitignore
+coverage
+docs
+supabase
+tests
+*.pem
+*.key

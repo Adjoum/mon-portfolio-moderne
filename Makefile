@@ -4,7 +4,7 @@
 
 up:
 	docker compose up -d
-	@echo ✅ Demarré — Frontend: http://localhost  API: http://localhost:5000
+	@echo ✅ Demarré — Frontend: http://localhost:8080  API: http://localhost:5000
 
 up-build:
 	docker compose up -d --build
@@ -51,7 +51,7 @@ shell-api:
 	docker compose exec api sh
 
 shell-mongo:
-	docker compose exec mongo mongosh -u admin -p secret
+	docker compose exec mongo mongosh -u "$$MONGO_USER" -p "$$MONGO_PASSWORD"
 
 health:
 	curl -s http://localhost:5000/api/health

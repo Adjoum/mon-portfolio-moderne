@@ -1,6 +1,8 @@
-# ── adjoumani-portfolio/Dockerfile ───────────────────────────
+# ── adjoumani-portfolio/Dockerfile.frontend ──────────────────
+# Images épinglées par empreinte. Seules des variables publiques entrent dans le build.
+
 # Build stage — compiler le React/Vite
-FROM node:20-alpine AS builder
+FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS builder
 
 WORKDIR /app
 
@@ -24,7 +26,7 @@ ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 RUN npm run build
 
 # ── Production stage — Nginx pour servir le build ────────────
-FROM nginx:alpine AS production
+FROM nginx:alpine@sha256:785835ea65db4bba6f021acc0f3be91b0fef76a53fe41f8588c6698d2aed0606 AS production
 
 LABEL maintainer="Adjoumani Koffi Wilfried <contact@adjoumani-koffi.com>"
 
@@ -37,9 +39,9 @@ COPY nginx.conf /etc/nginx/conf.d/app.conf
 # Copier le build Vite
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Health check
+# Health check : 127.0.0.1, car localhost se résout en IPv6 alors que nginx écoute en IPv4
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:80 || exit 1
+  CMD wget -qO- http://127.0.0.1:80/ || exit 1
 
 EXPOSE 80
 

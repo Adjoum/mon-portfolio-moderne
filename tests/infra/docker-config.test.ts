@@ -67,3 +67,56 @@ describe('variables attendues documentées', () => {
     expect(names.sort()).toEqual([...PUBLIC_VITE].sort())
   })
 })
+
+describe('exploitation (P0.A3)', () => {
+  const compose = read('docker-compose.yml')
+  const api = read('blog-api/Dockerfile')
+  const front = read('Dockerfile.frontend')
+
+  it('toutes les images de base sont épinglées par empreinte, sur Node LTS', () => {
+    for (const file of [api, front]) {
+      const stages = [...file.matchAll(/^FROM\s+(\S+)/gm)].map(m => m[1])
+      expect(stages.length).toBeGreaterThan(1)
+      for (const image of stages) expect(image).toMatch(/@sha256:[0-9a-f]{64}$/)
+    }
+    expect(api).toMatch(/^FROM node:24-/m)
+    expect(front).toMatch(/^FROM node:24-/m)
+  })
+
+  it('aucune chaîne TeX ni outil réseau dans l’image API', () => {
+    expect(api).not.toMatch(/texlive|latexmk|apt-get install/)
+  })
+
+  it('healthchecks locaux : jamais l’URL de production', () => {
+    for (const file of [api, front, compose]) {
+      expect(file).not.toMatch(/HEALTHCHECK[\s\S]{0,120}https:\/\/api\.adjoumani/)
+      expect(file).not.toMatch(/wget[^\n]*http:\/\/localhost/)
+    }
+    expect(api).toContain('127.0.0.1')
+    expect(front).toContain('http://127.0.0.1:80/')
+  })
+
+  it('tous les ports publiés sont liés à la boucle locale', () => {
+    const published = [...compose.matchAll(/^\s+- "([^"]*:\d+)"$/gm)].map(m => m[1])
+    expect(published.length).toBeGreaterThanOrEqual(4)
+    for (const port of published) expect(port).toMatch(/^127\.0\.0\.1:/)
+  })
+
+  it('MongoDB local réservé au profil dev, sans mot de passe par défaut', () => {
+    const mongo = compose.slice(compose.indexOf('\n  mongo:'), compose.indexOf('\n  mongo-express:'))
+    expect(mongo).toContain('profiles: ["dev"]')
+    expect(compose).not.toMatch(/:-secret\}/)
+    // Compose évalue :? même pour un profil inactif : cela bloquerait le démarrage sans profil
+    expect(compose).not.toMatch(/\$\{[A-Z_]+:\?/)
+    expect(compose).not.toMatch(/mongodb\.net/)
+    expect(compose).toContain('ME_CONFIG_BASICAUTH: "true"')
+    expect(compose).toContain('required: false')
+  })
+
+  it('en-têtes de sécurité alignés entre Vercel et nginx', () => {
+    const vercel = JSON.parse(read('vercel.json')) as { headers: { headers: { key: string; value: string }[] }[] }
+    const headers = Object.fromEntries(vercel.headers[0].headers.map(h => [h.key, h.value]))
+    for (const name of ['X-Content-Type-Options', 'X-Frame-Options', 'Referrer-Policy', 'Permissions-Policy']) expect(headers[name], name).toBeTruthy()
+    expect(read('nginx.conf')).toContain(headers['Content-Security-Policy-Report-Only'])
+  })
+})

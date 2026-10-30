@@ -1,26 +1,17 @@
-# docker-compose.yml
-# À placer dans : D:\adjoumani-portfolio\docker-compose.yml
+# docker-compose.yml — API et frontend, démarrage local ou sur la VM Oracle
 #
-# Structure réelle du projet :
-#   D:\adjoumani-portfolio\
-#   ├── docker-compose.yml        ← CE FICHIER
-#   ├── .env.docker               ← variables
-#   ├── Makefile
-#   ├── blog-api\                 ← backend Node.js
-#   │   ├── Dockerfile
-#   │   ├── .dockerignore
-#   │   └── src\
-#   ├── src\                      ← frontend React (même niveau)
-#   ├── Dockerfile.frontend       ← Dockerfile frontend
-#   ├── nginx.conf
-#   └── package.json
+#   docker compose up -d --build             API + frontend (MongoDB externe, Atlas par exemple)
+#   docker compose --profile dev up -d       ajoute MongoDB local et son interface
+#
+# Secrets : uniquement dans .env.docker (non versionné, modèle : .env.docker.example).
+# Tous les ports sont liés à 127.0.0.1 : sur la VM, nginx sert de frontal.
 
 services:
 
   # ── Backend Node.js ────────────────────────────────────────
   api:
     build:
-      context: ./blog-api          # ← sous-dossier blog-api
+      context: ./blog-api
       dockerfile: Dockerfile
     container_name: blog-api
     restart: unless-stopped
@@ -29,85 +20,94 @@ services:
       - NODE_ENV=production
       - PORT=5000
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
     volumes:
       - uploads_data:/app/public/uploads
     networks:
       - blog-network
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5000/api/health"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
       start_period: 15s
     depends_on:
       mongo:
         condition: service_healthy
+        required: false
 
   # ── Frontend React (Nginx) ────────────────────────────────
   frontend:
     build:
-      context: .                   # ← racine adjoumani-portfolio/
+      context: .
       dockerfile: Dockerfile.frontend
       args:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:5000/api}
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
         VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
-        # Aucune clé privée en argument de build : les appels IA passent par l'API (OPENAI_API_KEY côté serveur)
+        # Aucune clé privée en argument de build : les clés IA restent dans Supabase Vault
     container_name: blog-frontend
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
     networks:
       - blog-network
     depends_on:
       - api
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 10s
 
-  # ── MongoDB local (optionnel si tu utilises Atlas) ─────────
+  # ── MongoDB local (profil dev) ─────────────────────────────
   mongo:
     image: mongo:7-jammy
     container_name: blog-mongo
     restart: unless-stopped
+    profiles: ["dev"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-secret}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-}
       MONGO_INITDB_DATABASE: blog
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongo_data:/data/db
     networks:
       - blog-network
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 30s
 
-  # ── Mongo Express — interface web (dev seulement) ──────────
+  # ── Mongo Express — interface web (profil dev) ─────────────
   mongo-express:
-    image: mongo-express:latest
+    image: mongo-express:1-20-alpine3.19
     container_name: blog-mongo-ui
     restart: unless-stopped
     profiles: ["dev"]
     environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USER:-admin}
-      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD:-secret}
-      #ME_CONFIG_MONGODB_URL: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-secret}@mongo:27017/
-      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-secret}@ac-fg8khzz-shard-00-00.uberjbb.mongodb.net:27017,ac-fg8khzz-shard-00-01.uberjbb.mongodb.net:27017,ac-fg8khzz-shard-00-02.uberjbb.mongodb.net:27017/adjoumani-blog?ssl=true&replicaSet=atlas-pg2keo-shard-0&authSource=admin&retryWrites=true&w=majority&appName=Cluster0
-      ME_CONFIG_BASICAUTH: "false"
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-}@mongo:27017/
+      ME_CONFIG_BASICAUTH: "true"
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_UI_USER:-admin}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_UI_PASSWORD:-}
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     networks:
       - blog-network
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
 
 volumes:
   mongo_data:

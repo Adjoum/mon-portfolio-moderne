@@ -6,3 +6,7 @@ dist
 .git
 .gitignore
 public/uploads
+coverage
+test
+*.pem
+*.key
