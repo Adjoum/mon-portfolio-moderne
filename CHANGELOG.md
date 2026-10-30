@@ -25,7 +25,7 @@ Tableau blanc premium intégré en iframe dans le portfolio.
 - Export PNG/SVG, impression, sauvegarde automatique (localStorage)
 - Responsive : toolbar horizontale sur mobile, pinch-to-zoom tactile
 
-**Variables d'environnement requises :** aucune (clé Groq stockée en localStorage)
+**Variables d'environnement requises :** aucune côté navigateur (l'IA passe par blog-api ; `GROQ_API_KEY` uniquement sur le serveur). *Corrigé le 30/10/2026 : la clé n'est plus stockée en localStorage.*
 
 ```
 public/
@@ -170,7 +170,7 @@ VITE_SUPABASE_ANON_KEY=eyJ...
 ```
 
 > ⚠️ Ne jamais hardcoder ces valeurs dans le code source.  
-> La clé Groq pour InkSpace est stockée uniquement en `localStorage` côté navigateur.
+> InkSpace appelle l'IA via `blog-api` (`/api/groq/generate`) : la clé Groq reste sur le serveur, jamais dans le navigateur ni en `localStorage` (correction du 30/10/2026).
 
 ---
 
@@ -193,7 +193,7 @@ Le déploiement Vercel se déclenche automatiquement après chaque push sur `ori
 - [ ] Variables d'environnement définies sur Vercel
 - [ ] Table `visits` créée dans Supabase
 - [ ] Politiques RLS appliquées
-- [ ] Clé Groq saisie dans le localStorage via le panneau IA d'InkSpace
+- [ ] `GROQ_API_KEY` configurée dans l'environnement du serveur `blog-api` (jamais côté navigateur)
 - [ ] Naviguer sur quelques pages pour générer les premières visites
 - [ ] Vérifier le compteur sur la page d'accueil
 

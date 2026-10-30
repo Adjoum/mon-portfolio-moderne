@@ -476,35 +476,10 @@ const App = {
     btn.textContent='⏳ Génération...'; btn.disabled=true;
     out.style.display='block'; out.textContent='Génération en cours...'; out.style.color='var(--text2)';
 
-    //const GROQ_API_KEY = localStorage.getItem('inkspace_api_key') || 'gsk_ZAef9G4bXs0ywy4h7qg2i';
-    //const GROQ_MODEL   = 'llama-3.3-70b-versatile'; // modèle Groq rapide et gratuit
+    // Appel IA uniquement via blog-api (/api/groq/generate) : aucune clé dans le navigateur
     const API_URL = 'https://api.adjoumani-koffi.com'; // en prod
     // const API_URL = 'http://localhost:5000'; // en dev
     try {
-      /*const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${GROQ_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: GROQ_MODEL,
-          messages: [
-            {
-              role: 'system',
-              content: `Tu es un assistant pédagogique pour un tableau blanc (InkSpace).
-                Réponds UNIQUEMENT en JSON valide, sans backtick ni markdown :
-                {"type":"list","title":"Titre court","items":["item1","item2",...],"note":"conseil optionnel"}
-                Maximum 8 items. Sois concis, pédagogique, en français.`
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
-          ],
-          temperature: 0.7
-        })
-      });*/
 
       const res = await fetch(`${API_URL}/api/groq/generate`, {
         method: 'POST',
