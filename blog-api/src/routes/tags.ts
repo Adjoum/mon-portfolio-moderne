@@ -1,6 +1,7 @@
 // blog-api/src/routes/tags.ts
 import { Router } from 'express';
 import { Tag } from '../models/Tag'
+import { requireAdmin, authMiddleware } from '../middleware/auth';
 
 
 const router = Router();
@@ -16,9 +17,12 @@ router.get('/', async (_req, res) => {
 });
 
 // POST /api/tags — créer un tag (admin)
-router.post('/', async (req, res) => {
+router.post('/', authMiddleware, requireAdmin, async (req, res) => {
   try {
     const { name, color } = req.body;
+    if (typeof name !== 'string' || !name.trim() || name.length > 50) {
+      return res.status(400).json({ error: 'Nom de tag invalide' });
+    }
     const slug = name.toLowerCase()
       .replace(/[éèêë]/g,'e').replace(/[àâä]/g,'a')
       .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');

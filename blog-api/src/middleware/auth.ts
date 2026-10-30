@@ -59,7 +59,8 @@ export const authMiddleware = async (
   try {
     const decoded = jwt.verify(
       token,
-      process.env.JWT_SECRET!
+      process.env.JWT_SECRET!,
+      { algorithms: ['HS256'] }   // jamais d'algorithme choisi par le client
     ) as JwtPayload;
 
     // Vérifier que l'utilisateur existe encore en DB

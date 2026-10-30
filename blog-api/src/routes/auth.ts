@@ -11,12 +11,14 @@
 // POST /api/auth/admin     → créer un compte admin (protégé par ADMIN_SECRET)
 
 import { Router, type Request, type Response } from 'express';
+import crypto                        from 'crypto';
 
 
 import { User }                          from '../models/User';
 import { authMiddleware, requireAuth,
          generateToken, type AuthRequest }    from '../middleware/auth';
 import { authLimiter }                   from '../middleware/rateLimit';
+import { auditLog, requestContext }      from '../lib/audit';
 
 const router = Router();
 
@@ -337,14 +339,27 @@ router.post('/refresh', authMiddleware, requireAuth, async (req: AuthRequest, re
 // ─────────────────────────────────────────────────────────────
 // POST /api/auth/admin
 // Créer le compte admin initial
-// Protégé par ADMIN_SECRET dans le body (à utiliser une seule fois)
+// Désactivée par défaut : ADMIN_BOOTSTRAP_ENABLED=true et ADMIN_SECRET
+// (32 caractères minimum) requis. À désactiver juste après usage.
 // ─────────────────────────────────────────────────────────────
+function safeEqual(a: string, b: string): boolean {
+  const ha = crypto.createHash('sha256').update(a).digest();
+  const hb = crypto.createHash('sha256').update(b).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
 router.post('/admin', async (req: Request, res: Response) => {
   try {
     const { username, email, password, adminSecret } = req.body;
+    const expectedSecret = process.env.ADMIN_SECRET;
+
+    if (process.env.ADMIN_BOOTSTRAP_ENABLED !== 'true' || !expectedSecret || expectedSecret.length < 32) {
+      return res.status(404).json({ error: 'Route introuvable', code: 'NOT_FOUND' });
+    }
 
     // Vérifier le secret admin (défini dans .env)
-    if (adminSecret !== process.env.ADMIN_SECRET) {
+    if (typeof adminSecret !== 'string' || !safeEqual(adminSecret, expectedSecret)) {
+      auditLog({ action: 'blog.admin_bootstrap', outcome: 'denied', actorType: 'anonymous', ...requestContext(req) });
       return res.status(403).json({
         error: 'Secret admin incorrect',
         code:  'INVALID_ADMIN_SECRET',
@@ -385,6 +400,7 @@ router.post('/admin', async (req: Request, res: Response) => {
     const token = generateToken({ _id: admin._id.toString(), role: admin.role });
 
     console.log(`[AUTH] Admin account created: ${admin.username} — ${new Date().toISOString()}`);
+    auditLog({ action: 'blog.admin_bootstrap', outcome: 'success', actorType: 'blog_admin', actorId: admin._id.toString(), ...requestContext(req) });
 
     sendTokenResponse(res, token, admin);
   } catch (err: any) {

@@ -114,12 +114,13 @@ commentsRouter.put('/:id', authMiddleware, async (req, res) => {
  
     const userId = (req as AuthRequest).user?._id;
     const isAdmin = (req as AuthRequest).user?.role === 'admin';
-    const isOwner = comment.authorId?.toString() === userId;
- 
+    // Un visiteur anonyme n'est jamais propriétaire (commentaires invités : authorId absent)
+    const isOwner = !!userId && comment.authorId?.toString() === userId;
+
     if (!isAdmin && !isOwner) {
       return res.status(403).json({ error: 'Non autorisé' });
     }
- 
+
     comment.content  = req.body.content;
     comment.isEdited = true;
     comment.editedAt = new Date();
@@ -138,12 +139,13 @@ commentsRouter.delete('/:id', authMiddleware, async (req, res) => {
  
     const userId = (req as AuthRequest).user?._id;
     const isAdmin = (req as AuthRequest).user?.role === 'admin';
-    const isOwner = comment.authorId?.toString() === userId;
- 
+    // Un visiteur anonyme n'est jamais propriétaire (commentaires invités : authorId absent)
+    const isOwner = !!userId && comment.authorId?.toString() === userId;
+
     if (!isAdmin && !isOwner) {
       return res.status(403).json({ error: 'Non autorisé' });
     }
- 
+
     // Soft delete — le contenu reste mais marqué supprimé
     comment.isDeleted = true;
     comment.content   = '';
