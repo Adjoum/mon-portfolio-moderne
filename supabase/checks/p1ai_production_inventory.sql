@@ -76,7 +76,7 @@ select jsonb_pretty(jsonb_build_object(
                   'definition', case when p.proname in (select name from watched_functions) then pg_get_functiondef(p.oid) end
                 ) order by n.nspname, p.proname), '[]')
                 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-                where n.nspname in ('public', 'ai_private') and p.prokind = 'f'),
+                where n.nspname in ('public', 'ai_private', 'portfolio_private') and p.prokind = 'f'),
   'triggers', (select coalesce(jsonb_agg(jsonb_build_object('table', tgrelid::regclass::text, 'name', tgname, 'definition', pg_get_triggerdef(oid)) order by tgrelid::regclass::text, tgname), '[]')
                from pg_trigger where not tgisinternal and tgrelid::regclass::text not like 'pg\_%'
                  and (select relnamespace from pg_class where oid = tgrelid) in ('public'::regnamespace, 'storage'::regnamespace)),

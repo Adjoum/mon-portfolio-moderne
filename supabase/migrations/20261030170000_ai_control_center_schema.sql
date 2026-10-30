@@ -208,7 +208,9 @@ create table if not exists public.ai_config_audit (
 create index if not exists ai_config_audit_at_idx on public.ai_config_audit (id desc);
 
 create or replace function ai_private.audit_is_append_only() returns trigger
-language plpgsql as $$
+language plpgsql
+set search_path = ''
+as $$
 begin
   raise exception 'ai_audit_append_only' using errcode = '42501';
 end $$;
@@ -218,7 +220,9 @@ create trigger ai_config_audit_append_only
   before update or delete or truncate on public.ai_config_audit
   for each statement execute function ai_private.audit_is_append_only();
 
--- ── RLS : tout est fermé. Aucune politique : seules les fonctions contrôlées y accèdent ──
+-- ── RLS : tout est fermé ; seules les fonctions contrôlées y accèdent ──────
+-- Aucun droit pour les clients, et un refus explicite (politique restrictive « false ») : le
+-- Security Advisor voit l'intention au lieu d'une table « RLS sans politique ».
 do $$
 declare t text;
 begin
@@ -229,8 +233,13 @@ begin
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on table public.%I from public, anon, authenticated, service_role', t);
+    execute format('drop policy if exists p1ai_no_client_access on public.%I', t);
+    execute format('create policy p1ai_no_client_access on public.%I as restrictive for all to anon, authenticated using (false) with check (false)', t);
   end loop;
 end $$;
 
 alter table ai_private.provider_secret_refs enable row level security;
 revoke all on table ai_private.provider_secret_refs from public, anon, authenticated, service_role;
+drop policy if exists p1ai_no_client_access on ai_private.provider_secret_refs;
+create policy p1ai_no_client_access on ai_private.provider_secret_refs
+  as restrictive for all to anon, authenticated using (false) with check (false);

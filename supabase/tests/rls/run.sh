@@ -54,6 +54,7 @@ echo "▶ Application des migrations (en postgres, transaction unique), deux foi
 for pass in 1 2; do
   apply_as_postgres "$MIG/20261030120000_p0a1_admin_access_control.sql"
   apply_as_postgres "$MIG/20261030120100_p0a1_storage_access_control.sql"
+  apply_as_postgres "$MIG/20261030120200_p0a1_security_advisor.sql"
   echo "  passage $pass : $(count_policies) politiques p0a1_*"
 done
 AFTER="$(data_fingerprint)"
@@ -65,6 +66,7 @@ echo "▶ Assertions par identité (anonyme, utilisateur, utilisateur MFA, admin
 cat "$DIR/05_helpers.sql" "$DIR/20_assertions.sql" | psql_as supabase_admin
 
 echo "▶ Retour arrière puis réapplication"
+apply_as_postgres "$RB/20261030120200_p0a1_security_advisor.down.sql"
 apply_as_postgres "$RB/20261030120100_p0a1_storage_access_control.down.sql"
 apply_as_postgres "$RB/20261030120000_p0a1_admin_access_control.down.sql"
 LEFT="$(count_policies)"
@@ -73,6 +75,7 @@ if [ "$LEFT" != "0" ] || [ "$HAS_FN" != "0" ]; then echo "✗ Retour arrière in
 echo "  après retour arrière : 0 politique p0a1_*, fonction MFA supprimée"
 apply_as_postgres "$MIG/20261030120000_p0a1_admin_access_control.sql"
 apply_as_postgres "$MIG/20261030120100_p0a1_storage_access_control.sql"
+apply_as_postgres "$MIG/20261030120200_p0a1_security_advisor.sql"
 if [ "$(count_policies)" != "$POLICIES" ]; then echo "✗ Réapplication : nombre de politiques différent"; exit 1; fi
 echo "  réapplication : $POLICIES politiques p0a1_*"
 

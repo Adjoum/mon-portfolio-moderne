@@ -77,6 +77,32 @@ select pg_temp.check('project-images téléversement', 'admin2', $q$insert into 
 select pg_temp.check('project-images suppression',   'admin2', $q$delete from storage.objects where name = 'projects/new.jpg'$q$, 'rows:1');
 select pg_temp.check('autre bucket non affecté',     'user',   $q$insert into storage.objects (bucket_id, name) values ('avatars', 'moi.jpg')$q$, 'rows:1');
 
+-- ── Insertion publique bornée (20261030120200, alerte rls_policy_always_true) ──
+-- Placées après les comptages ci-dessus, qu'elles ne faussent donc pas
+select pg_temp.check('visits insertion complète (site)', 'anon', $q$insert into public.visits (page, referrer, user_agent, language, screen, country, city) values ('/cv', 'https://www.google.com/', 'Mozilla/5.0 (X11; Linux x86_64)', 'fr-FR', '1920x1080', 'France', 'Paris')$q$, 'rows:1');
+select pg_temp.check('visits page vide',            'anon', $q$insert into public.visits (page) values ('')$q$, 'denied');
+select pg_temp.check('visits user_agent démesuré',  'anon', $q$insert into public.visits (page, user_agent) values ('/', repeat('x', 3000))$q$, 'denied');
+select pg_temp.check('visits date imposée',         'anon', $q$insert into public.visits (page, created_at) values ('/', '2000-01-01')$q$, 'denied');
+select pg_temp.check('contacts envoi complet (formulaire)', 'anon', $q$insert into public.contacts (name, email, subject, message) values ('B', 'b@x.test', 'Sujet', repeat('m', 5000))$q$, 'rows:1');
+select pg_temp.check('contacts e-mail invalide',    'anon', $q$insert into public.contacts (name, email, message) values ('C', 'pas-un-email', 'Bonjour')$q$, 'denied');
+select pg_temp.check('contacts message démesuré',   'anon', $q$insert into public.contacts (name, email, message) values ('C', 'c@x.test', repeat('m', 20001))$q$, 'denied');
+select pg_temp.check('contacts nom vide',           'anon', $q$insert into public.contacts (name, email, message) values ('', 'c@x.test', 'Bonjour')$q$, 'denied');
+select pg_temp.check('contacts identifiant imposé', 'anon', $q$insert into public.contacts (id, name, email, message) values (gen_random_uuid(), 'C', 'c@x.test', 'Bonjour')$q$, 'denied');
+select pg_temp.check('contacts date imposée',       'anon', $q$insert into public.contacts (name, email, message, createdat) values ('C', 'c@x.test', 'Bonjour', '2000-01-01')$q$, 'denied');
+select pg_temp.check('contacts envoi',              'user', $q$insert into public.contacts (name, email, message) values ('D', 'd@x.test', 'Connecté')$q$, 'rows:1');
+
+-- ── is_portfolio_admin() : pourquoi anon garde EXECUTE (alerte du Security Advisor acceptée) ──
+-- Les gardes P0.A1 l'évaluent pour chaque visiteur : sans ce droit, elles échouent au lieu
+-- de filtrer. Droit retiré puis rétabli dans la même transaction.
+do $$
+begin
+  revoke execute on function public.is_portfolio_admin() from anon;
+  insert into results (label, expected, actual) values ('sans EXECUTE pour anon : lecture de visits [anon]', 'denied',
+    pg_temp.run_as('anon', 'select count(*)::text from public.visits'));
+  grant execute on function public.is_portfolio_admin() to anon;
+end $$;
+select pg_temp.check('avec EXECUTE (état prévu) : lecture de visits', 'anon', 'select count(*)::text from public.visits', '0');
+
 -- ── Résultat ────────────────────────────────────────────────
 \echo
 \echo '=== Résultats des assertions RLS ==='

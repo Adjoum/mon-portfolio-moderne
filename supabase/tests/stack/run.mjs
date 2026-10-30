@@ -276,7 +276,7 @@ async function main() {
   check('jetons réels : MFA TOTP validée par Supabase Auth', aalOf(adminAal1) === 'aal1' && aalOf(adminAal2) === 'aal2', `${aalOf(adminAal1)} → ${aalOf(adminAal2)}`);
 
   console.log('▶ Application des migrations (rôle postgres, transaction unique)');
-  for (const file of ['20261030120000_p0a1_admin_access_control', '20261030120100_p0a1_storage_access_control', '20261030150000_cv_public_document', '20261030150100_project_images_no_public_listing',
+  for (const file of ['20261030120000_p0a1_admin_access_control', '20261030120100_p0a1_storage_access_control', '20261030120200_p0a1_security_advisor', '20261030150000_cv_public_document', '20261030150100_project_images_no_public_listing',
     '20261030170000_ai_control_center_schema', '20261030170100_ai_admin_functions', '20261030170200_ai_runtime_functions', '20261030170300_ai_initial_catalog']) {
     psql('postgres', `set client_min_messages = warning;\n${fs.readFileSync(path.join(ROOT, 'supabase/migrations', `${file}.sql`), 'utf8')}`, ['--single-transaction']);
     psql('postgres', `set client_min_messages = warning;\n${fs.readFileSync(path.join(ROOT, 'supabase/migrations', `${file}.sql`), 'utf8')}`, ['--single-transaction']);

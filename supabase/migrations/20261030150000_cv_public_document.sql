@@ -188,8 +188,14 @@ grant execute on function public.cv_restore_version(uuid, uuid) to authenticated
 -- Lecture publique par URL : assurée par le statut public du bucket, sans politique SELECT
 -- (une politique SELECT publique autoriserait le listage de tous les fichiers).
 
--- Un objet référencé par une version n'est jamais supprimé (historique, retour arrière)
-create or replace function public.cv_object_is_referenced(p_name text)
+-- Un objet référencé par une version n'est jamais supprimé (historique, retour arrière).
+-- Fonction utilisée par les seules politiques ci-dessous : placée dans un schéma que l'API
+-- n'expose pas (pas d'appel /rest/v1/rpc), mais que les politiques évaluent pour tout rôle.
+create schema if not exists portfolio_private;
+revoke all on schema portfolio_private from public;
+grant usage on schema portfolio_private to anon, authenticated;
+
+create or replace function portfolio_private.cv_object_is_referenced(p_name text)
 returns boolean
 language sql
 stable
@@ -202,8 +208,8 @@ as $$
   );
 $$;
 
-revoke all on function public.cv_object_is_referenced(text) from public;
-grant execute on function public.cv_object_is_referenced(text) to anon, authenticated;
+revoke all on function portfolio_private.cv_object_is_referenced(text) from public;
+grant execute on function portfolio_private.cv_object_is_referenced(text) to anon, authenticated;
 
 -- Gardes restrictives : s'ajoutent (ET logique) à toute politique existante
 drop policy if exists p0cv_documents_guard_select on storage.objects;
@@ -231,7 +237,7 @@ create policy p0cv_documents_guard_delete
   on storage.objects as restrictive for delete to anon, authenticated
   using (
     bucket_id <> 'portfolio-public-documents'
-    or ((select public.is_portfolio_admin_mfa()) and not public.cv_object_is_referenced(name))
+    or ((select public.is_portfolio_admin_mfa()) and not portfolio_private.cv_object_is_referenced(name))
   );
 
 -- Droits de l'administrateur (permissifs) : SELECT requis par Storage pour supprimer

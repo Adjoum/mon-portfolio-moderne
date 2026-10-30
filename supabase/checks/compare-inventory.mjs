@@ -113,6 +113,7 @@ for (const name of ['ai_providers', 'ai_features', 'ai_models', 'ai_feature_assi
   if (tables.has(`public.${name}`)) add('blocking', `public.${name} existe déjà : collision avec le centre IA`);
 }
 if (inv.schemas.includes('ai_private')) add('warning', 'Le schéma ai_private existe déjà');
+if (inv.schemas.includes('portfolio_private')) add('warning', 'Le schéma portfolio_private existe déjà (20261030150000 y crée cv_object_is_referenced)');
 if (inv.roles.some(r => r.name === 'ai_backend')) add('warning', 'Le rôle ai_backend existe déjà (il ne sera pas recréé ; vérifiez ses droits)');
 const otherAiFunctions = functions.filter(f => /^ai_admin_/.test(f.name));
 if (otherAiFunctions.length) add('warning', `${otherAiFunctions.length} fonction(s) ai_admin_* déjà présentes`);
@@ -132,8 +133,22 @@ for (const table of ['visits', 'contacts']) {
     && (p.roles.includes('anon') || p.roles.includes('public')) && (p.using === 'true' || p.using === null));
   if (exposed.length) add('warning', `public.${table} : lecture ouverte à anon par « ${exposed.map(p => p.name).join('», «')} » (${tables.get(`public.${table}`)?.rows ?? '?'} ligne(s)) — fermée par P0.A1`);
 }
+// Même règle que 20261030150100 : SELECT permissive dont la seule condition est bucket_id = 'project-images'
+const pureListing = p => p.permissive === 'PERMISSIVE' && p.roles.some(r => ['public', 'anon', 'authenticated'].includes(r))
+  && !/^p0(a1|cv)_/.test(p.name) && (p.using ?? '').toLowerCase().replace(/\s|\(|\)|::text/g, '') === "bucket_id='project-images'";
 const listing = policies.filter(p => p.schema === 'storage' && p.table === 'objects' && p.cmd === 'SELECT' && /project-images/.test(p.using ?? ''));
-for (const p of listing) add('info', `storage.objects « ${p.name} » : ${p.roles.join(',')} (listage project-images) — retirée par 20261030150100`);
+for (const p of listing) {
+  if (pureListing(p)) add('info', `storage.objects « ${p.name} » (${p.roles.join(',')}) : listage de project-images — retirée par 20261030150100, recréée au retour arrière`);
+  else if (!/^p0(a1|cv)_/.test(p.name)) add('warning', `storage.objects « ${p.name} » (${p.roles.join(',')}, ${p.using}) : lecture de project-images conservée par 20261030150100 ; la garde restrictive bloque le listage, mais le Security Advisor peut encore la signaler — à examiner`);
+}
+// Insertion publique bornée par 20261030120200 : colonnes ouvertes à l'insertion
+for (const [table, expected] of [['visits', ['page', 'referrer', 'user_agent', 'language', 'screen', 'country', 'city']], ['contacts', ['name', 'email', 'subject', 'message']]]) {
+  if (!tables.has(`public.${table}`)) continue;
+  const actual = inv.columns.filter(c => c.table === table).map(c => c.column);
+  const missing = expected.filter(c => !actual.includes(c));
+  const others = actual.filter(c => !expected.includes(c));
+  add(missing.length ? 'warning' : 'info', `public.${table} : insertion publique limitée à ${expected.filter(c => actual.includes(c)).join(', ')}${missing.length ? ` (absentes : ${missing.join(', ')} ; le site les envoie, l'insertion échouerait déjà)` : ''} ; fixées par la base : ${others.join(', ') || 'aucune'}`);
+}
 
 // ── Tables du portfolio sans RLS ──
 for (const t of inv.tables.filter(t => t.schema === 'public' && !t.rls)) {

@@ -12,6 +12,8 @@ import { restoreSql, executeGrantees, parseInventory } from '../../supabase/chec
 import { adaptSql } from '../../supabase/backup/restore-lib.mjs'
 // @ts-expect-error module JavaScript sans déclaration de types
 import { summarizeInventory, comparisonStep } from '../../supabase/checks/phase0.mjs'
+// @ts-expect-error module JavaScript sans déclaration de types
+import { securityLintScript, parseLints } from '../../supabase/tests/advisor/splinter.mjs'
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
@@ -113,6 +115,25 @@ describe('comparaison de l’inventaire avec les migrations', () => {
     expect(images({ 'image/jpeg': 2, 'image/webp': 3 }, 0).out).toMatch(/respectent déjà les limites prévues/)
   })
 
+  it('listage de project-images : politiques retirées nommées, autres lectures signalées', () => {
+    const storage = (name: string, using: string, roles = ['public']): Policy =>
+      ({ schema: 'storage', table: 'objects', name, permissive: 'PERMISSIVE', roles, cmd: 'SELECT', using, with_check: null })
+    const r = compare(inventory(inv => {
+      inv.policies.push(storage('Public Access project images', "(bucket_id = 'project-images'::text)"))
+      inv.policies.push(storage('Lecture connectée', "((bucket_id = 'project-images'::text) AND (auth.role() = 'authenticated'::text))", ['authenticated']))
+    }))
+    expect(r.out).toMatch(/« Public Access project images » \(public\) : listage de project-images — retirée par 20261030150100/)
+    expect(r.out).toMatch(/« Lecture connectée » \(authenticated, .*\) : lecture de project-images conservée/)
+  })
+
+  it('insertion publique bornée : colonnes ouvertes et colonnes fixées par la base', () => {
+    const r = compare(inventory(inv => {
+      inv.columns = ['page', 'referrer', 'created_at', 'id'].map(column => ({ table: 'visits', column }))
+    }))
+    expect(r.out).toMatch(/public\.visits : insertion publique limitée à page, referrer \(absentes : user_agent, language, screen, country, city/)
+    expect(r.out).toMatch(/fixées par la base : created_at, id/)
+  })
+
   it('PostgreSQL 15 : accepté, restauration annoncée par le client 17', () => {
     const r = compare(inventory(inv => { inv.server.version = '15.14'; inv.server.version_num = 150014 }))
     expect(r.status).toBe(0)
@@ -158,6 +179,29 @@ describe('rapport de phase 0 (synthèse de l’inventaire)', () => {
   it('table admin_users absente : signalée sans erreur', () => {
     expect(summarizeInventory(inventory(inv => { inv.auth.admins = null; inv.auth.admins_with_verified_totp = null })))
       .toMatch(/Administrateurs \(admin_users\) : table absente/)
+  })
+})
+
+describe('règles du Security Advisor (splinter) et migration 20261030120200', () => {
+  const splinter = "set local search_path = '';\ndo $$\nbegin\n  perform 1;\nend $$;\n\n(\nselect 'x' as name, 'WARN' as level, array['SECURITY'] as categories, 'x_k' as cache_key, 'd' as detail)\n"
+
+  it('préambule conservé, règles de sécurité résumées en JSON, transaction annulée', () => {
+    const script: string = securityLintScript(splinter)
+    expect(script).toMatch(/^begin;\nset local search_path = '';\ndo \$\$/)
+    expect(script).toMatch(/'SECURITY' = any\(l\.categories\);\nrollback;\n$/)
+    expect(script).toMatch(/'level', l\.level/)
+    expect(() => securityLintScript('select 1')).toThrow()
+    expect(parseLints('BEGIN\n[{"name":"x","level":"WARN","key":"x_k","detail":"d"}]\n')).toEqual([{ name: 'x', level: 'WARN', key: 'x_k', detail: 'd' }])
+    expect(parseLints('')).toEqual([])
+  })
+
+  it('20261030120200 : aucune donnée modifiée, aucune politique d’origine supprimée', () => {
+    const sql = read('supabase/migrations/20261030120200_p0a1_security_advisor.sql')
+    const code = sql.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
+    expect(code).not.toMatch(/\b(insert into|update public|delete from|truncate|drop table|drop column)\b/i)
+    for (const m of code.matchAll(/drop policy if exists (\S+)/g)) expect(m[1]).toMatch(/^p0a1_/)
+    expect(code).toMatch(/as restrictive for insert to anon, authenticated/)
+    expect(code).toMatch(/set search_path = %L', f\.fn, ''/)
   })
 })
 

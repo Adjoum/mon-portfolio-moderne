@@ -20,7 +20,8 @@ begin
   end if;
 end $$;
 
-drop function if exists public.cv_object_is_referenced(text);
+drop function if exists portfolio_private.cv_object_is_referenced(text);
+drop schema if exists portfolio_private;
 drop function if exists public.cv_restore_version(uuid, uuid);
 drop function if exists public.cv_publish_version(uuid, text, bigint, text, text, uuid);
 drop function if exists public.cv_active();

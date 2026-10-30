@@ -18,6 +18,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parseInventory, restoreSql } from '../../checks/restore-from-inventory.mjs';
 import { CLIENT, IMAGES, adaptSql, dumpToSql, replay } from '../../backup/restore-lib.mjs';
+import { SPLINTER_COMMIT, loadSplinter, securityLintScript, parseLints } from '../advisor/splinter.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..', '..');
@@ -31,15 +32,18 @@ const env = { ...process.env, MSYS_NO_PATHCONV: '1' };
 
 const MIGRATIONS = [
   '20261030120000_p0a1_admin_access_control', '20261030120100_p0a1_storage_access_control',
+  '20261030120200_p0a1_security_advisor',
   '20261030150000_cv_public_document', '20261030150100_project_images_no_public_listing',
   '20261030170000_ai_control_center_schema', '20261030170100_ai_admin_functions',
   '20261030170200_ai_runtime_functions', '20261030170300_ai_initial_catalog',
 ];
 const ROLLBACKS = [
   '20261030170000_ai_control_center', '20261030150100_project_images_no_public_listing',
-  '20261030150000_cv_public_document', '20261030120100_p0a1_storage_access_control',
-  '20261030120000_p0a1_admin_access_control',
+  '20261030150000_cv_public_document', '20261030120200_p0a1_security_advisor',
+  '20261030120100_p0a1_storage_access_control', '20261030120000_p0a1_admin_access_control',
 ];
+/** Fonctions SECURITY DEFINER appelées volontairement par le site (contrôles internes) */
+const RPC_ALLOWED = /^(is_portfolio_admin|visit_count|cv_active|cv_publish_version|cv_restore_version|ai_admin_\w+)$/;
 
 const option = name => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : null);
 const FROM_BACKUP = option('--from-backup');
@@ -77,6 +81,12 @@ function contentHashes(inv) {
   }));
 }
 const changedTables = (a, b) => Object.keys(a).filter(k => a[k] !== b[k]);
+
+/** Alertes de sécurité du Security Advisor (règles splinter), ou null hors ligne */
+const SPLINTER = await loadSplinter();
+const advisor = () => (SPLINTER ? parseLints(psql('postgres', securityLintScript(SPLINTER), ['-At'])) : null);
+const lintLabel = l => `[${l.level}] ${l.name} : ${l.key.slice(l.name.length + 1)}`;
+const listLints = (title, lints) => console.log(`   ${title} (${lints.length})${lints.map(l => `\n     - ${lintLabel(l)}`).join('')}`);
 
 /** Comparaison structurelle de deux inventaires (même nature d'objets, mêmes définitions) */
 function diff(a, b) {
@@ -144,6 +154,9 @@ try {
     { input: sqlFile('supabase/checks/p1ai_production_inventory.sql'), encoding: 'utf8', env });
   check('l’inventaire s’exécute dans une transaction en lecture seule', ro.status === 0, ro.status === 0 ? '' : ro.stderr.slice(-200));
   const hashesBefore = contentHashes(before);
+  const lintsBefore = advisor();
+  if (lintsBefore) listLints(`Security Advisor avant migrations (règles splinter ${SPLINTER_COMMIT.slice(0, 7)})`, lintsBefore);
+  else console.log('   Security Advisor : règles splinter indisponibles (hors ligne), contrôles ignorés');
 
   console.log('▶ 2. Comparaison avec les migrations prévues');
   const compared = node('supabase/checks/compare-inventory.mjs', path.join(WORK, 'inventaire-avant.json'));
@@ -168,7 +181,7 @@ try {
   console.log('▶ 5. Migrations (rôle postgres, une transaction chacune)');
   for (const m of MIGRATIONS) psql('postgres', `set client_min_messages = warning;\n${sqlFile(`supabase/migrations/${m}.sql`)}`, ['--single-transaction']);
   const after = inventory('apres');
-  check('les 8 migrations s’appliquent', after.tables.some(t => t.name === 'ai_providers') && after.tables.some(t => t.name === 'cv_versions'));
+  check(`les ${MIGRATIONS.length} migrations s’appliquent`, after.tables.some(t => t.name === 'ai_providers') && after.tables.some(t => t.name === 'cv_versions'));
   const changedByMigrations = changedTables(hashesBefore, contentHashes(before));
   check(`contenu des ${Object.keys(hashesBefore).length} tables existantes inchangé par les migrations (empreinte de chaque ligne, comptes et facteurs MFA compris)`,
     changedByMigrations.length === 0, changedByMigrations.join(', '));
@@ -176,6 +189,43 @@ try {
     { input: "set role anon; select count(*) from public.visits;", encoding: 'utf8', env }).stdout.trim();
   check('visits n’est plus lisible par un visiteur anonyme', anonVisits === '0' || anonVisits === '', `anon voit ${anonVisits || 'aucune ligne (refus)'}`);
   check('administrateur existant conservé', value('select count(*) from public.admin_users;') === String(before.auth.admins));
+
+  // Déclencheurs updatedat : search_path figé par 20261030120200, corps inchangé. Mise à jour
+  // réelle d'une ligne, annulée aussitôt (transaction) : le déclencheur doit encore poser now().
+  const triggerTables = [...new Set(after.triggers.filter(t => /set_updatedat|update_updatedat_column/.test(t.definition))
+    .map(t => t.table.replace(/^public\./, '')))];
+  const triggerResults = triggerTables.map(t => {
+    const rel = `public.${quote(t)}`;
+    try {
+      const ok = psql('postgres', `begin;
+with u as (update ${rel} set updatedat = '2000-01-01' where ctid = (select ctid from ${rel} limit 1) returning updatedat = now() as ok)
+select coalesce(bool_and(ok), true) from u;
+rollback;`, ['-At']);
+      return { t, ok: ok === 't' };
+    } catch (err) {
+      return { t, ok: false, error: err.message.slice(-160) };
+    }
+  });
+  check('déclencheurs updatedat fonctionnels (search_path figé)', triggerResults.every(r => r.ok),
+    triggerResults.map(r => `${r.t}${r.ok ? '' : ` ✗ ${r.error ?? 'date non posée'}`}`).join(', ') || 'aucun déclencheur');
+
+  const lintsAfter = lintsBefore && advisor();
+  if (lintsAfter) {
+    const keysBefore = new Set(lintsBefore.map(l => l.key));
+    const keysAfter = new Set(lintsAfter.map(l => l.key));
+    listLints('alertes levées par les migrations', lintsBefore.filter(l => !keysAfter.has(l.key)));
+    listLints('alertes restantes', lintsAfter.filter(l => keysBefore.has(l.key)));
+    const added = lintsAfter.filter(l => !keysBefore.has(l.key));
+    listLints('alertes nouvelles', added);
+    const targeted = /^(function_search_path_mutable|public_bucket_allows_listing|rls_disabled_in_public|policy_exists_rls_disabled|rls_enabled_no_policy|security_definer_view|auth_users_exposed)$/;
+    check('Security Advisor : plus de search_path modifiable, de listage public, de table sans RLS ni sans politique',
+      !lintsAfter.some(l => targeted.test(l.name)), lintsAfter.filter(l => targeted.test(l.name)).map(lintLabel).join(' | '));
+    check('Security Advisor : aucune politique « toujours vraie » créée par les migrations',
+      !lintsAfter.some(l => l.name === 'rls_policy_always_true' && /_p0(a1|cv)_/.test(l.key)));
+    const fn = l => /`public\.(\w+)\(/.exec(l.detail)?.[1] ?? '';
+    const unexpected = added.filter(l => !(/security_definer_function_executable$/.test(l.name) && RPC_ALLOWED.test(fn(l))));
+    check('Security Advisor : alertes nouvelles limitées aux fonctions RPC prévues', unexpected.length === 0, unexpected.map(lintLabel).join(' | '));
+  }
 
   console.log('▶ 6. Retour arrière : scripts down puis restauration générée depuis l’inventaire');
   for (const r of ROLLBACKS) psql('postgres', `set client_min_messages = warning;\n${sqlFile(`supabase/rollback/${r}.down.sql`)}`, ['--single-transaction']);
