@@ -1,0 +1,38 @@
+# Blocs à FUSIONNER dans le bloc server { … } existant de api.adjoumani-koffi.com, sur la VM.
+# Ce fichier ne remplace rien : comparez d'abord avec `sudo nginx -T`, sauvegardez la
+# configuration, puis `sudo nginx -t` avant `sudo systemctl reload nginx`.
+#
+# Valeurs tirées du code de l'API :
+#   - génération IA : délai maximal par fonctionnalité 85 s (registre) → 120 s côté nginx ;
+#   - OCR du CV (cv.import.ocr) : corps JSON de 6 Mo au plus (image en base64) ;
+#   - remplacement du CV (/api/admin/cv) : PDF de 10 Mo au plus, en multipart.
+# Les autres routes gardent la configuration actuelle (proxy_pass vers 127.0.0.1:5000).
+
+location /api/ai/ {
+    proxy_pass http://127.0.0.1:5000;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 120s;
+    proxy_send_timeout 120s;
+    client_max_body_size 6m;
+}
+
+location /api/admin/cv {
+    proxy_pass http://127.0.0.1:5000;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 60s;
+    client_max_body_size 11m;
+}
+
+# L'assistant (/api/agent/chat), InkSpace et NovaMind (/api/groq/*) passent aussi par la
+# passerelle : si la location générale /api/ a un proxy_read_timeout inférieur à 90 s,
+# l'augmenter à 120 s.
