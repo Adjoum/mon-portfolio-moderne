@@ -9,7 +9,12 @@ import {
   X, Plus, Sparkles,
 } from 'lucide-react';
 
+import AdminGate from '../components/admin/AdminGate';
+import { adminFetch, describeAdminApiError } from '../lib/adminAuth';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const MAX_TEXT_CHARS = 20_000;          // limites appliquées par blog-api
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 const CATEGORIES = [
   { value: 'biographie',   label: 'Biographie',   icon: User,     color: '#6EE7F7' },
@@ -70,6 +75,14 @@ interface Toast {
 }
 
 export default function KnowledgeAdmin() {
+  return (
+    <AdminGate>
+      <KnowledgeAdminContent />
+    </AdminGate>
+  );
+}
+
+function KnowledgeAdminContent() {
   const navigate = useNavigate();
   const fileRef  = useRef<HTMLInputElement>(null);
 
@@ -104,16 +117,25 @@ export default function KnowledgeAdmin() {
     if (type !== 'loading') setTimeout(() => setToast(null), 4000);
   };
 
+  // ── Appel authentifié (jeton de session Supabase) ──────────
+  // Le serveur vérifie la signature, l'appartenance à admin_users et la MFA :
+  // aucune information de rôle n'est envoyée par le navigateur.
+  const callApi = async (path: string, init: RequestInit = {}) => {
+    const res  = await adminFetch(`${API_URL}/agent/knowledge${path}`, init);
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(describeAdminApiError(res.status, data));
+    return data;
+  };
+
   // ── Load entries ───────────────────────────────────────────
   const loadEntries = async () => {
     setLoading(true);
     try {
-      const res  = await fetch(`${API_URL}/agent/knowledge/list`);
-      const data = await res.json();
+      const data = await callApi('/list');
       setEntries(data.entries || []);
       setTotalVectors(data.totalVectors || 0);
-    } catch {
-      showToast('error', 'Impossible de charger les entrées');
+    } catch (e) {
+      showToast('error', (e as Error).message || 'Impossible de charger les entrées');
     } finally {
       setLoading(false);
     }
@@ -125,42 +147,42 @@ export default function KnowledgeAdmin() {
   const handleAddText = async () => {
     if (!textForm.text.trim()) return showToast('error', 'Texte vide');
     showToast('loading', 'Indexation en cours...');
+    if (textForm.text.length > MAX_TEXT_CHARS) return showToast('error', `Texte trop long (${MAX_TEXT_CHARS} caractères maximum)`);
     try {
-      const res  = await fetch(`${API_URL}/agent/knowledge/add-text`, {
+      const data = await callApi('/add-text', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(textForm),
       });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
       showToast('success', `✅ ${data.chunksIndexed} chunk(s) indexé(s) !`);
       setTextForm(prev => ({ ...prev, text: '' }));
       loadEntries();
-    } catch (e: any) {
-      showToast('error', e.message);
+    } catch (e) {
+      showToast('error', (e as Error).message);
     }
   };
 
   // ── Upload file ────────────────────────────────────────────
   const handleUploadFile = async () => {
     if (!selectedFile) return showToast('error', 'Aucun fichier sélectionné');
+    // Contrôles de confort ; le serveur revérifie taille, extension et signature du fichier
+    if (selectedFile.size > MAX_FILE_BYTES) return showToast('error', 'Fichier trop volumineux (5 Mo maximum)');
+    if (!/\.(pdf|docx|txt|md|markdown)$/i.test(selectedFile.name)) return showToast('error', 'Format non supporté (PDF, DOCX, TXT, MD)');
     showToast('loading', `Traitement de ${selectedFile.name}...`);
     const form = new FormData();
     form.append('file',     selectedFile);
     form.append('category', fileForm.category);
     form.append('source',   fileForm.source || selectedFile.name);
     try {
-      const res  = await fetch(`${API_URL}/agent/knowledge/upload-file`, {
+      const data = await callApi('/upload-file', {
         method: 'POST',
         body:   form,
       });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
       showToast('success', `✅ ${data.chunksIndexed} chunks extraits de ${data.filename}`);
       setSelectedFile(null);
       loadEntries();
-    } catch (e: any) {
-      showToast('error', e.message);
+    } catch (e) {
+      showToast('error', (e as Error).message);
     }
   };
 
@@ -169,15 +191,14 @@ export default function KnowledgeAdmin() {
     if (!searchQuery.trim()) return;
     setSearching(true);
     try {
-      const res  = await fetch(`${API_URL}/agent/knowledge/search`, {
+      const data = await callApi('/search', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ query: searchQuery }),
       });
-      const data = await res.json();
       setSearchResults(data.results || []);
-    } catch {
-      showToast('error', 'Erreur de recherche');
+    } catch (e) {
+      showToast('error', (e as Error).message || 'Erreur de recherche');
     } finally {
       setSearching(false);
     }
@@ -187,13 +208,13 @@ export default function KnowledgeAdmin() {
   const handleDelete = async (id: string) => {
     if (!confirm('Supprimer cette entrée ?')) return;
     try {
-      await fetch(`${API_URL}/agent/knowledge/${encodeURIComponent(id)}`, {
+      await callApi(`/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
       showToast('success', 'Entrée supprimée');
       loadEntries();
-    } catch {
-      showToast('error', 'Erreur lors de la suppression');
+    } catch (e) {
+      showToast('error', (e as Error).message || 'Erreur lors de la suppression');
     }
   };
 

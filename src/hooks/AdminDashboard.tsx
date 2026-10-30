@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Edit, Trash2, Save, X, Upload, Eye, Download, FileText, Briefcase, Award, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import type { Project, Skill } from '../lib/supabase'
-import AdminLogin from '../components/AdminLogin';
+import AdminGate from '../components/admin/AdminGate';
 import VisitorStats from '../components/VisitorStats'
 import AILabManager from '../components/AILabManager'
 
@@ -31,10 +31,10 @@ interface SkillForm {
   level: number
 }
 
-const AdminDashboard: React.FC = () => {
+// Contenu rendu uniquement après AdminGate (session admin + MFA).
+// Les écritures restent protégées côté serveur par la RLS (is_portfolio_admin_mfa).
+const AdminDashboardContent: React.FC = () => {
 
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('projects')
   const [projects, setProjects] = useState<Project[]>([])
   const [skills, setSkills] = useState<Skill[]>([])
@@ -73,24 +73,6 @@ const AdminDashboard: React.FC = () => {
 
 
 
-
-  // ✅ AJOUTE CE useEffect POUR VÉRIFIER L'AUTHENTIFICATION
-  useEffect(() => {
-    const checkAuth = async () => {
-        const { data: { session } } = await supabase.auth.getSession()
-        setIsAuthenticated(!!session)
-        setIsCheckingAuth(false)
-    }
-
-    checkAuth()
-
-    // Écouter les changements d'authentification
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        setIsAuthenticated(!!session)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
 
   useEffect(() => {
     loadData()
@@ -424,25 +406,20 @@ const uploadProjectImage = async (file: File) => {
   // ✅ AJOUTE CETTE FONCTION DE DÉCONNEXION
   const handleLogout = async () => {
     if (confirm('Êtes-vous sûr de vouloir vous déconnecter ?')) {
-      await supabase.auth.signOut()
-      setIsAuthenticated(false)
+      await supabase.auth.signOut() // AdminGate réaffiche la connexion
     }
   }
 
 
   useEffect(() => {
-    if (!isAuthenticated) return
-
     let loggedOut = false
     let lastActivity = Date.now()
 
     const logoutForInactivity = async () => {
       if (loggedOut) return
       loggedOut = true
-      await supabase.auth.signOut()
-      setIsAuthenticated(false)
-      setActiveTab('projects')
       alert('Session expirée pour inactivité. Veuillez vous reconnecter.')
+      await supabase.auth.signOut() // AdminGate réaffiche la connexion
     }
 
     const markActivity = () => { lastActivity = Date.now() }
@@ -473,25 +450,8 @@ const uploadProjectImage = async (file: File) => {
       activityEvents.forEach((e) => window.removeEventListener(e, markActivity))
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [isAuthenticated])
+  }, [])
 
-
-  // Afficher le loader pendant la vérification
-  if (isCheckingAuth) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-400">Vérification de l'authentification...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Afficher le login si non authentifié
-  if (!isAuthenticated) {
-    return <AdminLogin onLoginSuccess={() => setIsAuthenticated(true)} />
-  }
 
   return (
     <motion.div
@@ -1137,5 +1097,11 @@ const uploadProjectImage = async (file: File) => {
     
   )
 }
+
+const AdminDashboard: React.FC = () => (
+  <AdminGate>
+    <AdminDashboardContent />
+  </AdminGate>
+)
 
 export default AdminDashboard

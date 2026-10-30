@@ -13,18 +13,19 @@ export default function AdminLogin({ onLoginSuccess }: { onLoginSuccess: () => v
     setLoading(true);
     setError('');
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
-      setError(error.message);
+      // Message générique : ne pas indiquer si l'e-mail existe
+      setError(error.status === 400 ? 'Identifiants incorrects' : 'Connexion impossible pour le moment');
       setLoading(false);
       return;
     }
 
-    console.log('Connecté avec succès:', data);
+    // Ne jamais journaliser la session (elle contient les jetons d'accès)
     onLoginSuccess();
   };
 

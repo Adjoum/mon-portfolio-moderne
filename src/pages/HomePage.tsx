@@ -66,10 +66,17 @@ const [displayCount, setDisplayCount] = useState(0)
 const [totalVisits, setTotalVisits] = useState(0)
 
 useEffect(() => {
+  // visit_count() renvoie uniquement le total : la table visits n'est lisible que par l'admin.
+  // Repli sur l'ancien comptage tant que la migration P0.A1 n'est pas appliquée.
   supabase
-    .from('visits')
-    .select('id', { count: 'exact', head: true })
-    .then(({ count }) => setTotalVisits(count || 0))
+    .rpc('visit_count')
+    .then(({ data, error }) => {
+      if (!error && typeof data === 'number') return setTotalVisits(data)
+      supabase
+        .from('visits')
+        .select('id', { count: 'exact', head: true })
+        .then(({ count }) => setTotalVisits(count || 0))
+    })
 }, [])
 
 // Animation compteur
