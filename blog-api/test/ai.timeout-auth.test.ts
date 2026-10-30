@@ -5,11 +5,11 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vites
 import type { AddressInfo } from 'net';
 import request from 'supertest';
 import { createApp } from '../src/app';
-import { createMemoryQuotaService } from '../src/ai/services/quotas';
 import { strictObject, text } from '../src/ai/features/validate';
 import type { FeatureDefinition } from '../src/ai/features/registry';
 import { resetSupabaseAdminCaches } from '../src/middleware/supabaseAdmin';
 import { startFakeOpenAI, type FakeOpenAI } from './helpers/fakeOpenAI';
+import { createMemoryStore } from './helpers/memoryStore';
 import { startFakeSupabase, ANON_KEY, USER_ID, type FakeSupabase } from './helpers/fakeSupabase';
 
 const base = (id: string, overrides: Partial<FeatureDefinition>): FeatureDefinition => ({
@@ -43,12 +43,19 @@ let app: ReturnType<typeof createApp>;
 beforeAll(async () => {
   fake = await startFakeOpenAI();
   supabase = await startFakeSupabase();
+  const store = createMemoryStore({ openai: 'cle-factice' });
+  for (const [id, feature] of Object.entries(features)) {
+    store.state.features[id] = {
+      provider: 'openai', model: 'modele-test', enabled: true, params: {}, maxOutputTokens: feature.maxOutputTokens,
+      timeoutMs: feature.timeoutMs, blocker: null, pricing: { inputPerMTok: 1, outputPerMTok: 1 },
+      quotas: { perMinute: 10_000, concurrency: feature.quotas.concurrency },
+    };
+  }
   app = createApp({
     ai: {
       features,
-      resolver: { resolve: () => ({ provider: 'openai', model: 'modele-test', source: 'seed', validated: true }) },
+      store,
       baseUrlOverrides: { openai: fake.url },
-      quotas: createMemoryQuotaService(),
     },
   });
 });

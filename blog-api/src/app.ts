@@ -32,7 +32,9 @@ import { createAgentRouter } from './routes/agent';
 import cvRouter from './routes/cv';
 import { createAiRouter } from './routes/ai';
 import adminCvRouter from './routes/adminCv';
+import { createAdminAiRouter } from './routes/adminAi';
 import { createAiGateway, type AiGatewayDeps } from './ai/services/gateway';
+import { createAiStore } from './ai/services/store';
 
 export interface AppOptions {
   /** Dépendances de la passerelle IA (remplacées dans les tests : faux fournisseur, quotas) */
@@ -43,7 +45,11 @@ export function createApp(options: AppOptions = {}) {
   const app = express();
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
-  const aiGateway = createAiGateway(options.ai);
+  const aiStore = options.ai?.store ?? createAiStore();
+  const aiGateway = createAiGateway({ ...options.ai, store: aiStore });
+  // Accessibles au démarrage (synchronisation du registre, arrêt propre)
+  app.locals.aiStore = aiStore;
+  app.locals.aiGateway = aiGateway;
   // ── Middlewares globaux ───────────────────────────────────────
 
   // ── HTTP Request Logger ────────────────────────────────────────
@@ -89,6 +95,7 @@ export function createApp(options: AppOptions = {}) {
   // qui ignore ensuite la requête déjà lue)
   app.use('/api/agent/knowledge', express.json({ limit: '128kb' }));
   app.use('/api/admin/cv', express.json({ limit: '4kb' }));
+  app.use('/api/admin/ai', express.json({ limit: '32kb' }));
   // Passerelle IA : 256 Ko, sauf la lecture d'image (data URL d'au plus 4 Mo)
   app.use('/api/ai/run/cv.import.ocr', express.json({ limit: '6mb' }));
   app.use('/api/ai', express.json({ limit: '256kb' }));
@@ -138,6 +145,7 @@ export function createApp(options: AppOptions = {}) {
   app.use('/api/cv', cvRouter);
   app.use('/api/ai', createAiRouter(aiGateway));
   app.use('/api/admin/cv', adminCvRouter);
+  app.use('/api/admin/ai', createAdminAiRouter(aiGateway, aiStore));
 
 
   // ── Health check ─────────────────────────────────────────────

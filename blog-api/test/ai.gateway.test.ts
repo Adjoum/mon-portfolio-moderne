@@ -1,21 +1,22 @@
-// P0.A2 — Passerelle IA /api/ai (migration des appels OpenAI du navigateur vers blog-api)
+// Passerelle IA /api/ai : le navigateur n'envoie qu'une fonctionnalité et des données.
 // Fournisseur simulé en local : aucune requête payante, aucune vraie clé (valeur canari).
+// Configuration lue dans le stockage d'exécution (ici en mémoire ; règles SQL : supabase/tests/ai).
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../src/app';
-import { createMemoryQuotaService } from '../src/ai/services/quotas';
 import { FEATURES } from '../src/ai/features/registry';
 import { CV_REVIEW_SYSTEM } from '../src/ai/features/prompts/cv.v1';
 import { LATEX_IMPROVE_SYSTEM } from '../src/ai/features/prompts/latex.v1';
-import seed from '../src/ai/config/initial-assignments.json';
 import { startFakeOpenAI, type FakeOpenAI } from './helpers/fakeOpenAI';
 import { findLeakedSecret, SECRET_CANARIES } from './helpers/canaries';
 import { allConsoleOutput } from './helpers/audit';
+import { createMemoryStore } from './helpers/memoryStore';
 
 let fake: FakeOpenAI;
 let app: ReturnType<typeof createApp>;
-const quotas = createMemoryQuotaService();
+const store = createMemoryStore({ openai: SECRET_CANARIES.OPENAI_API_KEY });
+const MODEL = 'modele-de-test';
 
 const PNG = 'data:image/png;base64,' + Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(24).fill(0)]).toString('base64');
 
@@ -37,7 +38,7 @@ const freshIp = () => `198.51.100.${(++ipCounter % 250) + 2}`;
 
 beforeAll(async () => {
   fake = await startFakeOpenAI();
-  app = createApp({ ai: { baseUrlOverrides: { openai: fake.url }, quotas, requireValidatedAssignment: false } });
+  app = createApp({ ai: { baseUrlOverrides: { openai: fake.url }, store } });
 });
 afterAll(async () => {
   await fake.close();
@@ -45,10 +46,10 @@ afterAll(async () => {
 beforeEach(() => {
   fake.calls.length = 0;
   fake.behavior = { kind: 'ok' };
-  quotas.reset();
-  process.env.OPENAI_API_KEY = SECRET_CANARIES.OPENAI_API_KEY;
+  store.reset();
+  store.setFeature('cv.review', { params: { reasoning_effort: 'low' } });
   for (const k of Object.keys(process.env)) {
-    if (/^AI_(QUOTA|ASSIGNMENT|DEV_PROVIDER)_|^AI_DISABLED_FEATURES$|^AI_ENABLED$/.test(k)) delete process.env[k];
+    if (/^AI_DEV_PROVIDER_|^AI_DISABLED_FEATURES$|^AI_ENABLED$/.test(k)) delete process.env[k];
   }
 });
 
@@ -65,7 +66,7 @@ describe('proxy avec réponses simulées', () => {
   it('modèle, limite de tokens et clé décidés par le serveur', async () => {
     await run('cv.review', { input: VALID_INPUTS['cv.review'] });
     const call = fake.calls[0];
-    expect(call.body.model).toBe(seed['cv.review'].model);
+    expect(call.body.model).toBe(MODEL);
     expect(call.body.max_completion_tokens).toBe(FEATURES['cv.review'].maxOutputTokens);
     expect(call.body.max_tokens).toBeUndefined();   // refusé par les modèles à raisonnement
     expect(call.headers.authorization).toBe(`Bearer ${SECRET_CANARIES.OPENAI_API_KEY}`);
@@ -83,10 +84,17 @@ describe('proxy avec réponses simulées', () => {
     expect(user.map(p => p.type)).toEqual(['image_url', 'text']);
   });
 
-  it('affectation surchargée côté serveur (AI_ASSIGNMENT_*)', async () => {
-    process.env.AI_ASSIGNMENT_CV_GENERATE = 'openai:modele-de-test';
+  it('modèle, limite et paramètres viennent de l’affectation enregistrée', async () => {
+    store.setFeature('cv.generate', { model: 'autre-modele', maxOutputTokens: 777, params: { temperature: 0.4 } });
     await run('cv.generate', { input: VALID_INPUTS['cv.generate'] });
-    expect(fake.calls[0].body.model).toBe('modele-de-test');
+    expect(fake.calls[0].body).toMatchObject({ model: 'autre-modele', max_completion_tokens: 777, temperature: 0.4 });
+  });
+
+  it('délai de l’affectation appliqué', async () => {
+    store.setFeature('cv.review', { timeoutMs: 40 });
+    fake.behavior = { kind: 'hang' };
+    const res = await run('cv.review', { input: VALID_INPUTS['cv.review'] });
+    expect(res.status).toBe(504);
   });
 });
 
@@ -171,24 +179,47 @@ describe('requêtes invalides', () => {
 });
 
 describe('fournisseur non configuré ou fonctionnalité désactivée', () => {
-  it('sans OPENAI_API_KEY → 503 neutre, aucun appel réseau', async () => {
-    delete process.env.OPENAI_API_KEY;
+  it('sans clé enregistrée → 503 neutre, aucun appel réseau', async () => {
+    delete store.keys.openai;
     const res = await run('cv.generate', { input: VALID_INPUTS['cv.generate'] });
     expect(res.status).toBe(503);
     expect(res.body.code).toBe('AI_FEATURE_UNAVAILABLE');
     expect(fake.calls).toHaveLength(0);
   });
 
-  it('fournisseur sans adaptateur dans cette version (xai) → 503, aucun appel', async () => {
-    process.env.AI_ASSIGNMENT_CV_GENERATE = 'xai:modele-quelconque';
+  it('fournisseur sans clé (xai) → 503, aucun appel', async () => {
+    store.setFeature('cv.generate', { provider: 'xai' });
     const res = await run('cv.generate', { input: VALID_INPUTS['cv.generate'] });
     expect(res.status).toBe(503);
     expect(fake.calls).toHaveLength(0);
   });
 
-  it('affectation invalide → 503', async () => {
-    process.env.AI_ASSIGNMENT_CV_GENERATE = 'openai:modèle avec espaces';
+  it.each(['no_model', 'key_missing', 'provider_disabled', 'model_unavailable', 'not_validated', 'unpriced'])('blocage %s → 503, aucun appel', async (blocker) => {
+    store.setFeature('cv.generate', { blocker });
+    const res = await run('cv.generate', { input: VALID_INPUTS['cv.generate'] });
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('AI_FEATURE_UNAVAILABLE');
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it('fonctionnalité désactivée dans le dashboard → 503 AI_FEATURE_DISABLED', async () => {
+    store.setFeature('cv.generate', { enabled: false });
+    const res = await run('cv.generate', { input: VALID_INPUTS['cv.generate'] });
+    expect(res.body.code).toBe('AI_FEATURE_DISABLED');
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it('modèle sans tarif : jamais exécuté, le budget serait invérifiable', async () => {
+    store.setFeature('cv.generate', { pricing: null });
     expect((await run('cv.generate', { input: VALID_INPUTS['cv.generate'] })).status).toBe(503);
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it('base injoignable → 503 neutre, aucun appel', async () => {
+    store.failConfig = true;
+    const res = await run('cv.generate', { input: VALID_INPUTS['cv.generate'] });
+    expect(res.status).toBe(503);
+    expect(fake.calls).toHaveLength(0);
   });
 
   it('coupe-circuit par fonctionnalité et global', async () => {
@@ -206,7 +237,7 @@ describe('fournisseur non configuré ou fonctionnalité désactivée', () => {
     expect(res.body.features.every((f: { available: boolean }) => f.available)).toBe(true);
     expect(JSON.stringify(res.body)).not.toMatch(/openai|gpt|groq|anthropic|gemini|model|provider/i);
 
-    delete process.env.OPENAI_API_KEY;
+    store.setFeature('cv.generate', { blocker: 'key_missing' });
     process.env.AI_DISABLED_FEATURES = 'latex.improve';
     res = await request(app).get('/api/ai/features');
     const byId = Object.fromEntries(res.body.features.map((f: { id: string }) => [f.id, f]));
@@ -215,28 +246,82 @@ describe('fournisseur non configuré ou fonctionnalité désactivée', () => {
   });
 });
 
-describe('quotas et concurrence', () => {
-  it('quota par IP (cv.import.ocr : 1/jour) → 429 avec Retry-After', async () => {
-    const ip = freshIp();
-    expect((await run('cv.import.ocr', { input: VALID_INPUTS['cv.import.ocr'] }, ip)).status).toBe(200);
-    const second = await run('cv.import.ocr', { input: VALID_INPUTS['cv.import.ocr'] }, ip);
-    expect(second.status).toBe(429);
-    expect(second.body.code).toBe('AI_QUOTA_EXCEEDED');
-    expect(Number(second.headers['retry-after'])).toBeGreaterThan(0);
-    expect(fake.calls).toHaveLength(1);
-    // une autre IP reste servie
-    expect((await run('cv.import.ocr', { input: VALID_INPUTS['cv.import.ocr'] }, freshIp())).status).toBe(200);
+describe('budget, quotas et concurrence', () => {
+  it('quota atteint → 429 avec Retry-After, aucun appel au fournisseur', async () => {
+    store.reserveResult = { ok: false, code: 'AI_QUOTA_EXCEEDED', scope: 'subject', retryAfter: 3600 };
+    const res = await run('cv.import.ocr', { input: VALID_INPUTS['cv.import.ocr'] });
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe('AI_QUOTA_EXCEEDED');
+    expect(res.headers['retry-after']).toBe('3600');
+    expect(fake.calls).toHaveLength(0);
   });
 
-  it('quota global (tous visiteurs) → 429', async () => {
-    process.env.AI_QUOTA_CV_REVIEW = '100/2/4';
-    const statuses = [];
-    for (let i = 0; i < 3; i++) statuses.push((await run('cv.review', { input: VALID_INPUTS['cv.review'] }, freshIp())).status);
-    expect(statuses).toEqual([200, 200, 429]);
+  it('budget atteint → 429, aucun appel au fournisseur', async () => {
+    store.reserveResult = { ok: false, code: 'AI_BUDGET_EXCEEDED', scope: 'global_day', retryAfter: 3600 };
+    const res = await run('cv.review', { input: VALID_INPUTS['cv.review'] });
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe('AI_BUDGET_EXCEEDED');
+    expect(JSON.stringify(res.body)).not.toContain('global_day');
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it('budget invérifiable (base injoignable) → refus, aucun appel', async () => {
+    store.failReserve = true;
+    const res = await run('cv.review', { input: VALID_INPUTS['cv.review'] });
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('AI_FEATURE_UNAVAILABLE');
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it('le sujet réservé est haché : jamais l’IP', async () => {
+    const subjects: string[] = [];
+    store.reserveResult = (_feature, subject) => { subjects.push(subject); return { ok: true, day: '2026-10-30', month: '2026-10-01' }; };
+    await run('cv.review', { input: VALID_INPUTS['cv.review'] }, '203.0.113.77');
+    expect(subjects[0]).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('montant réservé puis ajusté au coût réel', async () => {
+    let reserved = 0;
+    store.reserveResult = (_feature, _subject, cost) => { reserved = cost; return { ok: true, day: '2026-10-30', month: '2026-10-01' }; };
+    await run('cv.review', { input: VALID_INPUTS['cv.review'] });
+    expect(reserved).toBeGreaterThan(0);
+    // 120 tokens à 1 USD + 40 tokens à 2 USD le million = 200 micro-USD
+    expect(store.settlements).toEqual([{ feature: 'cv.review', reserved, actual: 200 }]);
+    expect(store.settlements[0].actual).toBeLessThan(reserved);
+  });
+
+  it('échec du fournisseur : réservation rendue, rien n’est compté', async () => {
+    fake.behavior = { kind: 'error', status: 500, body: {} };
+    await run('cv.review', { input: VALID_INPUTS['cv.review'] });
+    expect(store.settlements[0].actual).toBe(0);
+  });
+
+  it('coût enregistré dans l’historique, sans contenu', async () => {
+    await run('cv.review', { input: VALID_INPUTS['cv.review'] });
+    expect(store.events.at(-1)).toMatchObject({ feature: 'cv.review', provider: 'openai', model: MODEL, outcome: 'ok', inputTokens: 120, outputTokens: 40, costMicroUsd: 200 });
+    expect(JSON.stringify(store.events)).not.toContain('Awa');
+  });
+
+  it('un refus est tracé dans l’historique', async () => {
+    store.reserveResult = { ok: false, code: 'AI_BUDGET_EXCEEDED', scope: 'feature_day' };
+    await run('cv.review', { input: VALID_INPUTS['cv.review'] });
+    await new Promise(r => setTimeout(r, 5));
+    expect(store.events.at(-1)).toMatchObject({ outcome: 'blocked', code: 'AI_BUDGET_EXCEEDED:feature_day' });
+  });
+
+  it('une panne du journal ne casse pas la réponse', async () => {
+    const original = store.settle;
+    store.settle = async () => { throw new Error('journal indisponible'); };
+    try {
+      const res = await run('cv.review', { input: VALID_INPUTS['cv.review'] });
+      expect(res.status).toBe(200);
+    } finally {
+      store.settle = original;
+    }
   });
 
   it('concurrence limitée → 503 AI_BUSY, sans fuite de sémaphore', async () => {
-    process.env.AI_QUOTA_LATEX_IMPROVE = '50/50/1';
+    store.setFeature('latex.improve', { quotas: { perMinute: 6, concurrency: 1 } });
     fake.behavior = { kind: 'ok', delayMs: 300 };
     const [a, b] = await Promise.all([
       run('latex.improve', { input: VALID_INPUTS['latex.improve'] }, freshIp()),
@@ -248,12 +333,22 @@ describe('quotas et concurrence', () => {
     expect((await run('latex.improve', { input: VALID_INPUTS['latex.improve'] }, freshIp())).status).toBe(200);
   });
 
-  it('fournisseur non configuré : quota non consommé', async () => {
-    const ip = freshIp();
-    delete process.env.OPENAI_API_KEY;
-    await run('cv.import.ocr', { input: VALID_INPUTS['cv.import.ocr'] }, ip);
-    process.env.OPENAI_API_KEY = SECRET_CANARIES.OPENAI_API_KEY;
-    expect((await run('cv.import.ocr', { input: VALID_INPUTS['cv.import.ocr'] }, ip)).status).toBe(200);
+  it('limite de concurrence globale appliquée', async () => {
+    store.state.settings.globalConcurrency = 1;
+    fake.behavior = { kind: 'ok', delayMs: 300 };
+    const [a, b] = await Promise.all([
+      run('cv.review', { input: VALID_INPUTS['cv.review'] }, freshIp()),
+      new Promise(r => setTimeout(r, 50)).then(() => run('latex.improve', { input: VALID_INPUTS['latex.improve'] }, freshIp())),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 503]);
+  });
+
+  it('fournisseur non configuré : rien n’est réservé', async () => {
+    let reservations = 0;
+    store.reserveResult = () => { reservations++; return { ok: true, day: '2026-10-30', month: '2026-10-01' }; };
+    delete store.keys.openai;
+    await run('cv.import.ocr', { input: VALID_INPUTS['cv.import.ocr'] });
+    expect(reservations).toBe(0);
   });
 });
 
@@ -285,7 +380,7 @@ describe('erreurs du fournisseur : aucune fuite', () => {
   });
 
   it('fournisseur injoignable → 502 neutre', async () => {
-    const dead = createApp({ ai: { baseUrlOverrides: { openai: 'http://127.0.0.1:1' }, quotas: createMemoryQuotaService(), requireValidatedAssignment: false } });
+    const dead = createApp({ ai: { baseUrlOverrides: { openai: 'http://127.0.0.1:1' }, store } });
     const res = await request(dead).post('/api/ai/run/cv.review').send({ input: VALID_INPUTS['cv.review'] });
     expect(res.status).toBe(502);
     expect(res.body.code).toBe('AI_PROVIDER_ERROR');
@@ -300,7 +395,7 @@ describe('journalisation', () => {
     const usage = logs.split('\n').find(l => l.startsWith('[AI_USAGE]') && l.includes('cv.generate') && l.includes('"ok"'));
     expect(usage).toBeDefined();
     const event = JSON.parse(usage!.slice('[AI_USAGE] '.length));
-    expect(event).toMatchObject({ feature: 'cv.generate', provider: 'openai', model: seed['cv.generate'].model, outcome: 'ok' });
+    expect(event).toMatchObject({ feature: 'cv.generate', provider: 'openai', model: MODEL, outcome: 'ok' });
     expect(event.subject).toMatch(/^[0-9a-f]{16}$/);
     expect(logs).not.toContain(marker);
     expect(logs).not.toContain('203.0.113.99');
@@ -313,7 +408,7 @@ describe('URL de développement (faux fournisseur local)', () => {
     const saved = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
     process.env.AI_DEV_PROVIDER_BASE_URL_OPENAI = fake.url;
-    const prodApp = createApp({ ai: { quotas: createMemoryQuotaService(), requireValidatedAssignment: false } });
+    const prodApp = createApp({ ai: { store } });
     const res = await request(prodApp).post('/api/ai/run/cv.review').send({ input: VALID_INPUTS['cv.review'] });
     process.env.NODE_ENV = saved;
     expect(fake.calls).toHaveLength(0);   // l'URL réelle est utilisée (bloquée dans les tests)
@@ -322,7 +417,7 @@ describe('URL de développement (faux fournisseur local)', () => {
 
   it('refusée hors boucle locale', async () => {
     process.env.AI_DEV_PROVIDER_BASE_URL_OPENAI = 'https://evil.example';
-    const devApp = createApp({ ai: { quotas: createMemoryQuotaService(), requireValidatedAssignment: false } });
+    const devApp = createApp({ ai: { store } });
     await request(devApp).post('/api/ai/run/cv.review').send({ input: VALID_INPUTS['cv.review'] });
     expect(fake.calls).toHaveLength(0);
   });

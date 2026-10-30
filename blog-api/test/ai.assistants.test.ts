@@ -1,19 +1,19 @@
-// P0.A3 — S14 : l'assistant Clone IA, InkSpace et NovaMind passent par la passerelle.
-// Faux fournisseur local : aucune requête payante, aucune vraie clé (valeurs canari).
+// S14 : l'assistant Clone IA, InkSpace et NovaMind passent par la passerelle, avec leurs
+// affectations enregistrées. Faux fournisseur local : aucune requête payante, aucune vraie clé.
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../src/app';
-import { createMemoryQuotaService } from '../src/ai/services/quotas';
 import { FEATURES } from '../src/ai/features/registry';
 import { INKSPACE_SYSTEM, NOVAMIND_SYSTEM } from '../src/ai/features/prompts/assistants.v1';
 import { startFakeOpenAI, type FakeOpenAI } from './helpers/fakeOpenAI';
 import { fakeIndex, seedRecord } from './helpers/fakePinecone';
 import { findLeakedSecret, SECRET_CANARIES } from './helpers/canaries';
+import { createMemoryStore } from './helpers/memoryStore';
 
 let fake: FakeOpenAI;
 let app: ReturnType<typeof createApp>;
-const quotas = createMemoryQuotaService();
+const store = createMemoryStore({ groq: SECRET_CANARIES.GROQ_API_KEY, openai: SECRET_CANARIES.OPENAI_API_KEY });
 
 const DIAGRAM = JSON.stringify({
   diagramType: 'mind',
@@ -29,18 +29,15 @@ const systemOf = (call: FakeOpenAI['calls'][number]) => call.body.messages.filte
 
 beforeAll(async () => {
   fake = await startFakeOpenAI();
-  app = createApp({ ai: { baseUrlOverrides: { groq: fake.url, openai: fake.url }, quotas, requireValidatedAssignment: false } });
+  app = createApp({ ai: { baseUrlOverrides: { groq: fake.url, openai: fake.url }, store } });
 });
 afterAll(async () => { await fake.close(); });
 beforeEach(() => {
   fake.calls.length = 0;
   fake.behavior = { kind: 'ok', content: 'Réponse simulée' };
-  quotas.reset();
-  process.env.GROQ_API_KEY = SECRET_CANARIES.GROQ_API_KEY;
-  process.env.OPENAI_API_KEY = SECRET_CANARIES.OPENAI_API_KEY;
-  delete process.env.AI_ASSIGNMENT_INKSPACE_GENERATE;
-  delete process.env.AI_ASSIGNMENT_NOVAMIND_DIAGRAM;
-  delete process.env.AI_ASSIGNMENT_AGENT_CHAT;
+  store.reset();
+  for (const id of ['agent.chat', 'inkspace.generate', 'novamind.diagram']) store.setFeature(id, { provider: 'groq' });
+  store.setFeature('agent.chat', { params: { temperature: 0.6 } });
 });
 
 describe('POST /api/agent/chat', () => {
@@ -49,7 +46,7 @@ describe('POST /api/agent/chat', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ reply: 'Réponse simulée' });
     expect(fake.calls[0].body.messages.map(m => m.role)).toEqual(['system', 'user', 'assistant', 'user']);
-    expect(fake.calls[0].body.max_completion_tokens).toBe(FEATURES['agent.chat'].maxOutputTokens);
+    expect(fake.calls[0].body.max_completion_tokens).toBe(store.state.features['agent.chat'].maxOutputTokens);
     expect(fake.calls[0].body.temperature).toBe(0.6);
   });
 
@@ -113,15 +110,12 @@ describe('POST /api/agent/chat', () => {
   });
 
   it('quota journalier appliqué', async () => {
-    const limited = { ...FEATURES['agent.chat'].quotas, perSubjectPerDay: 1 };
-    process.env.AI_QUOTA_AGENT_CHAT = `${limited.perSubjectPerDay}/${limited.globalPerDay}/${limited.concurrency}`;
-    const send = () => request(app).post('/api/agent/chat').set('X-Forwarded-For', '203.0.113.1').send({ message: 'Bonjour' });
-    expect((await send()).status).toBe(200);
-    const second = await send();
-    expect(second.status).toBe(429);
-    expect(second.body.code).toBe('AI_QUOTA_EXCEEDED');
-    expect(fake.calls).toHaveLength(1);
-    delete process.env.AI_QUOTA_AGENT_CHAT;
+    store.reserveResult = { ok: false, code: 'AI_QUOTA_EXCEEDED', scope: 'subject', retryAfter: 60 };
+    const res = await post('/api/agent/chat', { message: 'Bonjour' });
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe('AI_QUOTA_EXCEEDED');
+    expect(fake.calls).toHaveLength(0);
+    expect(fakeIndex.searchRecords).not.toHaveBeenCalled();
   });
 
   it('corps surdimensionné refusé avant tout traitement', async () => {
@@ -146,7 +140,7 @@ describe('POST /api/groq/generate (InkSpace)', () => {
 
   it('limite de sortie désormais imposée', async () => {
     await post('/api/groq/generate', { prompt: 'x' });
-    expect(fake.calls[0].body.max_completion_tokens).toBe(FEATURES['inkspace.generate'].maxOutputTokens);
+    expect(fake.calls[0].body.max_completion_tokens).toBe(store.state.features['inkspace.generate'].maxOutputTokens);
   });
 
   it('le client ne choisit ni modèle ni rôle système', async () => {
@@ -176,8 +170,8 @@ describe('POST /api/groq/generate (InkSpace)', () => {
   });
 
   it('InkSpace peut être affecté à un autre fournisseur que NovaMind', async () => {
-    process.env.AI_ASSIGNMENT_INKSPACE_GENERATE = 'openai:modele-inkspace';
-    process.env.AI_ASSIGNMENT_NOVAMIND_DIAGRAM = 'groq:modele-novamind';
+    store.setFeature('inkspace.generate', { provider: 'openai', model: 'modele-inkspace' });
+    store.setFeature('novamind.diagram', { provider: 'groq', model: 'modele-novamind' });
     fake.behavior = { kind: 'ok', content: DIAGRAM };
     await post('/api/groq/generate', { prompt: 'x' });
     await post('/api/groq/generate-diagram', { prompt: 'x' });
@@ -217,7 +211,7 @@ describe('garanties communes', () => {
     ['/api/groq/generate', { prompt: 'x' }],
     ['/api/groq/generate-diagram', { prompt: 'x' }],
   ])('%s : aucun appel sans clé, refus neutre', async (path, body) => {
-    delete process.env.GROQ_API_KEY;
+    delete store.keys.groq;
     const res = await post(path, body);
     expect(res.status).toBe(503);
     expect(res.body.code).toBe('AI_FEATURE_UNAVAILABLE');
@@ -233,10 +227,8 @@ describe('garanties communes', () => {
 
   it('délai dépassé : appel interrompu, erreur neutre', async () => {
     fake.behavior = { kind: 'hang' };
-    const original = FEATURES['agent.chat'].timeoutMs;
-    FEATURES['agent.chat'].timeoutMs = 50;
+    store.setFeature('agent.chat', { timeoutMs: 50 });
     const res = await post('/api/agent/chat', { message: 'Bonjour' });
-    FEATURES['agent.chat'].timeoutMs = original;
     expect(res.status).toBe(504);
     expect(res.body.code).toBe('AI_TIMEOUT');
   });

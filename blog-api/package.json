@@ -8,8 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit -p . && tsc -p test",
-    "ai:check-models": "ts-node --transpile-only src/ai/cli/checkModels.ts"
+    "typecheck": "tsc --noEmit -p . && tsc -p test"
   },
   "type": "commonjs",
   "dependencies": {

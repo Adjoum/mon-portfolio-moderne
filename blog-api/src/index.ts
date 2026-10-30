@@ -4,8 +4,16 @@ dotenv.config();
 
 import mongoose   from 'mongoose';
 import { createApp } from './app';
+import { featureDescriptor, type AiGateway } from './ai/services/gateway';
+import type { AiRuntimeStore } from './ai/services/store';
 
 const app = createApp();
+const aiStore: AiRuntimeStore = app.locals.aiStore;
+const aiGateway: AiGateway = app.locals.aiGateway;
+
+// Registre du code → base : une nouvelle fonctionnalité apparaît désactivée dans le dashboard
+aiStore.syncFeatures(aiGateway.features().map(featureDescriptor))
+  .catch(err => console.error('[AI_STORE] registre non synchronisé :', (err as Error).name));
 
 // ── Connexion MongoDB ─────────────────────────────────────────
 mongoose
@@ -23,6 +31,7 @@ function shutdown(signal: string) {
     try {
       await mongoose.connection.close();
       console.log('🍃 Connexion MongoDB fermée');
+      await aiStore.close();
       console.log('✅ Arrêt propre terminé');
       process.exit(0);
     } catch (err) {

@@ -35,6 +35,14 @@ export interface FakeCvVersion {
   activated_at: string;
 }
 
+/** Fonctions ai_admin_* simulées : la logique réelle est prouvée par supabase/tests/ai et la pile locale */
+export interface FakeAiBackend {
+  calls: { fn: string; args: Record<string, unknown>; token: string }[];
+  /** Réponse par fonction ; absente : succès vide */
+  responses: Record<string, { status: number; body: unknown }>;
+  reset(): void;
+}
+
 /** Simulation de Storage et des fonctions SQL du CV, avec pannes injectables */
 export interface FakeCvBackend {
   active: FakeCvVersion | null;
@@ -59,11 +67,17 @@ export interface FakeSupabase {
   /** secret HS256 du projet (anciens projets Supabase) ; null = clés asymétriques seulement */
   hs256Secret: string | null;
   token(opts?: TokenOptions): string;
+  ai: FakeAiBackend;
   hs256Token(secret: string, opts?: TokenOptions): string;
   close(): Promise<void>;
 }
 
 export async function startFakeSupabase(): Promise<FakeSupabase> {
+  const ai: FakeAiBackend = {
+    calls: [],
+    responses: {},
+    reset() { ai.calls.length = 0; ai.responses = {}; },
+  };
   const project = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
   const foreign = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
   const KID = 'test-project-key';
@@ -110,6 +124,19 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
           return send(200, { message: 'ok' });
         }
         send(405, {});
+      });
+      return;
+    }
+
+    const aiRpc = /^\/rest\/v1\/rpc\/(ai_admin_[a-z_]+)$/.exec(req.url ?? '');
+    if (aiRpc && req.method === 'POST') {
+      let raw = '';
+      req.on('data', chunk => { raw += chunk; });
+      req.on('end', () => {
+        ai.calls.push({ fn: aiRpc[1], args: JSON.parse(raw || '{}'), token: (req.headers.authorization || '').replace(/^Bearer /, '') });
+        const reply = ai.responses[aiRpc[1]] ?? { status: 200, body: null };
+        res.writeHead(reply.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(reply.body));
       });
       return;
     }
@@ -196,6 +223,7 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
     set mode(m) { state.mode = m; },
     get hs256Secret() { return state.hs256Secret; },
     set hs256Secret(v) { state.hs256Secret = v; },
+    ai,
     token(opts = {}) {
       const key = opts.signWith === 'foreign' ? foreign.privateKey : project.privateKey;
       return jwt.sign(claimsFor(opts), key, {

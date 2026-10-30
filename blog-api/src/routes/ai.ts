@@ -19,6 +19,7 @@ const MESSAGES: Record<string, string> = {
   AI_INVALID_INPUT:       'Données invalides.',
   AI_FORBIDDEN_FIELD:     'Paramètre non autorisé dans la requête.',
   AI_QUOTA_EXCEEDED:      'Limite d’utilisation atteinte pour aujourd’hui. Réessayez demain.',
+  AI_BUDGET_EXCEEDED:     'Cette fonctionnalité IA a atteint sa limite d’utilisation. Réessayez plus tard.',
   AI_BUSY:                'Le service IA est très sollicité. Réessayez dans un instant.',
   AI_TIMEOUT:             'Le service IA n’a pas répondu à temps. Réessayez.',
   AI_REQUEST_REJECTED:    'La demande n’a pas pu être traitée (contenu trop long ou non conforme).',
@@ -38,7 +39,7 @@ function sendError(res: Response, requestId: string, err: AiError) {
 /** Limiteur par minute propre à une fonctionnalité */
 export function featureLimiter(gateway: AiGateway, featureId: string) {
   const feature = gateway.feature(featureId);
-  return feature ? aiFeatureLimiter(feature.id, feature.rateLimitPerMinute) : aiLimiter;
+  return feature ? aiFeatureLimiter(feature.id, () => gateway.perMinute(feature.id)) : aiLimiter;
 }
 
 function subjectOf(req: SupabaseAdminRequest): string {
@@ -88,9 +89,9 @@ export function respondWithFeature(
 export function createAiRouter(gateway: AiGateway) {
   const router = Router();
 
-  router.get('/features', (_req, res) => {
+  router.get('/features', async (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ features: gateway.availability() });
+    res.json({ features: await gateway.availability() });
   });
 
   // Niveau d'authentification défini par le registre (jamais par le client)
@@ -101,7 +102,7 @@ export function createAiRouter(gateway: AiGateway) {
   };
 
   // Limiteurs créés au démarrage : express-rate-limit refuse une création pendant une requête
-  const limiters = new Map(gateway.features().map(f => [f.id, aiFeatureLimiter(f.id, f.rateLimitPerMinute)]));
+  const limiters = new Map(gateway.features().map(f => [f.id, aiFeatureLimiter(f.id, () => gateway.perMinute(f.id))]));
   const limitForFeature = (req: Request, res: Response, next: NextFunction) =>
     (limiters.get(String(req.params.featureId)) ?? aiLimiter)(req, res, next);
 

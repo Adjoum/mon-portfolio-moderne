@@ -1,7 +1,7 @@
 // blog-api/src/ai/services/usage.ts
 // Journal d'utilisation des fonctionnalités IA : une ligne JSON [AI_USAGE] par requête.
 // AUCUN prompt, AUCUNE réponse, AUCUNE IP en clair : le sujet est haché par HMAC.
-// P1.B : copie dans ai_usage_events (Supabase).
+// Copie persistante, sans contenu non plus : ai_usage_events (Supabase).
 
 import crypto from 'crypto';
 
@@ -26,6 +26,7 @@ export interface UsageEvent {
   inputTokens?: number;
   outputTokens?: number;
   providerStatus?: number;
+  costMicroUsd?: number;
 }
 
 export function logUsage(event: UsageEvent): void {

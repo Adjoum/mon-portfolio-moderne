@@ -155,16 +155,32 @@ export const aiLimiter = rateLimit({
   handler:         rateLimitHandler,
 });
 
+// ── 6d bis. Écritures du centre IA — par administrateur ───────
+// Y compris les tests de compatibilité, potentiellement facturés
+export const aiAdminWriteLimiter = rateLimit({
+  windowMs:        60 * 60 * 1000,
+  max:             Number(process.env.AI_ADMIN_WRITE_RATE_LIMIT_MAX) || 300,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  handler:         rateLimitHandler,
+  keyGenerator: (req) => {
+    const adminReq = req as SupabaseAdminRequest;
+    if (adminReq.supabaseAdmin?.userId) return `admin:${adminReq.supabaseAdmin.userId}`;
+    return ipKeyGenerator(req.ip ?? '127.0.0.1');
+  },
+});
+
 // ── 6e. Limite par fonctionnalité IA — par IP et par minute ───
-// AI_RATE_LIMIT_PER_MINUTE remplace toutes les valeurs du registre.
+// Limite lue à chaque requête : modifiable depuis le dashboard, sans redémarrage.
+// AI_RATE_LIMIT_PER_MINUTE remplace toutes les valeurs enregistrées.
 const aiFeatureLimiters = new Map<string, RateLimitRequestHandler>();
 
-export function aiFeatureLimiter(featureId: string, perMinute: number): RateLimitRequestHandler {
+export function aiFeatureLimiter(featureId: string, perMinute: () => number): RateLimitRequestHandler {
   let limiter = aiFeatureLimiters.get(featureId);
   if (!limiter) {
     limiter = rateLimit({
       windowMs:        60 * 1000,
-      max:             Number(process.env.AI_RATE_LIMIT_PER_MINUTE) || perMinute,
+      limit:           () => Number(process.env.AI_RATE_LIMIT_PER_MINUTE) || perMinute(),
       standardHeaders: true,
       legacyHeaders:   false,
       handler:         rateLimitHandler,
