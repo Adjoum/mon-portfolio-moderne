@@ -1,0 +1,2 @@
+# Scripts shell : toujours LF (sinon bash échoue sous Windows avec autocrlf)
+*.sh text eol=lf
