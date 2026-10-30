@@ -130,6 +130,16 @@ export const knowledgeWriteLimiter = rateLimit({
   },
 });
 
+// ── 6d. Limite passerelle IA — par IP et par minute ───────────
+// Complète les quotas journaliers et la concurrence de src/ai/services/quotas.ts
+export const aiLimiter = rateLimit({
+  windowMs:        60 * 1000,
+  max:             Number(process.env.AI_RATE_LIMIT_PER_MINUTE) || 6,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  handler:         rateLimitHandler,
+});
+
 // ── 7. Middleware de validation du contenu ────────────────────
 // Rejeter les commentaires trop courts ou trop longs
 // et détecter les patterns de spam basiques

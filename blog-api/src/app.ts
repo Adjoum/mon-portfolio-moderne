@@ -30,8 +30,15 @@ import groqRouter from './routes/groq';
 import knowledgeRouter from './routes/knowledge';
 import agentRouter from './routes/agent';
 import cvRouter from './routes/cv';
+import { createAiRouter } from './routes/ai';
+import { createAiGateway, type AiGatewayDeps } from './ai/services/gateway';
 
-export function createApp() {
+export interface AppOptions {
+  /** Dépendances de la passerelle IA (remplacées dans les tests : faux fournisseur, quotas) */
+  ai?: Partial<AiGatewayDeps>;
+}
+
+export function createApp(options: AppOptions = {}) {
   const app = express();
   app.set('trust proxy', 1);
   // ── Middlewares globaux ───────────────────────────────────────
@@ -77,6 +84,9 @@ export function createApp() {
   // Base de connaissances : corps JSON limité à 128 Ko (parsé avant le parseur global,
   // qui ignore ensuite la requête déjà lue)
   app.use('/api/agent/knowledge', express.json({ limit: '128kb' }));
+  // Passerelle IA : 256 Ko, sauf la lecture d'image (data URL d'au plus 4 Mo)
+  app.use('/api/ai/run/cv.import.ocr', express.json({ limit: '6mb' }));
+  app.use('/api/ai', express.json({ limit: '256kb' }));
   app.use(express.json({ limit: '10mb' }));
   app.use(cookieParser());
   // Servir les images uploadées localement
@@ -118,6 +128,7 @@ export function createApp() {
   app.use('/api/agent/knowledge', knowledgeRouter);
   app.use('/api/agent', agentRouter);
   app.use('/api/cv', cvRouter);
+  app.use('/api/ai', createAiRouter(createAiGateway(options.ai)));
 
 
   // ── Health check ─────────────────────────────────────────────

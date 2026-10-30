@@ -3,6 +3,8 @@
 export const SECRET_CANARIES = {
   PINECONE_API_KEY:      'CANARY_pinecone_key_should_never_leak',
   GROQ_API_KEY:          'CANARY_groq_key_should_never_leak',
+  OPENAI_API_KEY:        'CANARY_openai_key_should_never_leak',
+  AI_LOG_HMAC_SECRET:    'CANARY_hmac_salt_should_never_leak',
   JWT_SECRET:            'CANARY_blog_jwt_secret_should_never_leak_0123456789',
   ADMIN_SECRET:          'CANARY_admin_bootstrap_secret_never_leak_0123456789',
   CLOUDINARY_API_SECRET: 'CANARY_cloudinary_secret_never_leak',

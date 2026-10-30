@@ -12,6 +12,7 @@ Object.assign(process.env, SECRET_CANARIES, {
   PINECONE_INDEX:                 'test-index',
   ADMIN_RATE_LIMIT_MAX:           process.env.ADMIN_RATE_LIMIT_MAX ?? '10000',
   KNOWLEDGE_WRITE_RATE_LIMIT_MAX: process.env.KNOWLEDGE_WRITE_RATE_LIMIT_MAX ?? '10000',
+  AI_RATE_LIMIT_PER_MINUTE:       process.env.AI_RATE_LIMIT_PER_MINUTE ?? '10000',
 });
 
 // ── Réseau : interdit hors boucle locale ──────────────────────

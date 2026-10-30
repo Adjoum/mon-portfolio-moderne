@@ -62,6 +62,7 @@ describe('garde statique : aucune exécution de processus dans l’API', () => {
       .replace(/\/\*[\s\S]*?\*\//g, '')   // blocs commentés
       .replace(/^\s*\/\/.*$/gm, '');      // lignes commentées
     expect(code).not.toMatch(/['"](node:)?child_process['"]/);
-    expect(code).not.toMatch(/\b(latexmk|pdflatex|xelatex|lualatex)\b/);
+    // Appels de lancement de processus (les noms de moteurs TeX peuvent figurer dans des prompts)
+    expect(code).not.toMatch(/\b(spawn|spawnSync|execFile|execFileSync|execSync|fork)\s*\(/);
   });
 });
