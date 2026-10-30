@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Brain, Cpu } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Edit, Trash2, Save, X, Upload, Eye, Download, FileText, Briefcase, Award, Users } from 'lucide-react'
+import { Plus, Edit, Trash2, Save, X, Upload, FileText, Briefcase, Award, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import type { Project, Skill } from '../lib/supabase'
 import AdminGate from '../components/admin/AdminGate';
+import CvManager from '../components/admin/CvManager';
 import VisitorStats from '../components/VisitorStats'
 import AILabManager from '../components/AILabManager'
 
@@ -43,8 +44,6 @@ const AdminDashboardContent: React.FC = () => {
   const [showSkillForm, setShowSkillForm] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [editingSkill, setEditingSkill] = useState<Skill | null>(null)
-  const [cvFile, setCvFile] = useState<File | null>(null)
-  const [cvUrl, setCvUrl] = useState<string>('/cv.pdf')
 
   // États des formulaires
   const [projectForm, setProjectForm] = useState<ProjectForm>({
@@ -375,33 +374,6 @@ const uploadProjectImage = async (file: File) => {
       level: 50
     })
   }
-
-  // GESTION DU CV
-  const handleCvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file && file.type === 'application/pdf') {
-      setCvFile(file)
-      const url = URL.createObjectURL(file)
-      setCvUrl(url)
-      
-      // Sauvegarder dans le localStorage pour persistance
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        localStorage.setItem('cvFile', event.target?.result as string)
-      }
-      reader.readAsDataURL(file)
-    } else {
-      alert('Veuillez sélectionner un fichier PDF')
-    }
-  }
-
-  useEffect(() => {
-    // Charger le CV depuis localStorage au démarrage
-    const savedCv = localStorage.getItem('cvFile')
-    if (savedCv) {
-      setCvUrl(savedCv)
-    }
-  }, [])
 
   // ✅ AJOUTE CETTE FONCTION DE DÉCONNEXION
   const handleLogout = async () => {
@@ -1016,63 +988,7 @@ const uploadProjectImage = async (file: File) => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
             >
-              <div className="glass-effect-dark p-8 rounded-2xl">
-                <h3 className="text-2xl font-bold text-white mb-6">Gérer votre CV PDF</h3>
-                
-                <div className="mb-8">
-                  <label className="block text-sm font-medium text-gray-300 mb-4">
-                    Charger un nouveau CV (PDF)
-                  </label>
-                  <div className="flex gap-4">
-                    <label className="flex-1 px-6 py-4 glass-effect rounded-xl border-2 border-dashed border-gray-600 hover:border-primary transition-colors cursor-pointer">
-                      <input
-                        type="file"
-                        accept=".pdf"
-                        onChange={handleCvUpload}
-                        className="hidden"
-                      />
-                      <div className="flex items-center justify-center gap-3">
-                        <Upload size={24} className="text-primary" />
-                        <span className="text-white font-semibold">
-                          {cvFile ? cvFile.name : 'Choisir un fichier PDF'}
-                        </span>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-
-                {cvUrl && (
-                  <div className="space-y-4">
-                    <div className="flex gap-4">
-                      <a
-                        href={cvUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-6 py-3 bg-primary/20 text-primary rounded-lg flex items-center gap-2 hover:bg-primary/30 transition-colors"
-                      >
-                        <Eye size={20} />
-                        Prévisualiser
-                      </a>
-                      <a
-                        href={cvUrl}
-                        download="CV-Adjoumani.pdf"
-                        className="px-6 py-3 bg-gradient-to-r from-primary to-secondary rounded-lg text-white flex items-center gap-2"
-                      >
-                        <Download size={20} />
-                        Télécharger
-                      </a>
-                    </div>
-
-                    <div className="glass-effect p-4 rounded-xl">
-                      <iframe
-                        src={cvUrl}
-                        className="w-full h-[600px] rounded-lg"
-                        title="Prévisualisation CV"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
+              <CvManager />
             </motion.div>
           )}
 

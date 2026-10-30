@@ -1,34 +1,35 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Download, Mail, Phone, MapPin, Globe, Github, Linkedin, Briefcase, GraduationCap, Award, Code, Eye, X } from 'lucide-react'
+import { Download, Mail, Phone, MapPin, Globe, Github, Linkedin, Briefcase, GraduationCap, Award, Code, Eye, X, RefreshCw } from 'lucide-react'
+import { fetchActiveCv, type CvResolution } from '../lib/cvDocument'
 
 const CVPage: React.FC = () => {
   const [downloading, setDownloading] = useState(false)
   const [showPdfViewer, setShowPdfViewer] = useState(false)
-  const [cvUrl, setCvUrl] = useState<string>('')
+  const [cv, setCv] = useState<CvResolution | null>(null)
 
-  useEffect(() => {
-    // Charger le CV depuis localStorage
-    const savedCv = localStorage.getItem('cvFile')
-    if (savedCv) {
-      setCvUrl(savedCv)
-    } else {
-      // URL par défaut (à remplacer par votre CV dans public/)
-      setCvUrl('/cv.pdf')
-    }
-  }, [])
+  // Version active lue en base à chaque visite : même CV pour tous, sur tous les appareils
+  const loadCv = () => {
+    setCv(null)
+    void fetchActiveCv().then(setCv)
+  }
+  useEffect(loadCv, [])
+
+  const cvUrl = cv && cv.kind !== 'error' ? cv.viewUrl : ''
+  const cvDownloadUrl = cv && cv.kind !== 'error' ? cv.downloadUrl : ''
 
   const handleDownload = () => {
+    if (!cvDownloadUrl) return
     setDownloading(true)
-    
+
     // Créer un lien de téléchargement
     const link = document.createElement('a')
-    link.href = cvUrl
+    link.href = cvDownloadUrl
     link.download = 'CV-Adjoumani.pdf'
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
-    
+
     setTimeout(() => {
       setDownloading(false)
     }, 1000)
@@ -124,7 +125,7 @@ const CVPage: React.FC = () => {
               <div className="flex flex-wrap gap-4 justify-center">
                 <motion.button
                   onClick={handleDownload}
-                  disabled={downloading}
+                  disabled={downloading || !cvDownloadUrl}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   className="px-8 py-4 bg-gradient-to-r from-primary to-secondary rounded-full font-semibold text-white shadow-lg neon-glow flex items-center gap-3"
@@ -145,6 +146,15 @@ const CVPage: React.FC = () => {
                   </motion.button>
                 )}
               </div>
+
+              {cv?.kind === 'error' && (
+                <div role="alert" className="mt-6 flex flex-wrap items-center justify-center gap-3 text-yellow-300">
+                  Le CV est momentanément indisponible.
+                  <button type="button" onClick={loadCv} className="px-4 py-2 glass-effect rounded-lg text-white flex items-center gap-2">
+                    <RefreshCw size={16} /> Réessayer
+                  </button>
+                </div>
+              )}
             </motion.div>
 
             {/* CV Content */}
@@ -351,7 +361,7 @@ const CVPage: React.FC = () => {
               <h3 className="text-xl font-bold text-white">Curriculum Vitae - Adjoumani</h3>
               <div className="flex gap-2">
                 <a
-                  href={cvUrl}
+                  href={cvDownloadUrl}
                   download="CV-Adjoumani.pdf"
                   className="px-4 py-2 bg-primary/20 text-primary rounded-lg flex items-center gap-2 hover:bg-primary/30 transition-colors"
                 >
