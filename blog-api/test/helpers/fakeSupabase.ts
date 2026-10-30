@@ -26,11 +26,34 @@ export interface TokenOptions {
   kid?: string;
 }
 
+export interface FakeCvVersion {
+  id: string;
+  bucket: string;
+  storage_path: string;
+  sha256: string;
+  size_bytes: number;
+  activated_at: string;
+}
+
+/** Simulation de Storage et des fonctions SQL du CV, avec pannes injectables */
+export interface FakeCvBackend {
+  active: FakeCvVersion | null;
+  versions: Map<string, FakeCvVersion>;
+  objects: Map<string, number>;
+  uploadedPaths: string[];
+  failUpload: boolean;
+  failDelete: boolean;
+  /** 'down' : erreur 500 ; 'conflict' : 409 ; 'not_migrated' : fonction absente */
+  publishFailure: null | 'down' | 'conflict' | 'not_migrated';
+  reset(): void;
+}
+
 export interface FakeSupabase {
   url:     string;
   issuer:  string;
   admins:  Set<string>;
   calls:   { jwks: number; rpc: number };
+  cv:      FakeCvBackend;
   /** 'ok' | 'down' (HTTP 500) | 'missing_function' (HTTP 404) */
   mode:    'ok' | 'down' | 'missing_function';
   /** secret HS256 du projet (anciens projets Supabase) ; null = clés asymétriques seulement */
@@ -53,11 +76,73 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
     url:    '',
   };
 
+  const cv: FakeCvBackend = {
+    active: null, versions: new Map(), objects: new Map(), uploadedPaths: [],
+    failUpload: false, failDelete: false, publishFailure: null,
+    reset() {
+      cv.active = null; cv.versions.clear(); cv.objects.clear(); cv.uploadedPaths.length = 0;
+      cv.failUpload = false; cv.failDelete = false; cv.publishFailure = null;
+    },
+  };
+
   const server = http.createServer((req, res) => {
     const send = (status: number, body: unknown) => {
       res.writeHead(status, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(body));
     };
+
+    const object = /^\/storage\/v1\/object\/portfolio-public-documents\/(.+)$/.exec(req.url ?? '');
+    if (object) {
+      const chunks: Buffer[] = [];
+      req.on('data', c => chunks.push(c));
+      req.on('end', () => {
+        const key = object[1];
+        if (req.method === 'POST') {
+          if (cv.failUpload) return send(500, { message: 'storage down' });
+          if (cv.objects.has(key)) return send(409, { message: 'Duplicate' });
+          cv.objects.set(key, Buffer.concat(chunks).length);
+          cv.uploadedPaths.push(key);
+          return send(200, { Key: key });
+        }
+        if (req.method === 'DELETE') {
+          if (cv.failDelete) return send(500, { message: 'delete failed' });
+          cv.objects.delete(key);
+          return send(200, { message: 'ok' });
+        }
+        send(405, {});
+      });
+      return;
+    }
+
+    const cvRpc = /^\/rest\/v1\/rpc\/(cv_active|cv_publish_version|cv_restore_version)$/.exec(req.url ?? '');
+    if (cvRpc) {
+      let raw = '';
+      req.on('data', c => { raw += c; });
+      req.on('end', () => {
+        const args = JSON.parse(raw || '{}');
+        if (cv.publishFailure === 'not_migrated') return send(404, { code: 'PGRST202' });
+        if (cvRpc[1] === 'cv_active') return send(200, cv.active ? [cv.active] : []);
+        if (cvRpc[1] === 'cv_publish_version') {
+          if (cv.publishFailure === 'down') return send(500, { message: 'db down' });
+          if (cv.publishFailure === 'conflict' || (cv.active?.id ?? null) !== args.p_expected_active) {
+            return send(409, { code: 'PT409', message: 'cv_conflict' });
+          }
+          const version: FakeCvVersion = {
+            id: args.p_id, bucket: 'portfolio-public-documents', storage_path: args.p_storage_path,
+            sha256: args.p_sha256, size_bytes: args.p_size_bytes, activated_at: new Date().toISOString(),
+          };
+          cv.versions.set(version.id, version);
+          cv.active = version;
+          return send(200, [version]);
+        }
+        if ((cv.active?.id ?? null) !== args.p_expected_active) return send(409, { code: 'PT409', message: 'cv_conflict' });
+        const target = cv.versions.get(args.p_id);
+        if (!target) return send(400, { code: 'P0002', message: 'cv_version_not_found' });
+        cv.active = target;
+        return send(200, [target]);
+      });
+      return;
+    }
 
     if (req.method === 'GET' && req.url === '/auth/v1/.well-known/jwks.json') {
       state.calls.jwks++;
@@ -106,6 +191,7 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
     get issuer() { return `${state.url}/auth/v1`; },
     admins: state.admins,
     calls:  state.calls,
+    cv,
     get mode() { return state.mode; },
     set mode(m) { state.mode = m; },
     get hs256Secret() { return state.hs256Secret; },

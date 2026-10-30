@@ -31,6 +31,7 @@ import knowledgeRouter from './routes/knowledge';
 import agentRouter from './routes/agent';
 import cvRouter from './routes/cv';
 import { createAiRouter } from './routes/ai';
+import adminCvRouter from './routes/adminCv';
 import { createAiGateway, type AiGatewayDeps } from './ai/services/gateway';
 
 export interface AppOptions {
@@ -84,6 +85,7 @@ export function createApp(options: AppOptions = {}) {
   // Base de connaissances : corps JSON limité à 128 Ko (parsé avant le parseur global,
   // qui ignore ensuite la requête déjà lue)
   app.use('/api/agent/knowledge', express.json({ limit: '128kb' }));
+  app.use('/api/admin/cv', express.json({ limit: '4kb' }));
   // Passerelle IA : 256 Ko, sauf la lecture d'image (data URL d'au plus 4 Mo)
   app.use('/api/ai/run/cv.import.ocr', express.json({ limit: '6mb' }));
   app.use('/api/ai', express.json({ limit: '256kb' }));
@@ -129,6 +131,7 @@ export function createApp(options: AppOptions = {}) {
   app.use('/api/agent', agentRouter);
   app.use('/api/cv', cvRouter);
   app.use('/api/ai', createAiRouter(createAiGateway(options.ai)));
+  app.use('/api/admin/cv', adminCvRouter);
 
 
   // ── Health check ─────────────────────────────────────────────

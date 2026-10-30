@@ -130,6 +130,21 @@ export const knowledgeWriteLimiter = rateLimit({
   },
 });
 
+// ── 6c bis. Limite remplacement du CV public ──────────────────
+// 10 téléversements ou restaurations par heure par administrateur
+export const cvWriteLimiter = rateLimit({
+  windowMs:        60 * 60 * 1000,
+  max:             Number(process.env.CV_WRITE_RATE_LIMIT_MAX) || 10,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  handler:         rateLimitHandler,
+  keyGenerator: (req) => {
+    const adminReq = req as SupabaseAdminRequest;
+    if (adminReq.supabaseAdmin?.userId) return `admin:${adminReq.supabaseAdmin.userId}`;
+    return ipKeyGenerator(req.ip ?? '127.0.0.1');
+  },
+});
+
 // ── 6d. Limite passerelle IA — par IP et par minute ───────────
 // Complète les quotas journaliers et la concurrence de src/ai/services/quotas.ts
 export const aiLimiter = rateLimit({

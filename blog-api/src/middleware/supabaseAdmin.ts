@@ -35,7 +35,7 @@ interface SupabaseClaims {
   is_anonymous?: boolean;
 }
 
-interface SupabaseConfig {
+export interface SupabaseConfig {
   url:       string;
   anonKey:   string;
   jwtSecret: string | undefined;
@@ -71,7 +71,7 @@ const MESSAGES: Record<string, string> = {
 };
 
 // ── Configuration (lue à chaque requête : aucune valeur figée au démarrage) ──
-function getConfig(): SupabaseConfig | null {
+export function getSupabaseConfig(): SupabaseConfig | null {
   const url     = process.env.SUPABASE_URL?.trim().replace(/\/+$/, '');
   const anonKey = process.env.SUPABASE_ANON_KEY?.trim();
   if (!url || !anonKey) return null;
@@ -261,7 +261,7 @@ function deny(
   res.status(status).json({ error: MESSAGES[code] ?? MESSAGES.FORBIDDEN, code });
 }
 
-function extractBearer(req: Request): string | null {
+export function bearerToken(req: Request): string | null {
   const header = req.headers.authorization;
   if (typeof header !== 'string' || !header.startsWith('Bearer ')) return null;
   const token = header.slice(7).trim();
@@ -275,10 +275,10 @@ export const requireSupabaseAdmin = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
-  const token = extractBearer(req);
+  const token = bearerToken(req);
   if (!token) return deny(req, res, 401, 'UNAUTHORIZED', 'missing_or_malformed_token');
 
-  const cfg = getConfig();
+  const cfg = getSupabaseConfig();
   if (!cfg) {
     console.error('[ADMIN_AUTH] SUPABASE_URL / SUPABASE_ANON_KEY absents ou invalides : accès admin refusé');
     return deny(req, res, 503, 'ADMIN_AUTH_NOT_CONFIGURED', 'not_configured');
