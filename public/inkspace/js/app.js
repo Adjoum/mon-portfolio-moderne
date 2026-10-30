@@ -163,9 +163,17 @@ const App = {
     this.state.workspaces.forEach(ws => {
       const el = document.createElement('div');
       el.className = 'ws-tab' + (ws.id===this.state.activeId?' active':'');
-      el.innerHTML = `<span class="ws-dot" style="background:${ws.color}"></span>
-        <span ondblclick="UI.openRename('${ws.id}')">${ws.name}</span>
-        <span class="ws-close" onclick="App.deleteWs('${ws.id}')">✕</span>`;
+      const dot = document.createElement('span');
+      dot.className = 'ws-dot';
+      dot.style.background = String(ws.color);
+      const name = document.createElement('span');
+      name.textContent = ws.name;
+      name.ondblclick = () => UI.openRename(ws.id);
+      const close = document.createElement('span');
+      close.className = 'ws-close';
+      close.textContent = '✕';
+      close.onclick = () => App.deleteWs(ws.id);
+      el.append(dot, name, close);
       el.onclick = e => { if(!e.target.classList.contains('ws-close')) this._switchWs(ws.id); };
       bar.appendChild(el);
     });
@@ -490,7 +498,7 @@ const App = {
 
       const data = await res.json();
 
-      if(data.error) throw new Error(data.error.message);
+      if(!res.ok || data.error) throw new Error((data.error && data.error.message) || data.error || 'Service IA indisponible');
 
       const raw = data.choices?.[0]?.message?.content || '{}';
       let parsed;
@@ -500,9 +508,7 @@ const App = {
         parsed = { type:'list', title:'Résultat', items: [raw.slice(0,300)] };
       }
 
-      out.innerHTML = `<strong style="color:var(--accent)">${parsed.title||''}</strong><br>`
-        + (parsed.items||[]).map(i=>`• ${i}`).join('<br>')
-        + (parsed.note ? `<br><em style="color:var(--text2)">💡 ${parsed.note}</em>` : '');
+      this._renderAIOutput(out, parsed);
       out.style.color = 'var(--text)';
       this._drawAIContent(parsed);
       UI.toast('Contenu IA généré ✨','success');
@@ -510,10 +516,28 @@ const App = {
     } catch(err) {
       out.textContent = 'Erreur : ' + err.message;
       out.style.color = 'var(--danger)';
-      UI.toast('Erreur Groq : ' + err.message, 'error');
+      UI.toast('Erreur IA : ' + err.message, 'error');
     }
 
     btn.textContent='✦ Générer sur le canvas'; btn.disabled=false;
+  },
+
+  // Sortie du LLM : nœuds texte uniquement, jamais interprétés comme du HTML
+  _renderAIOutput(out, parsed) {
+    out.replaceChildren();
+    const title = document.createElement('strong');
+    title.style.color = 'var(--accent)';
+    title.textContent = String(parsed.title || '');
+    out.append(title);
+    (Array.isArray(parsed.items) ? parsed.items : []).forEach(item => {
+      out.append(document.createElement('br'), document.createTextNode('• ' + String(item)));
+    });
+    if(parsed.note) {
+      const note = document.createElement('em');
+      note.style.color = 'var(--text2)';
+      note.textContent = '💡 ' + String(parsed.note);
+      out.append(document.createElement('br'), note);
+    }
   },
 
   _drawAIContent(data) {

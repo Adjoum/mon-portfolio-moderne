@@ -262,25 +262,11 @@ async function extractTextFromPDF(file: File): Promise<string> {
 
   // Ne redéfinir le worker que si pas déjà configuré
   if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-    try {
-      // Vite reconnaît ce pattern et bundle le worker en local
-      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-        'pdfjs-dist/build/pdf.worker.min.mjs',
-        import.meta.url
-      ).href;
-    } catch {
-      try {
-        // pdfjs-dist v3/v4 — extension .js
-        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-          'pdfjs-dist/build/pdf.worker.js',
-          import.meta.url
-        ).href;
-      } catch {
-        // Fake worker — fonctionne en main thread, pas de CDN
-        // Produit un warning console mais l'extraction reste 100% fonctionnelle
-        pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-      }
-    }
+    // Vite reconnaît ce pattern et bundle le worker en local
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.min.mjs',
+      import.meta.url
+    ).href;
   }
 
   const buf = await file.arrayBuffer();
@@ -308,6 +294,9 @@ async function extractTextFromPDF(file: File): Promise<string> {
   }
   return pages.join('\n\n');
 }
+
+/** Fichier importé : analysé dans le navigateur, taille bornée pour éviter de le bloquer */
+const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 
 // ── DOCX → texte natif (mammoth) ─────────────────────────────
 async function extractTextFromDOCX(file: File): Promise<string> {
@@ -393,6 +382,10 @@ function ImportCVPanel({
   const processFile = async (file: File) => {
     setError('');
     setNotice('');
+    if (file.size > MAX_IMPORT_BYTES) {
+      setError('Fichier trop volumineux (10 Mo maximum).');
+      return;
+    }
     setLoading(true);
 
     const name = file.name.toLowerCase();

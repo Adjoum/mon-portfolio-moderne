@@ -73,12 +73,15 @@ interface Html2PdfWorker {
 async function htmlToPdfBlob(innerHtml: string, title: string): Promise<Blob> {
   const html2pdf = (await import('html2pdf.js')).default;
 
+  // Le HTML vient d'un fichier non fiable : DOMPurify retire scripts et gestionnaires d'événements
+  const DOMPurify = (await import('dompurify')).default;
+
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '-99999px';
   container.style.top = '0';
   container.style.width = '794px';
-  container.innerHTML = wrapHtmlForPdf(innerHtml, title);
+  container.innerHTML = wrapHtmlForPdf(DOMPurify.sanitize(innerHtml), title);
   document.body.appendChild(container);
 
   const opt = {

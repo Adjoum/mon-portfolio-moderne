@@ -44,12 +44,15 @@ export const LaTeXViewer: React.FC<LaTeXViewerProps> = ({ latex, onError }) => {
           onError(err.message || 'Erreur de compilation LaTeX');
         }
         if (containerRef.current) {
-          containerRef.current.innerHTML = `
-            <div style="color: #ef4444; padding: 20px; text-align: center;">
-              <strong>❌ Erreur de compilation</strong>
-              <pre style="font-size: 12px; margin-top: 10px;">${err.message}</pre>
-            </div>
-          `;
+          const box = document.createElement('div');
+          box.style.cssText = 'color: #ef4444; padding: 20px; text-align: center;';
+          const title = document.createElement('strong');
+          title.textContent = '❌ Erreur de compilation';
+          const detail = document.createElement('pre');
+          detail.style.cssText = 'font-size: 12px; margin-top: 10px;';
+          detail.textContent = String(err?.message ?? '');
+          box.append(title, detail);
+          containerRef.current.replaceChildren(box);
         }
       }
     }

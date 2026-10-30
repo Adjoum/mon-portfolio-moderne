@@ -9,6 +9,7 @@ import {
 import { renderTemplate, TEMPLATE_META } from './CVGeneratorPro_part2';
 import { DesignPanelFull } from './CVLiveEditor';
 import { useAiAvailability } from '../../hooks/useAiAvailability';
+import { printInIsolatedFrame } from './cvPrint';
 
 // ── Empty intake ───────────────────────────────────────────────
 const emptyIntake = (): IntakeData => ({
@@ -569,18 +570,8 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
   // ── Export ───────────────────────────────────────────────────
   const doExport = useCallback(() => {
     if (!cv) return;
-    const html = renderTemplate(cv, template, design, intake.lang);
-    const w = window.open('', '_blank');
-    if (!w) {
-      showPopup({ type: 'warning', title: '⚠️ Popup bloqué', message: 'Autorisez les popups pour ce site dans les paramètres de votre navigateur, puis réessayez.' });
-      return;
-    }
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => {
-      w.print();
-      showPopup({ type: 'info', title: '🖨 Impression ouverte', message: 'Utilisez Ctrl+P ou ⌘+P pour imprimer. Choisissez "Enregistrer en PDF" pour obtenir un fichier PDF.' });
-    }, 700);
+    printInIsolatedFrame(renderTemplate(cv, template, design, intake.lang));
+    showPopup({ type: 'info', title: '🖨 Impression ouverte', message: 'Choisissez "Enregistrer en PDF" dans la fenêtre d’impression pour obtenir un fichier PDF.' });
   }, [cv, template, design, intake.lang]);
 
   const doDownload = useCallback(() => {

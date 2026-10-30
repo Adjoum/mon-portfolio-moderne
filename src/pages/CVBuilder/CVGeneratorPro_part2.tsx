@@ -1,7 +1,65 @@
 // CVGeneratorPro — Part 2: 8 Premium Templates
 import type { GeneratedCV, DesignConfig, TemplateId } from './CVGeneratorPro_part1';
 
-const esc = (s: string) => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+/** Échappement HTML complet : valable dans le texte ET dans les attributs */
+export const esc = (s: unknown) => String(s ?? '')
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+const SAFE_URL_PROTOCOLS = ['http:', 'https:', 'mailto:'];
+
+/** Lien autorisé (http, https, mailto) ou chaîne vide. Une valeur sans schéma est lue comme un site web. */
+export function safeUrl(raw: unknown): string {
+  const value = String(raw ?? '').trim();
+  if (!value) return '';
+  try {
+    const url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(value) ? value : `https://${value}`);
+    return SAFE_URL_PROTOCOLS.includes(url.protocol) ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+/** Photo : image en base64 ou URL https uniquement */
+export function safeImageSrc(raw: unknown): string {
+  const value = String(raw ?? '').trim();
+  if (/^data:image\/(?:png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=\s]+$/i.test(value)) return value;
+  return /^https:\/\//i.test(value) ? safeUrl(value) : '';
+}
+
+/** Couleur CSS : hexadécimale uniquement, sinon la valeur de repli */
+export function safeColor(raw: unknown, fallback: string): string {
+  const value = String(raw ?? '').trim();
+  return /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value) ? value : fallback;
+}
+
+const safeFont = (raw: unknown) => String(raw ?? '').replace(/[^\p{L}\p{N} ,'-]/gu, '').slice(0, 200);
+const percent  = (raw: unknown) => { const n = Number(raw); return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 50; };
+
+/** Toutes les données du CV et du design passent ici avant d'atteindre un template */
+function sanitizeForRender(cv: GeneratedCV, d: DesignConfig): { cv: GeneratedCV; design: DesignConfig } {
+  const personal = cv.personal;
+  return {
+    cv: {
+      ...cv,
+      personal: {
+        ...personal,
+        photo:    safeImageSrc(personal.photo),
+        linkedin: safeUrl(personal.linkedin),
+        github:   safeUrl(personal.github),
+        website:  safeUrl(personal.website),
+      },
+      projects: cv.projects?.map(pr => ({ ...pr, link: safeUrl(pr.link), github: safeUrl(pr.github) })),
+    },
+    design: {
+      ...d,
+      primaryColor: safeColor(d.primaryColor, '#1e3a5f'),
+      accentColor:  safeColor(d.accentColor, '#2563eb'),
+      fontFamily:   safeFont(d.fontFamily),
+      photoX:       percent(d.photoX),
+      photoY:       percent(d.photoY),
+    },
+  };
+}
 
 const sBar = (pct: number, c: string, bg = 'rgba(0,0,0,.12)') =>
   `<div style="height:5px;background:${bg};border-radius:999px;margin-top:3px;"><div style="width:${Math.min(100,pct)}%;background:${c};height:5px;border-radius:999px;"></div></div>`;
@@ -785,15 +843,15 @@ function tFaangMinimal(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): strin
 
 // ── HTML wrapper ───────────────────────────────────────────────
 function wrapHTML(cv: GeneratedCV, d: DesignConfig, lang: string, inner: string, extraBody: string, _logo: boolean): string {
-  const esc2 = (s: string) => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const font = d.fontFamily || 'Calibri,Segoe UI,Arial,sans-serif';
   const fSize = d.spacing === 'compact' ? '9.5pt' : d.spacing === 'spacious' ? '11pt' : '10.5pt';
   return `<!DOCTYPE html>
-<html lang="${lang}">
+<html lang="${lang === 'en' ? 'en' : 'fr'}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CV — ${esc2(cv.personal.name)}</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; font-src data: https:; base-uri 'none'; form-action 'none'">
+<title>CV — ${esc(cv.personal.name)}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:${font};font-size:${fSize};line-height:1.4;color:#222;background:#fff;${extraBody}}
@@ -812,7 +870,8 @@ a{color:inherit;text-decoration:none;}
 }
 
 // ── Template dispatcher ────────────────────────────────────────
-export function renderTemplate(cv: GeneratedCV, id: TemplateId, design: DesignConfig, lang: 'fr'|'en'): string {
+export function renderTemplate(rawCv: GeneratedCV, id: TemplateId, rawDesign: DesignConfig, lang: 'fr'|'en'): string {
+  const { cv, design } = sanitizeForRender(rawCv, rawDesign);
   switch (id) {
     case 'cascade':      return tCascade(cv, design, lang);
     case 'moderne':      return tModerne(cv, design, lang);

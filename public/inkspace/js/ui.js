@@ -248,7 +248,10 @@ const UI = {
     const c = document.getElementById('toast-container');
     const el = document.createElement('div');
     el.className = 'toast ' + type;
-    el.innerHTML = `<span class="ti">${{success:'✓',error:'✕',info:'ℹ'}[type]||'ℹ'}</span>${msg}`;
+    const icon = document.createElement('span');
+    icon.className = 'ti';
+    icon.textContent = {success:'✓',error:'✕',info:'ℹ'}[type]||'ℹ';
+    el.append(icon, document.createTextNode(String(msg)));
     c.appendChild(el);
     setTimeout(() => { el.style.opacity='0'; el.style.transform='translateX(30px)'; el.style.transition='all .3s'; setTimeout(()=>el.remove(),300); }, 2500);
   },
