@@ -2,6 +2,10 @@
 -- 20261030120000 (P0.A1). Ne modifie aucune donnée. À exécuter AVANT les retours arrière de
 -- 20261030120100 et 20261030120000. Retour arrière complet : restauration.sql ensuite
 -- (droits d'origine exacts des tables, d'après l'inventaire).
+--
+-- Les anciennes politiques d'insertion « with check (true) » retirées par la migration ont
+-- des noms propres à la production : seule restauration.sql (générée depuis l'inventaire) les
+-- recrée à l'identique. Ce script seul laisse l'insertion ouverte par p0a1_public_insert.
 do $$
 declare
   t text;

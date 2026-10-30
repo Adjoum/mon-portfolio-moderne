@@ -9,14 +9,17 @@
 -- 2. rls_policy_always_true : insertion publique dans visits et contacts
 --    L'insertion reste ouverte à tous (suivi des visites, formulaire de contact), mais bornée :
 --      * garde RESTRICTIVE p0a1_guard_insert : champs obligatoires et tailles maximales. Elle
---        s'applique en ET avec toute politique permissive, y compris les anciennes
---        « with check (true) » non versionnées, qui sont conservées ;
+--        s'applique en ET avec toute politique permissive ;
 --      * p0a1_public_insert (créée par 20261030120000) : même contrôle au lieu de « true » ;
 --      * droit d'insertion limité aux colonnes que le site envoie : identifiant et date
---        restent fixés par la base.
+--        restent fixés par la base ;
+--      * ENSUITE SEULEMENT, les anciennes politiques d'insertion « with check (true) » non
+--        versionnées (« Anyone can send a message », « Anyone can insert visits »… quel que
+--        soit leur nom) sont retirées : p0a1_public_insert, bornée, les remplace. Décision du
+--        propriétaire du 30/10/2026. Recréées par restauration.sql au retour arrière complet.
 --    Limites larges, au-dessus de tout usage normal du site (formulaire sans limite côté client).
 --
--- Volontairement non traité ici (docs/cv-generator-audit/19-PHASE-0-PREPARATION.md, §5) :
+-- Volontairement non traité ici (supabase/SECURITY-ADVISOR.md, alertes résiduelles acceptées) :
 --   is_portfolio_admin() reste exécutable par anon et authenticated : les gardes P0.A1
 --   l'évaluent pour chaque requête, y compris anonyme (banc RLS : retrait → refus).
 --
@@ -52,6 +55,7 @@ do $$
 declare
   t      text;
   spec   record;
+  old    record;
   checks text[];
   cols   text[];
   expr   text;
@@ -109,5 +113,20 @@ begin
     -- REVOKE sur la table retire aussi les droits par colonne : rejouable sans cumul
     execute format('revoke insert on table public.%I from anon, authenticated', t);
     execute format('grant insert (%s) on table public.%I to anon, authenticated', array_to_string(cols, ', '), t);
+
+    -- Anciennes politiques d'insertion « with check (true) » : p0a1_public_insert, bornée et
+    -- créée ci-dessus, les remplace. Ni les politiques P0.A1 ni celles qui contrôlent
+    -- réellement quelque chose ne sont touchées.
+    for old in
+      select policyname
+      from pg_policies
+      where schemaname = 'public' and tablename = t
+        and permissive = 'PERMISSIVE' and cmd = 'INSERT'
+        and policyname not like 'p0a1\_%'
+        and regexp_replace(lower(coalesce(with_check, '')), '\s|\(|\)', '', 'g') = 'true'
+    loop
+      execute format('drop policy %I on public.%I', old.policyname, t);
+      raise notice 'P0.A1 : politique d''insertion « % » (with check true) retirée de public.%', old.policyname, t;
+    end loop;
   end loop;
 end $$;

@@ -11,12 +11,14 @@
 
 with
 tables as (
-  select n.nspname as schema, c.relname as name, c.relrowsecurity as rls, c.relforcerowsecurity as force_rls
+  select n.nspname as schema, c.relname as name, c.relrowsecurity as rls, c.relforcerowsecurity as force_rls,
+         -- Politiques et RLS exigent d'agir en propriétaire (rôle courant ou l'un de ses rôles)
+         pg_get_userbyid(c.relowner) as owner, pg_has_role(current_user, c.relowner, 'USAGE') as owner_ok
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
   where c.relkind in ('r', 'p') and n.nspname in ('public', 'storage', 'ai_private')
 ),
 counted as (
-  select schema, name, rls, force_rls,
+  select schema, name, rls, force_rls, owner, owner_ok,
     (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', schema, name), false, true, '')))[1]::text::bigint as rows
   from tables
 ),
@@ -29,6 +31,11 @@ auth_counts as (
 watched_functions as (
   select unnest(array['is_portfolio_admin', 'is_portfolio_admin_mfa', 'visit_count',
                       'cv_active', 'cv_publish_version', 'cv_restore_version', 'cv_object_is_referenced']) as name
+),
+-- Fonctions de déclencheur dont 20261030120200 fige le search_path : corps relevé pour examen
+-- (champ « source », hors restauration : leur retour arrière ne fait que retirer le réglage)
+trigger_functions as (
+  select unnest(array['set_updatedat', 'update_updatedat_column']) as name
 )
 select jsonb_pretty(jsonb_build_object(
   'inventory_version', 'p1ai.1',
@@ -58,7 +65,7 @@ select jsonb_pretty(jsonb_build_object(
               where nspname not like 'pg\_%' and nspname <> 'information_schema'),
   'roles', (select coalesce(jsonb_agg(jsonb_build_object('name', rolname, 'login', rolcanlogin, 'createrole', rolcreaterole) order by rolname), '[]')
             from pg_roles where rolname in ('postgres', 'ai_backend', 'anon', 'authenticated', 'service_role', 'authenticator', 'supabase_admin')),
-  'tables', (select coalesce(jsonb_agg(jsonb_build_object('schema', schema, 'name', name, 'rls', rls, 'force_rls', force_rls, 'rows', rows) order by schema, name), '[]')
+  'tables', (select coalesce(jsonb_agg(jsonb_build_object('schema', schema, 'name', name, 'rls', rls, 'force_rls', force_rls, 'rows', rows, 'owner', owner, 'owner_ok', owner_ok) order by schema, name), '[]')
              from counted),
   'columns', (select coalesce(jsonb_agg(jsonb_build_object('table', table_name, 'column', column_name, 'type', data_type,
                                                             'nullable', is_nullable = 'YES', 'default', column_default) order by table_name, ordinal_position), '[]')
@@ -72,8 +79,10 @@ select jsonb_pretty(jsonb_build_object(
   'functions', (select coalesce(jsonb_agg(jsonb_build_object(
                   'schema', n.nspname, 'name', p.proname, 'arguments', pg_get_function_identity_arguments(p.oid),
                   'returns', pg_get_function_result(p.oid), 'security_definer', p.prosecdef, 'owner', pg_get_userbyid(p.proowner),
+                  'owner_ok', pg_has_role(current_user, p.proowner, 'USAGE'),
                   'settings', p.proconfig, 'acl', p.proacl::text,
-                  'definition', case when p.proname in (select name from watched_functions) then pg_get_functiondef(p.oid) end
+                  'definition', case when p.proname in (select name from watched_functions) then pg_get_functiondef(p.oid) end,
+                  'source', case when p.proname in (select name from trigger_functions) then p.prosrc end
                 ) order by n.nspname, p.proname), '[]')
                 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                 where n.nspname in ('public', 'ai_private', 'portfolio_private') and p.prokind = 'f'),

@@ -33,16 +33,18 @@ export async function loadSplinter() {
 }
 
 /**
- * Script psql : préambule de splinter (réglage local à la transaction), puis ses règles de
- * sécurité résumées en JSON. Transaction annulée : rien n'est conservé dans la base.
+ * Script psql : préambule de splinter (réglage local à la transaction), puis ses règles d’une
+ * catégorie (SECURITY par défaut, ou PERFORMANCE) résumées en JSON. Transaction annulée :
+ * rien n’est conservé dans la base.
  */
-export function securityLintScript(splinter) {
+export function securityLintScript(splinter, category = 'SECURITY') {
+  if (!/^[A-Z]+$/.test(category)) throw new Error(`catégorie invalide : ${category}`);
   const end = splinter.indexOf('end $$;');
   if (end < 0) throw new Error('splinter.sql : structure inattendue');
   const prelude = splinter.slice(0, end + 'end $$;'.length);
   const query = splinter.slice(end + 'end $$;'.length).trim().replace(/;\s*$/, '');
   return `begin;\n${prelude}\nselect coalesce(pg_catalog.json_agg(pg_catalog.json_build_object('name', l.name, 'level', l.level, 'key', l.cache_key, 'detail', l.detail) order by l.cache_key), '[]')
-from (\n${query}\n) l where 'SECURITY' = any(l.categories);\nrollback;\n`;
+from (\n${query}\n) l where '${category}' = any(l.categories);\nrollback;\n`;
 }
 
 /** Alertes de sécurité d'une base : [{ name, key, detail }] */

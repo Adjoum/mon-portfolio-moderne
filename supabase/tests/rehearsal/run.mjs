@@ -82,11 +82,14 @@ function contentHashes(inv) {
 }
 const changedTables = (a, b) => Object.keys(a).filter(k => a[k] !== b[k]);
 
-/** Alertes de sécurité du Security Advisor (règles splinter), ou null hors ligne */
+/** Alertes du Security Advisor (ou du Performance Advisor) selon les règles splinter ; null hors ligne */
 const SPLINTER = await loadSplinter();
-const advisor = () => (SPLINTER ? parseLints(psql('postgres', securityLintScript(SPLINTER), ['-At'])) : null);
+const advisor = (category = 'SECURITY') => (SPLINTER ? parseLints(psql('postgres', securityLintScript(SPLINTER, category), ['-At'])) : null);
 const lintLabel = l => `[${l.level}] ${l.name} : ${l.key.slice(l.name.length + 1)}`;
 const listLints = (title, lints) => console.log(`   ${title} (${lints.length})${lints.map(l => `\n     - ${lintLabel(l)}`).join('')}`);
+/** Résumé par règle et niveau : « [WARN] multiple_permissive_policies ×12 » */
+const countLints = lints => Object.entries(lints.reduce((acc, l) => ({ ...acc, [`[${l.level}] ${l.name}`]: (acc[`[${l.level}] ${l.name}`] ?? 0) + 1 }), {}))
+  .map(([k, n]) => `${k} ×${n}`).join(', ') || 'aucune';
 
 /** Comparaison structurelle de deux inventaires (même nature d'objets, mêmes définitions) */
 function diff(a, b) {
@@ -155,8 +158,11 @@ try {
   check('l’inventaire s’exécute dans une transaction en lecture seule', ro.status === 0, ro.status === 0 ? '' : ro.stderr.slice(-200));
   const hashesBefore = contentHashes(before);
   const lintsBefore = advisor();
-  if (lintsBefore) listLints(`Security Advisor avant migrations (règles splinter ${SPLINTER_COMMIT.slice(0, 7)})`, lintsBefore);
-  else console.log('   Security Advisor : règles splinter indisponibles (hors ligne), contrôles ignorés');
+  const perfBefore = lintsBefore && advisor('PERFORMANCE');
+  if (lintsBefore) {
+    listLints(`Security Advisor avant migrations (règles splinter ${SPLINTER_COMMIT.slice(0, 7)})`, lintsBefore);
+    console.log(`   Performance Advisor avant migrations (${perfBefore.length}) : ${countLints(perfBefore)}`);
+  } else console.log('   Security Advisor : règles splinter indisponibles (hors ligne), contrôles ignorés');
 
   console.log('▶ 2. Comparaison avec les migrations prévues');
   const compared = node('supabase/checks/compare-inventory.mjs', path.join(WORK, 'inventaire-avant.json'));
@@ -220,12 +226,44 @@ rollback;`, ['-At']);
     const targeted = /^(function_search_path_mutable|public_bucket_allows_listing|rls_disabled_in_public|policy_exists_rls_disabled|rls_enabled_no_policy|security_definer_view|auth_users_exposed)$/;
     check('Security Advisor : plus de search_path modifiable, de listage public, de table sans RLS ni sans politique',
       !lintsAfter.some(l => targeted.test(l.name)), lintsAfter.filter(l => targeted.test(l.name)).map(lintLabel).join(' | '));
-    check('Security Advisor : aucune politique « toujours vraie » créée par les migrations',
-      !lintsAfter.some(l => l.name === 'rls_policy_always_true' && /_p0(a1|cv)_/.test(l.key)));
+    const alwaysTrue = lintsAfter.filter(l => l.name === 'rls_policy_always_true'
+      && (/_p0(a1|cv)_/.test(l.key) || /^rls_policy_always_true_public_(contacts|visits)_/.test(l.key)));
+    check('Security Advisor : plus aucune insertion « toujours vraie » sur contacts et visits, aucune créée par les migrations',
+      alwaysTrue.length === 0, alwaysTrue.map(lintLabel).join(' | '));
     const fn = l => /`public\.(\w+)\(/.exec(l.detail)?.[1] ?? '';
     const unexpected = added.filter(l => !(/security_definer_function_executable$/.test(l.name) && RPC_ALLOWED.test(fn(l))));
     check('Security Advisor : alertes nouvelles limitées aux fonctions RPC prévues', unexpected.length === 0, unexpected.map(lintLabel).join(' | '));
+
+    // Performance Advisor : information, pas un critère de réussite
+    const perfAfter = advisor('PERFORMANCE');
+    const perfKeys = new Set(perfBefore.map(l => l.key));
+    console.log(`   Performance Advisor après migrations (${perfAfter.length}) : ${countLints(perfAfter)}`);
+    console.log(`   dont nouvelles (${perfAfter.filter(l => !perfKeys.has(l.key)).length}) : ${countLints(perfAfter.filter(l => !perfKeys.has(l.key)))}`);
   }
+
+  // Exposition automatique des nouvelles tables (activée en production) et droits par défaut de
+  // Supabase : les objets créés par les migrations doivent rester fermés aux clients
+  const clientAccess = value(`select coalesce(string_agg(c.relname || ':' || r.role, ' ' order by c.relname, r.role), '')
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    cross join (values ('anon'), ('authenticated')) r(role)
+    where (n.nspname = 'ai_private' or (n.nspname = 'public' and c.relname like 'ai\\_%'))
+      and ((c.relkind = 'r' and has_table_privilege(r.role, c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'))
+        or (c.relkind = 'S' and has_sequence_privilege(r.role, c.oid, 'USAGE,SELECT,UPDATE')));`);
+  check('tables et séquences du centre IA fermées à anon et authenticated', clientAccess === '', clientAccess.slice(0, 300));
+  const cvAccess = value(`select has_table_privilege('anon', 'public.cv_versions', 'SELECT,INSERT,UPDATE,DELETE')::text
+    || ' ' || has_table_privilege('authenticated', 'public.cv_versions', 'INSERT,UPDATE,DELETE')::text
+    || ' ' || has_schema_privilege('anon', 'ai_private', 'USAGE')::text;`);
+  check('cv_versions : aucun droit anonyme, aucune écriture cliente ; schéma ai_private fermé', cvAccess === 'false false false', cvAccess);
+
+  // is_portfolio_admin() après P0.A1 : définition attendue, quel que soit son propriétaire d'origine
+  const admin = value(`select json_build_object('definer', p.prosecdef, 'config', p.proconfig, 'args', p.pronargs, 'owner', pg_get_userbyid(p.proowner),
+      'public', has_function_privilege('public', p.oid, 'EXECUTE'), 'body', regexp_replace(p.prosrc, '\\s+', ' ', 'g'))
+    from pg_proc p where p.oid = 'public.is_portfolio_admin()'::regprocedure;`);
+  const adminFn = JSON.parse(admin);
+  check('is_portfolio_admin : SECURITY DEFINER, search_path vide, sans argument, sans droit PUBLIC, lit admin_users pour l’appelant',
+    adminFn.definer && JSON.stringify(adminFn.config) === '["search_path=\\"\\""]' && adminFn.args === 0 && !adminFn.public
+      && adminFn.body === ' select exists ( select 1 from public.admin_users where user_id = (select auth.uid()) ); ',
+    `propriétaire ${adminFn.owner}`);
 
   console.log('▶ 6. Retour arrière : scripts down puis restauration générée depuis l’inventaire');
   for (const r of ROLLBACKS) psql('postgres', `set client_min_messages = warning;\n${sqlFile(`supabase/rollback/${r}.down.sql`)}`, ['--single-transaction']);

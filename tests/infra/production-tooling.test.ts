@@ -18,7 +18,7 @@ import { securityLintScript, parseLints } from '../../supabase/tests/advisor/spl
 const ROOT = path.resolve(__dirname, '..', '..')
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
 
-type Table = { schema: string; name: string; rls: boolean; force_rls: boolean; rows: number }
+type Table = { schema: string; name: string; rls: boolean; force_rls: boolean; rows: number; owner?: string; owner_ok?: boolean }
 type Policy = { schema: string; table: string; name: string; permissive: string; roles: string[]; cmd: string; using: string | null; with_check: string | null }
 type Bucket = { id: string; public?: boolean; file_size_limit: number | string | null; allowed_mime_types: string[] | null; objects?: number; bytes?: number; types?: Record<string, number>; largest_bytes?: number; over_3mb?: number }
 type Inventory = {
@@ -126,6 +126,51 @@ describe('comparaison de l’inventaire avec les migrations', () => {
     expect(r.out).toMatch(/« Lecture connectée » \(authenticated, .*\) : lecture de project-images conservée/)
   })
 
+  it('table de production inconnue du projet : signalée avec ses politiques, sans blocage', () => {
+    const r = compare(inventory(inv => {
+      inv.tables.push({ schema: 'public', name: 'certifications', rls: true, force_rls: false, rows: 3 })
+      inv.policies.push({ schema: 'public', table: 'certifications', name: 'Lecture publique', permissive: 'PERMISSIVE', roles: ['anon'], cmd: 'SELECT', using: 'true', with_check: null })
+    }))
+    expect(r.status).toBe(0)
+    expect(r.out).toMatch(/public\.certifications : table inconnue du projet, non modifiée par les migrations \(3 ligne\(s\), RLS activée, 1 politique\(s\) : Lecture publique \[SELECT, anon\]\)/)
+  })
+
+  it('propriété : table ou fonction modifiée hors de portée de postgres → blocage', () => {
+    const table = compare(inventory(inv => { inv.tables[0].owner = 'supabase_admin'; inv.tables[0].owner_ok = false }))
+    expect(table.status).toBe(1)
+    expect(table.blocking).toMatch(/public\.visits appartient à « supabase_admin »/)
+    const fn = compare(inventory(inv => {
+      inv.functions = [{ schema: 'public', name: 'set_updatedat', arguments: '', owner: 'supabase_admin', owner_ok: false, settings: null, source: 'begin new.updatedat = now(); return new; end;' }]
+    }))
+    expect(fn.blocking).toMatch(/public\.set_updatedat\(\) appartient à « supabase_admin »/)
+    // storage.objects : vérifié par la répétition, pas bloquant
+    expect(compare(inventory(inv => { inv.tables.push({ schema: 'storage', name: 'objects', rls: true, force_rls: false, rows: 1, owner: 'supabase_storage_admin', owner_ok: false }) })).status).toBe(0)
+  })
+
+  it('is_portfolio_admin actuelle décrite, écarts signalés ; déclencheurs et anciennes insertions annoncés', () => {
+    const fn = (patch: Record<string, unknown>) => ({ schema: 'public', name: 'is_portfolio_admin', arguments: '', returns: 'boolean', security_definer: true,
+      owner: 'postgres', owner_ok: true, settings: ['search_path=public'], acl: '{postgres=X/postgres,authenticated=X/postgres}',
+      definition: 'CREATE OR REPLACE FUNCTION public.is_portfolio_admin() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO \'public\' AS $function$ select exists (select 1 from public.admin_users where user_id = auth.uid()); $function$', ...patch })
+    const ok = compare(inventory(inv => {
+      inv.functions = [fn({}),
+        { schema: 'public', name: 'set_updatedat', arguments: '', owner: 'postgres', owner_ok: true, settings: null, source: '\nbegin\n  new.updatedat = now();\n  return new;\nend;\n' },
+        { schema: 'public', name: 'update_updatedat_column', arguments: '', owner: 'postgres', owner_ok: true, settings: null, source: 'begin perform log_change(); return new; end;' }]
+      inv.policies.push({ schema: 'public', table: 'contacts', name: 'Anyone can send a message', permissive: 'PERMISSIVE', roles: ['public'], cmd: 'INSERT', using: null, with_check: 'true' })
+    }))
+    expect(ok.out).toMatch(/is_portfolio_admin\(\) actuelle : SECURITY DEFINER, search_path=public, propriétaire postgres, droits \{postgres=X\/postgres,authenticated=X\/postgres\} ; lit public\.admin_users/)
+    expect(ok.out).not.toMatch(/is_portfolio_admin actuelle (lit d'autres|ne se fonde|: SECURITY DEFINER sans)/)
+    expect(ok.out).toMatch(/set_updatedat\(\) : search_path figé à '' par 20261030120200 \(corps : begin new\.updatedat = now\(\); return new; end;\)/)
+    expect(ok.out).toMatch(/update_updatedat_column\(\) lit ou écrit d'autres objets : search_path non modifié/)
+    expect(ok.out).toMatch(/public\.contacts « Anyone can send a message » \(insertion « with check true »\) : retirée par 20261030120200/)
+    const risky = compare(inventory(inv => {
+      inv.functions = [fn({ settings: null, definition: 'select exists (select 1 from public.profiles where role = $1)', arguments: 'p_role text' })]
+    }))
+    expect(risky.out).toMatch(/prend des arguments/)
+    expect(risky.out).toMatch(/SECURITY DEFINER sans search_path fixé/)
+    expect(risky.out).toMatch(/lit d'autres tables que admin_users \(public\.profiles\)/)
+    expect(risky.out).toMatch(/ne se fonde pas sur auth\.uid\(\)/)
+  })
+
   it('insertion publique bornée : colonnes ouvertes et colonnes fixées par la base', () => {
     const r = compare(inventory(inv => {
       inv.columns = ['page', 'referrer', 'created_at', 'id'].map(column => ({ table: 'visits', column }))
@@ -201,6 +246,13 @@ describe('règles du Security Advisor (splinter) et migration 20261030120200', (
     expect(code).not.toMatch(/\b(insert into|update public|delete from|truncate|drop table|drop column)\b/i)
     for (const m of code.matchAll(/drop policy if exists (\S+)/g)) expect(m[1]).toMatch(/^p0a1_/)
     expect(code).toMatch(/as restrictive for insert to anon, authenticated/)
+    // Anciennes insertions « true » retirées APRÈS la création de l'insertion bornée et des droits
+    const bounded = code.indexOf('create policy p0a1_public_insert')
+    const grants = code.indexOf("grant insert (%s)")
+    const removal = code.indexOf("execute format('drop policy %I on public.%I'")
+    expect(bounded).toBeGreaterThan(0)
+    expect(removal).toBeGreaterThan(Math.max(bounded, grants))
+    expect(code).toMatch(/cmd = 'INSERT'[\s\S]*policyname not like 'p0a1\\_%'[\s\S]*= 'true'/)
     expect(code).toMatch(/set search_path = %L', f\.fn, ''/)
   })
 })

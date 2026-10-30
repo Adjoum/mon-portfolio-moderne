@@ -84,6 +84,25 @@ export async function runBrowserScenarios(ctx) {
     check('rechargement : même version', (await cvFrameSrc(page)) === src);
     await page.context().close();
 
+    // Formulaire de contact et suivi des visites, par le vrai site : insertion publique bornée
+    // (20261030120200), anciennes politiques « with check (true) » retirées
+    const count = table => Number(sqlValue(`select count(*) from public.${table};`));
+    const visitsBefore = count('visits');
+    const contactsBefore = count('contacts');
+    page = await newVisitor();
+    await page.goto(`${WEB}/contact`);
+    await page.locator('#name').fill('Visiteur du banc');
+    await page.locator('#email').fill('visiteur@banc.test');
+    await page.locator('#subject').fill('Question');
+    await page.locator('#message').fill('Bonjour, ceci est un message du banc de test. '.repeat(40));
+    await page.getByRole('button', { name: /Envoyer le message/ }).click();
+    await page.getByText('Message envoyé avec succès').waitFor({ timeout: 15000 });
+    check('formulaire de contact : message enregistré (insertion bornée)', count('contacts') === contactsBefore + 1);
+    for (let i = 0; i < 20 && count('visits') <= visitsBefore; i++) await page.waitForTimeout(500);
+    check('suivi des visites : visite de /contact enregistrée', count('visits') > visitsBefore
+      && sqlValue(`select count(*) from public.visits where page = '/contact';`) !== '0');
+    await page.context().close();
+
     page = await newVisitor();
     await page.goto(`${WEB}/cv`);
     await page.getByRole('button', { name: /Télécharger le CV/ }).waitFor({ timeout: 20000 });

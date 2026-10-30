@@ -90,6 +90,39 @@ select pg_temp.check('contacts nom vide',           'anon', $q$insert into publi
 select pg_temp.check('contacts identifiant imposé', 'anon', $q$insert into public.contacts (id, name, email, message) values (gen_random_uuid(), 'C', 'c@x.test', 'Bonjour')$q$, 'denied');
 select pg_temp.check('contacts date imposée',       'anon', $q$insert into public.contacts (name, email, message, createdat) values ('C', 'c@x.test', 'Bonjour', '2000-01-01')$q$, 'denied');
 select pg_temp.check('contacts envoi',              'user', $q$insert into public.contacts (name, email, message) values ('D', 'd@x.test', 'Connecté')$q$, 'rows:1');
+select pg_temp.check('contacts message démesuré',   'user', $q$insert into public.contacts (name, email, message) values ('D', 'd@x.test', repeat('m', 20001))$q$, 'denied');
+select pg_temp.check('visits date imposée',         'user', $q$insert into public.visits (page, created_at) values ('/', '2000-01-01')$q$, 'denied');
+select pg_temp.check('visits insertion',            'user', $q$insert into public.visits (page) values ('/blog')$q$, 'rows:1');
+-- Droits : plus d'INSERT sur toute la table, seulement sur les colonnes envoyées par le site
+select pg_temp.check('droit INSERT sur toute la table contacts', 'anon', $q$select has_table_privilege('public.contacts', 'INSERT')::text$q$, 'false');
+select pg_temp.check('droit INSERT sur toute la table visits',   'user', $q$select has_table_privilege('public.visits', 'INSERT')::text$q$, 'false');
+select pg_temp.check('droit INSERT contacts.message',            'anon', $q$select has_column_privilege('public.contacts', 'message', 'INSERT')::text$q$, 'true');
+select pg_temp.check('droit INSERT contacts.id',                 'anon', $q$select has_column_privilege('public.contacts', 'id', 'INSERT')::text$q$, 'false');
+select pg_temp.check('droit INSERT visits.created_at',           'user', $q$select has_column_privilege('public.visits', 'created_at', 'INSERT')::text$q$, 'false');
+-- Les anciennes politiques « with check (true) » ont été retirées ; restent les politiques bornées
+select pg_temp.check('politiques d''insertion « toujours vraies » restantes', 'anon',
+  $q$select count(*)::text from pg_policies where schemaname = 'public' and tablename in ('visits', 'contacts') and cmd = 'INSERT'
+       and regexp_replace(lower(coalesce(with_check, '')), '\s|\(|\)', '', 'g') = 'true'$q$, '0');
+select pg_temp.check('politiques d''insertion bornées', 'anon',
+  $q$select string_agg(tablename || ':' || policyname, ',' order by tablename, policyname) from pg_policies
+     where schemaname = 'public' and tablename in ('visits', 'contacts') and cmd = 'INSERT'$q$,
+  'contacts:p0a1_guard_insert,contacts:p0a1_public_insert,visits:p0a1_guard_insert,visits:p0a1_public_insert');
+
+-- ── is_portfolio_admin() : corps, search_path, propriétaire, droits, réponses ──
+select pg_temp.check('is_portfolio_admin : SECURITY DEFINER, search_path vide, propriétaire postgres, sans argument', 'anon',
+  $q$select (p.prosecdef and p.proconfig = array['search_path=""'] and pg_get_userbyid(p.proowner) = 'postgres'
+             and p.pronargs = 0 and p.prorettype = 'boolean'::regtype and p.provolatile = 's')::text
+     from pg_proc p where p.oid = 'public.is_portfolio_admin()'::regprocedure$q$, 'true');
+select pg_temp.check('is_portfolio_admin : ne lit que admin_users, pour l''appelant', 'anon',
+  $q$select (regexp_replace(prosrc, '\s+', ' ', 'g') = ' select exists ( select 1 from public.admin_users where user_id = (select auth.uid()) ); ')::text
+     from pg_proc where oid = 'public.is_portfolio_admin()'::regprocedure$q$, 'true');
+select pg_temp.check('is_portfolio_admin : droit d''exécution (PUBLIC retiré)', 'anon',
+  $q$select (not has_function_privilege('public', 'public.is_portfolio_admin()', 'EXECUTE')
+             and has_function_privilege('anon', 'public.is_portfolio_admin()', 'EXECUTE')
+             and has_function_privilege('authenticated', 'public.is_portfolio_admin()', 'EXECUTE'))::text$q$, 'true');
+select pg_temp.check('is_portfolio_admin', 'anon',   'select public.is_portfolio_admin()::text', 'false');
+select pg_temp.check('is_portfolio_admin', 'user',   'select public.is_portfolio_admin()::text', 'false');
+select pg_temp.check('is_portfolio_admin', 'admin',  'select public.is_portfolio_admin()::text', 'true');
 
 -- ── is_portfolio_admin() : pourquoi anon garde EXECUTE (alerte du Security Advisor acceptée) ──
 -- Les gardes P0.A1 l'évaluent pour chaque visiteur : sans ce droit, elles échouent au lieu

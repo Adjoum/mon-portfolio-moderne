@@ -141,6 +141,51 @@ for (const p of listing) {
   if (pureListing(p)) add('info', `storage.objects « ${p.name} » (${p.roles.join(',')}) : listage de project-images — retirée par 20261030150100, recréée au retour arrière`);
   else if (!/^p0(a1|cv)_/.test(p.name)) add('warning', `storage.objects « ${p.name} » (${p.roles.join(',')}, ${p.using}) : lecture de project-images conservée par 20261030150100 ; la garde restrictive bloque le listage, mais le Security Advisor peut encore la signaler — à examiner`);
 }
+// ── Propriété : politiques, RLS et remplacement de fonctions exigent d'agir en propriétaire ──
+const touchedTables = ['admin_users', 'projects', 'skills', 'ailab_projects', 'ailab_capabilities', 'ailab_project_capabilities', 'visits', 'contacts'];
+// Tables de production inconnues du projet : les migrations n'y touchent pas, elles sont à connaître
+for (const t of inv.tables.filter(t => t.schema === 'public' && !touchedTables.includes(t.name) && t.name !== 'cv_versions' && !t.name.startsWith('ai_'))) {
+  const own = policies.filter(p => p.schema === 'public' && p.table === t.name);
+  add('info', `public.${t.name} : table inconnue du projet, non modifiée par les migrations (${t.rows} ligne(s), RLS ${t.rls ? 'activée' : 'désactivée'}, ${own.length} politique(s) : ${own.map(p => `${p.name} [${p.cmd}, ${p.roles.join(',')}]`).join(' ; ') || 'aucune'})`);
+}
+for (const t of inv.tables.filter(t => t.schema === 'public' && touchedTables.includes(t.name) && t.owner_ok === false)) {
+  add('blocking', `public.${t.name} appartient à « ${t.owner} » : ${inv.server.current_user} ne peut pas y créer de politiques ni activer la RLS`);
+}
+const storageObjects = inv.tables.find(t => t.schema === 'storage' && t.name === 'objects');
+if (storageObjects?.owner_ok === false) {
+  add('warning', `storage.objects appartient à « ${storageObjects.owner} » : la création des politiques de stockage par ${inv.server.current_user} sera vérifiée par la répétition sur votre copie`);
+}
+for (const f of functions.filter(f => ['is_portfolio_admin', 'set_updatedat', 'update_updatedat_column'].includes(f.name) && f.owner_ok === false)) {
+  add('blocking', `public.${f.name}() appartient à « ${f.owner} » : ${inv.server.current_user} ne pourrait pas la remplacer ni la modifier`);
+}
+
+// ── is_portfolio_admin() actuelle : avant son remplacement par P0.A1 ──
+for (const f of functions.filter(f => f.name === 'is_portfolio_admin')) {
+  const body = (f.definition ?? '').replace(/\s+/g, ' ');
+  const searchPath = (f.settings ?? []).find(s => s.startsWith('search_path='));
+  const tablesRead = [...body.matchAll(/\bfrom\s+([\w."]+)/gi)].map(m => m[1].replace(/"/g, ''));
+  add('info', `is_portfolio_admin(${f.arguments}) actuelle : ${f.security_definer ? 'SECURITY DEFINER' : 'SECURITY INVOKER'}, ${searchPath ?? 'search_path non fixé'}, propriétaire ${f.owner}, droits ${f.acl ?? 'par défaut (PUBLIC)'} ; lit ${tablesRead.join(', ') || '?'}`);
+  if (f.arguments) add('warning', `is_portfolio_admin(${f.arguments}) actuelle prend des arguments : à examiner (P0.A1 la remplace par une version sans argument)`);
+  if (f.security_definer && !searchPath) add('warning', 'is_portfolio_admin actuelle : SECURITY DEFINER sans search_path fixé (risque de détournement) — corrigé par P0.A1');
+  if (tablesRead.some(t => !/^(public\.)?admin_users$/.test(t))) add('warning', `is_portfolio_admin actuelle lit d'autres tables que admin_users (${tablesRead.join(', ')}) : à examiner`);
+  if (!/auth\.uid\(\)/.test(body)) add('warning', 'is_portfolio_admin actuelle ne se fonde pas sur auth.uid() : à examiner avant remplacement');
+}
+
+// ── Fonctions de déclencheur : search_path figé par 20261030120200 si leur corps le permet ──
+for (const f of functions.filter(f => ['set_updatedat', 'update_updatedat_column'].includes(f.name) && f.source !== undefined)) {
+  const hasPath = (f.settings ?? []).some(s => s.startsWith('search_path='));
+  if (hasPath) add('info', `${f.name}() a déjà un search_path : inchangée`);
+  else if (/\b(select|insert|update|delete|from|into|perform|execute|call)\b/i.test(f.source ?? '')) {
+    add('warning', `${f.name}() lit ou écrit d'autres objets : search_path non modifié par 20261030120200, l'alerte du Security Advisor restera (examen manuel)`);
+  } else add('info', `${f.name}() : search_path figé à '' par 20261030120200 (corps : ${(f.source ?? '').replace(/\s+/g, ' ').trim()})`);
+}
+
+// ── Anciennes politiques d'insertion « with check (true) » retirées par 20261030120200 ──
+for (const p of policies.filter(p => p.schema === 'public' && ['visits', 'contacts'].includes(p.table) && p.cmd === 'INSERT'
+  && p.permissive === 'PERMISSIVE' && !/^p0a1_/.test(p.name) && (p.with_check ?? '').toLowerCase().replace(/\s|\(|\)/g, '') === 'true')) {
+  add('info', `public.${p.table} « ${p.name} » (insertion « with check true ») : retirée par 20261030120200, remplacée par l'insertion bornée ; recréée au retour arrière`);
+}
+
 // Insertion publique bornée par 20261030120200 : colonnes ouvertes à l'insertion
 for (const [table, expected] of [['visits', ['page', 'referrer', 'user_agent', 'language', 'screen', 'country', 'city']], ['contacts', ['name', 'email', 'subject', 'message']]]) {
   if (!tables.has(`public.${table}`)) continue;

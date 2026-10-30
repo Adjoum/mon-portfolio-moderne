@@ -243,3 +243,6 @@ revoke all on table ai_private.provider_secret_refs from public, anon, authentic
 drop policy if exists p1ai_no_client_access on ai_private.provider_secret_refs;
 create policy p1ai_no_client_access on ai_private.provider_secret_refs
   as restrictive for all to anon, authenticated using (false) with check (false);
+
+-- Séquences des colonnes bigserial : les droits par défaut de Supabase les ouvrent aux clients
+revoke all on sequence public.ai_usage_events_id_seq, public.ai_config_audit_id_seq from public, anon, authenticated, service_role;
