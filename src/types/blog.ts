@@ -86,7 +86,7 @@ export interface Comment {
   content: string;
   isEdited: boolean;
   editedAt?: string;
-  reactions: Record<string, string[]>; // { '❤️': [userId1, userId2], ... }
+  reactions: Record<string, number | string[]>; // { '❤️': 2 } — l'API ne publie que des nombres
   replies?: Comment[];        // peuplé côté client (récursif)
   repliesCount: number;
   isDeleted: boolean;         // soft delete
@@ -100,7 +100,7 @@ export interface Comment {
 
 export interface GuestAuthor {
   name: string;
-  email: string;              // hashé en MD5 pour Gravatar
+  email?: string;             // jamais renvoyé par l'API publique (donnée personnelle)
   website?: string;
 }
 

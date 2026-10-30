@@ -4,6 +4,7 @@ import { Comment } from '../models/Comment';
 import mongoose from 'mongoose';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { Article } from '../models/Article';
+import { toPublicComment, reactionCounts } from '../lib/publicComment';
 
 
 
@@ -26,10 +27,10 @@ commentsRouter.get('/:articleId', async (req, res) => {
     const map: Record<string, any> = {};
     const roots: any[] = [];
  
+    // Liste blanche : ni e-mail des invités, ni identifiants de session des réactions
     allComments.forEach(c => {
       map[c._id.toString()] = {
-        ...c,
-        author: c.authorId || { name: c.guestName, email: c.guestEmail },
+        ...toPublicComment(c),
         replies: [],
       };
     });
@@ -97,8 +98,7 @@ commentsRouter.post('/', authMiddleware, async (req, res) => {
     await comment.populate('authorId', 'username avatar role');
  
     res.status(201).json({
-      ...comment.toObject(),
-      author: comment.get('authorId') || { name: guestName, email: guestEmail },
+      ...toPublicComment(comment.toObject()),
       replies: [],
     });
   } catch (err: any) {
@@ -125,7 +125,8 @@ commentsRouter.put('/:id', authMiddleware, async (req, res) => {
     comment.isEdited = true;
     comment.editedAt = new Date();
     await comment.save();
-    res.json(comment);
+    await comment.populate('authorId', 'username avatar role');
+    res.json(toPublicComment(comment.toObject()));
   } catch (err) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
@@ -176,7 +177,7 @@ commentsRouter.post('/:id/react', async (req, res) => {
     }
     comment.reactions.set(emoji, users);
     await comment.save();
-    res.json({ reactions: Object.fromEntries(comment.reactions) });
+    res.json({ reactions: reactionCounts(comment.reactions as Map<string, string[]>) });
   } catch (err) {
     res.status(500).json({ error: 'Erreur serveur' });
   }

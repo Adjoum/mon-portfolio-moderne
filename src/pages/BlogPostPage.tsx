@@ -31,6 +31,9 @@ function buildTree(comments: Comment[]): Comment[] {
 }
 
 // ── Helpers ───────────────────────────────────────────────────
+// Réactions : l'API renvoie un nombre par emoji (ancien format : tableau d'identifiants)
+const countOf = (v: number | string[]) => (typeof v === 'number' ? v : Array.isArray(v) ? v.length : 0);
+
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60000);
@@ -71,7 +74,7 @@ const CommentItem: React.FC<{
   const authorName = isGuest ? (comment.author as any).name : (comment.author as any).username;
   const isOwn = !isGuest && currentUser === (comment.author as any)._id;
   const canModify = isOwn || isAdmin;
-  const reactionCount = Object.values(comment.reactions || {}).flat().length;
+  const reactionCount = Object.values(comment.reactions || {}).reduce<number>((n, v) => n + countOf(v), 0);
 
   const borderLeft = depth > 0 ? `2px solid rgba(${depth === 1 ? '0,255,136' : '97,218,251'},0.2)` : 'none';
 
@@ -239,13 +242,13 @@ const CommentItem: React.FC<{
 
             {/* Existing reactions */}
             {Object.entries(comment.reactions || {}).map(([emoji, users]) =>
-              (users as string[]).length > 0 && (
+              countOf(users) > 0 && (
                 <span key={emoji} style={{
                   background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
                   borderRadius: 12, padding: '2px 8px', fontSize: 12,
                   color: 'rgba(200,210,255,0.6)',
                 }}>
-                  {emoji} {(users as string[]).length}
+                  {emoji} {countOf(users)}
                 </span>
               )
             )}
