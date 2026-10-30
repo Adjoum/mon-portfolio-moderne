@@ -165,6 +165,9 @@ export async function startFakeProvider(id, { acceptedKeys = null } = {}) {
     });
   });
 
+  // Plus long que l'inactivité côté client : pas de connexion fermée pendant sa réutilisation
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 66_000;
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address();
 

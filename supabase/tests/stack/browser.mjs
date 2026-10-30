@@ -8,12 +8,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
+import { runAiDashboardScenarios } from './browserAi.mjs';
 
 const WEB = 'http://127.0.0.1:5173';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.pdf': 'application/pdf', '.wasm': 'application/wasm' };
 
 export async function runBrowserScenarios(ctx) {
-  const { ROOT, GATEWAY, API, ANON_KEY, check, gatewayState, sha256, makePdf, totp, adminTotp, active, psql, stopApi, startApi, publicUrl } = ctx;
+  const { ROOT, GATEWAY, API, ANON_KEY, check, gatewayState, sha256, makePdf, totp, adminTotp, active, psql, stopApi, startApi, publicUrl, fakes, sqlValue } = ctx;
   const { chromium } = createRequire(path.join(process.env.PLAYWRIGHT_CORE_DIR, 'noop.js'))('playwright-core');
 
   console.log('▶ Construction du bundle de test (URL locales uniquement)');
@@ -159,6 +160,8 @@ export async function runBrowserScenarios(ctx) {
     await admin.getByText('Version restaurée').waitFor({ timeout: 15000 });
     const afterRestore = await active();
     check('restauration depuis le dashboard', afterRestore.id !== published.id);
+
+    await runAiDashboardScenarios(admin, { check, API, fakes, sqlValue });
     await admin.context().close();
 
     console.log('▶ Redéploiement simulé');

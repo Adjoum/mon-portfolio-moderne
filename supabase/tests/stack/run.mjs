@@ -74,7 +74,8 @@ const gateway = http.createServer((req, res) => {
   const prefix = Object.keys(ROUTES).find(p => req.url.startsWith(p));
   if (!prefix) { res.writeHead(404, cors); res.end(); return; }
   const upstream = http.request(
-    { host: '127.0.0.1', port: ROUTES[prefix], path: req.url.slice(prefix.length) || '/', method: req.method, headers: { ...req.headers, host: `127.0.0.1:${ROUTES[prefix]}` } },
+    // Connexion neuve à chaque requête : une connexion inactive fermée par le service ne peut pas être réutilisée
+    { host: '127.0.0.1', port: ROUTES[prefix], path: req.url.slice(prefix.length) || '/', method: req.method, headers: { ...req.headers, host: `127.0.0.1:${ROUTES[prefix]}` }, agent: false },
     up => {
       // Un seul jeu d'en-têtes CORS : un doublon est refusé par les navigateurs.
       // En-têtes « saut par saut » retirés (RFC 9110 §7.6.1) : Storage annonce Keep-Alive
@@ -99,6 +100,10 @@ const gateway = http.createServer((req, res) => {
   res.on('error', err => console.log(`  [passerelle] ${req.url.split('?')[0]} : erreur réponse ${err.code ?? err.message}`));
   req.pipe(upstream);
 });
+// Les appels docker exec synchrones du banc gèlent la boucle d'événements, et donc les minuteries
+// keep-alive des deux côtés : la passerelle garde ses connexions plus longtemps que le client.
+gateway.keepAliveTimeout = 65_000;
+gateway.headersTimeout = 66_000;
 gateway.on('clientError', (err, socket) => {
   console.log(`  [passerelle] clientError ${err.code ?? err.message}`);
   socket.destroy();
@@ -210,7 +215,7 @@ function startApi() {
   for (const stream of [apiProcess.stdout, apiProcess.stderr]) stream.on('data', chunk => { apiLogs += chunk; });
   return (async () => {
     for (let i = 0; i < 80; i++) { try { await fetch(`${API}/api/health`); return; } catch { await sleep(250); } }
-    throw new Error('blog-api non démarrée');
+    throw new Error(`blog-api non démarrée : ${apiLogs.slice(-600).replace(/\s+/g, ' ')}`);
   })();
 }
 async function stopApi() {
@@ -422,7 +427,7 @@ async function main() {
     const { runBrowserScenarios } = await import('./browser.mjs');
     await runBrowserScenarios({
       ROOT, GATEWAY, API, ANON_KEY, check, gatewayState, sha256, makePdf, totp, adminTotp,
-      active, psql, stopApi, startApi, publicUrl,
+      active, psql, stopApi, startApi, publicUrl, fakes: aiFakes, sqlValue,
     });
   }
 

@@ -65,3 +65,5 @@ ehthumbs.db
 *.tar.gz
 *.zip
 *.7z
+secrets/
+docker-compose.override.yml

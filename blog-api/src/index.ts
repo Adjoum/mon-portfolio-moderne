@@ -53,6 +53,10 @@ const BASE_URL = `http://localhost:${PORT}`;
 const server = app.listen(PORT, () =>
   console.log(`🚀 Blog API ${BASE_URL}`)
 );
+// Connexions inactives conservées plus longtemps que celles du proxy placé devant (nginx :
+// 60 s) : avec les 5 s par défaut de Node, le proxy réutilise une connexion déjà fermée (502).
+server.keepAliveTimeout = 65_000;
+server.headersTimeout = 66_000;
 
 // Écouter les signaux d'arrêt
 process.on('SIGTERM', () => shutdown('SIGTERM')); // kill / Docker stop

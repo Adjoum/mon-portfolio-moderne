@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Brain, Cpu } from 'lucide-react'
+import { Brain, Cpu, Sparkles } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Edit, Trash2, Save, X, Upload, FileText, Briefcase, Award, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -10,10 +10,13 @@ import CvManager from '../components/admin/CvManager';
 import VisitorStats from '../components/VisitorStats'
 import AILabManager from '../components/AILabManager'
 
+// Centre IA chargé à la demande : il n'alourdit pas le reste du dashboard
+const AiAdminPanel = lazy(() => import('../features/ai-admin/AiAdminPanel'))
 
 
 
-type TabType = 'projects' | 'skills' | 'cv' | 'visitors' | 'ailab'
+
+type TabType = 'projects' | 'skills' | 'cv' | 'visitors' | 'ailab' | 'ai'
 
 interface ProjectForm {
   title: string
@@ -455,7 +458,7 @@ const uploadProjectImage = async (file: File) => {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-4 mb-8">
+        <div className="flex flex-wrap gap-4 mb-8">
           <button
             onClick={() => setActiveTab('projects')}
             className={`px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all ${
@@ -513,6 +516,18 @@ const uploadProjectImage = async (file: File) => {
           >
             <Cpu size={20} />
             AILab
+          </button>
+
+          <button
+            onClick={() => setActiveTab('ai')}
+            className={`px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all ${
+              activeTab === 'ai'
+                ? 'bg-gradient-to-r from-primary to-secondary text-white'
+                : 'glass-effect text-gray-300 hover:text-white'
+            }`}
+          >
+            <Sparkles size={20} />
+            Intelligence artificielle
           </button>
 
           {/* Bouton accès Knowledge Base */}
@@ -1006,6 +1021,19 @@ const uploadProjectImage = async (file: File) => {
 
           {activeTab === 'ailab' && (
             <AILabManager />
+          )}
+
+          {activeTab === 'ai' && (
+            <motion.div
+              key="ai"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <Suspense fallback={<p className="text-gray-400">Chargement du centre IA…</p>}>
+                <AiAdminPanel />
+              </Suspense>
+            </motion.div>
           )}
         </AnimatePresence>
       </div>

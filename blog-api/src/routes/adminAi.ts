@@ -25,7 +25,7 @@ import { ProviderError, type ProviderId } from '../ai/providers/types';
 import { invalidParam, MAX_OUTPUT_TOKENS, MAX_TIMEOUT_MS, MIN_TIMEOUT_MS } from '../ai/services/params';
 import { ProbeInconclusive, runProbes } from '../ai/services/probes';
 import { usageCost } from '../ai/services/cost';
-import { catalogPayload, type AiRuntimeStore } from '../ai/services/store';
+import { catalogPayload, type AiRuntimeStore, type FeaturePricing } from '../ai/services/store';
 import { hashSubject } from '../ai/services/usage';
 import { newRequestId, type AiGateway } from '../ai/services/gateway';
 
@@ -356,10 +356,10 @@ export function createAdminAiRouter(gateway: AiGateway, store: AiRuntimeStore) {
       p_capabilities: result.capabilities, p_code: result.code, p_latency: result.latencyMs,
     }));
 
-    const overview = await store.config().catch(() => null);
-    const pricing = overview?.features[feature.id]?.provider === providerId && overview.features[feature.id].model === model
-      ? overview.features[feature.id].pricing
-      : null;
+    // Tarif du modèle TESTÉ (souvent un candidat, pas encore affecté) : la sonde compte dans le budget
+    const catalog = await rpc<{ models?: { modelId: string; pricing: FeaturePricing | null }[] }>(req, 'ai_admin_models', { p_provider: providerId })
+      .catch(() => null);
+    const pricing = catalog?.models?.find(m => m.modelId === model)?.pricing ?? null;
     const cost = pricing ? usageCost(result.inputTokens, result.outputTokens, pricing) : 0;
     await store.recordProbe(feature.id, cost, {
       requestId: newRequestId(), kind: 'probe', feature: feature.id, provider: providerId, model,

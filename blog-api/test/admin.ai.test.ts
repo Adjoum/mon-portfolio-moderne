@@ -412,6 +412,14 @@ describe('test de compatibilité', () => {
     await call('post', '/features/cv.generate/test').send(TEST);
     expect(store.events.at(-1)).toMatchObject({ kind: 'probe', feature: 'cv.generate', provider: 'openai', outcome: 'ok' });
   });
+
+  it('coût de la sonde compté au tarif du modèle testé, même non affecté', async () => {
+    supabase.ai.responses.ai_admin_models = { status: 200, body: { models: [{ modelId: 'modele-a', pricing: { inputPerMTok: 1_000_000, outputPerMTok: 2_000_000 } }] } };
+    const res = await call('post', '/features/cv.generate/test').send(TEST);
+    // Deux sondes (texte, JSON) de 120 tokens en entrée et 40 en sortie chacune
+    expect(res.body.estimatedCostMicroUsd).toBe(400);
+    expect(store.events.at(-1)).toMatchObject({ kind: 'probe', costMicroUsd: 400 });
+  });
 });
 
 describe('quotas et budget', () => {
