@@ -2,139 +2,16 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import express    from 'express';
-import cors       from 'cors';
-
 import mongoose   from 'mongoose';
-import cookieParser from 'cookie-parser';
-import path          from 'path';
+import { createApp } from './app';
 
-// ── Middleware ────────────────────────────────────────────────
-import {
-  globalLimiter,
-  abuseLogger,
-  commentLimiter,
-  authLimiter,
-  uploadLimiter,
-} from './middleware/rateLimit';
-import { authMiddleware } from './middleware/auth';
-
-// ── Routes ───────────────────────────────────────────────────
-import articlesRouter from './routes/articles';
-import commentsRouter from './routes/comments';
-import authRouter     from './routes/auth';
-import uploadRouter   from './routes/upload';
-import tagsRouter     from './routes/tags';
-import groqRouter from './routes/groq';
-import knowledgeRouter from './routes/knowledge';
-import agentRouter from './routes/agent';
-import cvRouter from './routes/cv';
-
-
-
-
-
-
-
-const app = express();
-app.set('trust proxy', 1);
-// ── Middlewares globaux ───────────────────────────────────────
-
-// ── HTTP Request Logger ────────────────────────────────────────
-app.use((req, res, next) => {
-  const start = Date.now();
-  const ts    = new Date().toISOString();
-
-  res.on('finish', () => {
-    const ms      = Date.now() - start;
-    const status  = res.statusCode;
-    const method  = req.method.padEnd(6);
-    const url     = req.originalUrl.padEnd(40);
-    const color   = status >= 500 ? '\x1b[31m'   // rouge
-                  : status >= 400 ? '\x1b[33m'   // jaune
-                  : status >= 300 ? '\x1b[36m'   // cyan
-                  : '\x1b[32m';                  // vert
-    const reset   = '\x1b[0m';
-    const dim     = '\x1b[2m';
-
-    console.log(
-      `${dim}${ts}${reset} ${color}${status}${reset} ${method} ${url} ${dim}${ms}ms${reset}`
-    );
-  });
-
-  next();
-});
-
-//app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
-app.use(cors({
-  origin: [
-    'https://adjoumani-koffi.com',
-    'https://www.adjoumani-koffi.com',
-    'http://localhost',
-    'http://localhost:80',
-    'http://localhost:5173',
-    process.env.FRONTEND_URL || '',
-  ].filter(Boolean),
-  credentials: true,
-}));
-
-app.use(express.json({ limit: '10mb' }));
-app.use(cookieParser());
-// Servir les images uploadées localement
-app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
-
-app.use(abuseLogger);
-
-// ── Logger HTTP ───────────────────────────────────────────────
-app.use((req, res, next) => {
-  const start = Date.now();
-  const time  = new Date().toISOString();
-
-  res.on('finish', () => {
-    const ms     = Date.now() - start;
-    const status = res.statusCode;
-    const color  = status >= 500 ? '\x1b[31m'   // rouge
-                 : status >= 400 ? '\x1b[33m'   // jaune
-                 : status >= 300 ? '\x1b[36m'   // cyan
-                 :                 '\x1b[32m';   // vert
-    const reset  = '\x1b[0m';
-    const method = req.method.padEnd(7);
-    const path   = (req.originalUrl || req.url).padEnd(35);
-    console.log(`${color}[${time}] ${status} ${method} ${path} ${ms}ms${reset}`);
-  });
-
-  next();
-});
-
-app.use(globalLimiter);
-app.use(authMiddleware); // injecte req.user partout
+const app = createApp();
 
 // ── Connexion MongoDB ─────────────────────────────────────────
 mongoose
   .connect(process.env.MONGODB_URI!)
   .then(() => console.log('✅ MongoDB connecté'))
   .catch(err => console.error('❌ MongoDB:', err));
-
-// ── Routes ───────────────────────────────────────────────────
-app.use('/api/articles', articlesRouter);
-app.use('/api/comments', commentLimiter, commentsRouter);
-app.use('/api/upload',   uploadLimiter,  uploadRouter);
-app.use('/api/auth',     authLimiter,    authRouter);
-app.use('/api/tags',     tagsRouter);
-app.use('/api/groq', groqRouter);
-app.use('/api/agent/knowledge', knowledgeRouter);
-app.use('/api/agent', agentRouter);
-app.use('/api/cv', cvRouter);
-
-
-// ── Health check ─────────────────────────────────────────────
-app.get('/api/health', (_req, res) => {
-  res.json({
-    status:   'ok',
-    mongodb:  mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-    uptime:   process.uptime(),
-  });
-});
 
 // ── Arrêt propre (Graceful Shutdown) ─────────────────────────
 function shutdown(signal: string) {
