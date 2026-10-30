@@ -5,7 +5,7 @@
 // applicative n'est touchée.
 //
 // À exécuter APRÈS les scripts supabase/rollback/*.down.sql (retour arrière complet) :
-//   node supabase/checks/restore-from-inventory.mjs <inventaire.json> > restauration.sql
+//   node supabase/checks/restore-from-inventory.mjs <inventaire.json> restauration.sql
 //
 // Les politiques et fonctions ajoutées depuis l'inventaire (hors migrations du projet) ne sont
 // pas modifiées. Les objets créés par les migrations P0.CV (table cv_versions, bucket) sont
@@ -139,10 +139,13 @@ end $$;`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  const file = process.argv[2];
+  const [file, output] = process.argv.slice(2);
   if (!file) {
-    console.error('Usage : node supabase/checks/restore-from-inventory.mjs <inventaire.json> > restauration.sql');
+    console.error('Usage : node supabase/checks/restore-from-inventory.mjs <inventaire.json> [restauration.sql]');
     process.exit(2);
   }
-  process.stdout.write(restoreSql(parseInventory(fs.readFileSync(file, 'utf8'))));
+  const sql = restoreSql(parseInventory(fs.readFileSync(file, 'utf8')));
+  // Fichier écrit en UTF-8 sans BOM : la redirection de PowerShell 5.1 ajouterait un BOM (ou de l'UTF-16)
+  if (output) fs.writeFileSync(output, sql, 'utf8');
+  else process.stdout.write(sql);
 }
