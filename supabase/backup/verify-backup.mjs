@@ -14,10 +14,9 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parseInventory } from '../checks/restore-from-inventory.mjs';
-import { adaptSql, dumpToSql, replay } from './restore-lib.mjs';
+import { IMAGES, adaptSql, dumpToSql, replay } from './restore-lib.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const IMAGES = { 15: 'public.ecr.aws/supabase/postgres:15.14.1.159', 17: 'public.ecr.aws/supabase/postgres:17.6.1.167' };
 /** Tables alimentées en continu : un écart avec l'inventaire est attendu si la sauvegarde est plus récente */
 const LIVE_TABLES = new Set(['public.visits', 'auth.sessions', 'auth.refresh_tokens']);
 

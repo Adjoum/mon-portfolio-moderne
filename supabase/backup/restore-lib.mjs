@@ -9,6 +9,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 export const CLIENT = 'postgres:17-alpine';
+/** Images Supabase sur lesquelles les bancs ont été exécutés, par version majeure du serveur */
+export const IMAGES = { 15: 'public.ecr.aws/supabase/postgres:15.14.1.159', 17: 'public.ecr.aws/supabase/postgres:17.6.1.167' };
 const env = { ...process.env, MSYS_NO_PATHCONV: '1' };
 const BUFFER = 1024 * 1024 * 1024;
 

@@ -17,11 +17,11 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parseInventory, restoreSql } from '../../checks/restore-from-inventory.mjs';
-import { CLIENT, adaptSql, dumpToSql, replay } from '../../backup/restore-lib.mjs';
+import { CLIENT, IMAGES, adaptSql, dumpToSql, replay } from '../../backup/restore-lib.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..', '..');
-const IMAGE = process.env.SUPABASE_PG_IMAGE ?? 'public.ecr.aws/supabase/postgres:17.6.1.167';
+const IMAGE = process.env.SUPABASE_PG_IMAGE ?? IMAGES[17];
 const PASSWORD = 'repetition-locale-uniquement';
 const id = `${process.pid}`;
 const NET = `rehearsal-net-${id}`;
@@ -64,6 +64,19 @@ const inventory = label => {
   return parseInventory(raw);
 };
 const node = (...args) => spawnSync(process.execPath, args, { encoding: 'utf8', env, cwd: ROOT });
+
+/** Empreinte MD5 du contenu de chaque table existante : public, comptes, facteurs MFA, fichiers */
+const quote = s => `"${String(s).replace(/"/g, '""')}"`;
+function contentHashes(inv) {
+  const targets = [...inv.tables.filter(t => t.schema === 'public').map(t => ['public', t.name]),
+    ['auth', 'users'], ['auth', 'identities'], ['auth', 'mfa_factors'], ['storage', 'objects']];
+  return Object.fromEntries(targets.map(([schema, name]) => {
+    const rel = `${quote(schema)}.${quote(name)}`;
+    const exists = value(`select to_regclass('${rel.replace(/'/g, "''")}') is not null;`) === 't';
+    return [`${schema}.${name}`, exists ? value(`select md5(coalesce(string_agg(t::text, E'\\n' order by t::text), '')) from ${rel} t;`) : 'absente'];
+  }));
+}
+const changedTables = (a, b) => Object.keys(a).filter(k => a[k] !== b[k]);
 
 /** Comparaison structurelle de deux inventaires (même nature d'objets, mêmes définitions) */
 function diff(a, b) {
@@ -130,6 +143,7 @@ try {
   const ro = spawnSync('docker', ['exec', '-i', '-e', 'PGOPTIONS=-c default_transaction_read_only=on', DB, 'psql', '-X', '-q', '-At', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
     { input: sqlFile('supabase/checks/p1ai_production_inventory.sql'), encoding: 'utf8', env });
   check('l’inventaire s’exécute dans une transaction en lecture seule', ro.status === 0, ro.status === 0 ? '' : ro.stderr.slice(-200));
+  const hashesBefore = contentHashes(before);
 
   console.log('▶ 2. Comparaison avec les migrations prévues');
   const compared = node('supabase/checks/compare-inventory.mjs', path.join(WORK, 'inventaire-avant.json'));
@@ -155,8 +169,9 @@ try {
   for (const m of MIGRATIONS) psql('postgres', `set client_min_messages = warning;\n${sqlFile(`supabase/migrations/${m}.sql`)}`, ['--single-transaction']);
   const after = inventory('apres');
   check('les 8 migrations s’appliquent', after.tables.some(t => t.name === 'ai_providers') && after.tables.some(t => t.name === 'cv_versions'));
-  const dataUnchanged = before.tables.filter(t => t.schema === 'public').every(t => after.tables.find(x => x.schema === 'public' && x.name === t.name)?.rows === t.rows);
-  check('aucune donnée existante modifiée par les migrations', dataUnchanged);
+  const changedByMigrations = changedTables(hashesBefore, contentHashes(before));
+  check(`contenu des ${Object.keys(hashesBefore).length} tables existantes inchangé par les migrations (empreinte de chaque ligne, comptes et facteurs MFA compris)`,
+    changedByMigrations.length === 0, changedByMigrations.join(', '));
   const anonVisits = spawnSync('docker', ['exec', '-i', DB, 'psql', '-X', '-q', '-At', '-U', 'supabase_admin', '-d', 'postgres'],
     { input: "set role anon; select count(*) from public.visits;", encoding: 'utf8', env }).stdout.trim();
   check('visits n’est plus lisible par un visiteur anonyme', anonVisits === '0' || anonVisits === '', `anon voit ${anonVisits || 'aucune ligne (refus)'}`);
@@ -180,7 +195,8 @@ try {
   console.log(`   conservés volontairement (inertes) : ${leftovers.join(' ; ') || 'aucun'}`);
   check('aucune clé ni objet du centre IA restant', back.tables.every(t => !t.name.startsWith('ai_')) && !back.roles.some(r => r.name === 'ai_backend')
     && value("select count(*) from vault.secrets where name like 'ai_provider_%';") === '0');
-  check('données identiques à l’origine', before.tables.filter(t => t.schema === 'public').every(t => back.tables.find(x => x.schema === 'public' && x.name === t.name)?.rows === t.rows));
+  const changedByRollback = changedTables(hashesBefore, contentHashes(before));
+  check('contenu identique à l’origine après retour arrière', changedByRollback.length === 0, changedByRollback.join(', '));
 
   console.log('▶ 7. Réapplication après retour arrière (idempotence)');
   for (const m of MIGRATIONS) psql('postgres', `set client_min_messages = warning;\n${sqlFile(`supabase/migrations/${m}.sql`)}`, ['--single-transaction']);

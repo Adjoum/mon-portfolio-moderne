@@ -10,13 +10,25 @@ import { spawnSync } from 'node:child_process'
 import { restoreSql, executeGrantees, parseInventory } from '../../supabase/checks/restore-from-inventory.mjs'
 // @ts-expect-error module JavaScript sans déclaration de types
 import { adaptSql } from '../../supabase/backup/restore-lib.mjs'
+// @ts-expect-error module JavaScript sans déclaration de types
+import { summarizeInventory } from '../../supabase/checks/phase0.mjs'
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
 
+type Table = { schema: string; name: string; rls: boolean; force_rls: boolean; rows: number }
+type Policy = { schema: string; table: string; name: string; permissive: string; roles: string[]; cmd: string; using: string | null; with_check: string | null }
+type Bucket = { id: string; public?: boolean; file_size_limit: number | string | null; allowed_mime_types: string[] | null; objects?: number; bytes?: number }
+type Inventory = {
+  server: Record<string, string | number | boolean | unknown[]>
+  tables: Table[]; policies: Policy[]; buckets: Bucket[]
+  auth: { tables: Record<string, number>; verified_totp_factors: number | null; admins: number | null; admins_with_verified_totp: number | null }
+  [section: string]: unknown
+}
+
 /** Inventaire minimal d'un projet prêt pour les migrations */
-const inventory = (patch: (inv: any) => void = () => {}) => {
-  const inv: any = {
+const inventory = (patch: (inv: Inventory) => void = () => {}) => {
+  const inv: Inventory = {
     inventory_version: 'p1ai.1',
     generated_at: '2026-10-30T12:00:00Z',
     server: {
@@ -102,6 +114,28 @@ describe('comparaison de l’inventaire avec les migrations', () => {
   })
 })
 
+describe('rapport de phase 0 (synthèse de l’inventaire)', () => {
+  it('version, RLS, politiques des tables et du stockage, administrateurs et TOTP, buckets', () => {
+    const md: string = summarizeInventory(inventory(inv => {
+      inv.tables.push({ schema: 'public', name: 'skills', rls: false, force_rls: false, rows: 4 })
+      inv.policies.push({ schema: 'storage', table: 'objects', name: 'Public read project images', permissive: 'PERMISSIVE',
+                          roles: ['public'], cmd: 'SELECT', using: "bucket_id = 'project-images'", with_check: null })
+      inv.buckets = [{ id: 'project-images', public: true, file_size_limit: null, allowed_mime_types: null, objects: 9, bytes: 2097152 }]
+    }))
+    expect(md).toMatch(/PostgreSQL 17\.6 \(majeure 17\)/)
+    expect(md).toMatch(/Administrateurs \(admin_users\) : 1 ; avec un TOTP vérifié : 1/)
+    expect(md).toMatch(/\| visits \| oui \| 2908 \| 1 \|/)
+    expect(md).toMatch(/\| skills \| \*\*NON\*\* \| 4 \| 0 \|/)
+    expect(md).toMatch(/### Politiques du stockage \(1\)[\s\S]*Public read project images/)
+    expect(md).toMatch(/\| project-images \| oui \| 9 \| 2\.0 Mo \| aucune \| tous \|/)
+  })
+
+  it('table admin_users absente : signalée sans erreur', () => {
+    expect(summarizeInventory(inventory(inv => { inv.auth.admins = null; inv.auth.admins_with_verified_totp = null })))
+      .toMatch(/Administrateurs \(admin_users\) : table absente/)
+  })
+})
+
 describe('restauration générée depuis l’inventaire', () => {
   it('lit l’inventaire sous ses différentes formes d’export', () => {
     const inv = inventory()
@@ -180,5 +214,20 @@ describe('inventaire de la VM Oracle (deploy/oracle/discover.sh)', () => {
 
   it('aucune commande qui modifie la VM', () => {
     expect(code).not.toMatch(/\b(systemctl (start|stop|restart|reload|enable|disable)|nginx -s|apt(-get)? |rm -|mv |chmod |chown |tee |kill )/)
+  })
+
+  it('Node repéré par sa ligne de commande (Node 24 se nomme « MainThread »), arguments et identifiants masqués', () => {
+    expect(code).not.toMatch(/pgrep node\b/)
+    expect(code).toMatch(/pgrep -f "\^\(\/\[\^ \]\*\/\)\?node/)
+    expect(code).toMatch(/argument\(s\) non affiché/)
+    expect(code).toMatch(/<masqué>@/)
+    // crontab : horaire et programme seulement, jamais la ligne brute
+    for (const line of code.split('\n').filter(l => /crontab -l/.test(l))) expect(line).toMatch(/\|\s*awk/)
+  })
+
+  it('le test canari refuse de s’exécuter hors d’un conteneur jetable', () => {
+    const t = read('deploy/oracle/discover-canary-test.sh')
+    expect(t.indexOf('/.dockerenv')).toBeGreaterThan(-1)
+    expect(t.indexOf('/.dockerenv')).toBeLessThan(t.indexOf('mkdir'))
   })
 })
