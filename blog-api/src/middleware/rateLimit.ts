@@ -5,6 +5,7 @@
 import { type Request, type Response, type NextFunction } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { AuthRequest } from './auth';
+import type { SupabaseAdminRequest } from './supabaseAdmin';
 
 // ─────────────────────────────────────────────────────────────
 // INSTALLATION :  npm install express-rate-limit
@@ -102,6 +103,31 @@ export const searchLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
   handler:         rateLimitHandler,
+});
+
+// ── 6b. Limite administration — appliquée AVANT l'authentification ──
+// 100 requêtes par 15 minutes par IP (anti force brute / énumération)
+export const adminLimiter = rateLimit({
+  windowMs:        15 * 60 * 1000,
+  max:             Number(process.env.ADMIN_RATE_LIMIT_MAX) || 100,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  handler:         rateLimitHandler,
+});
+
+// ── 6c. Limite écriture base de connaissances ─────────────────
+// 30 ajouts / téléversements / suppressions par heure par administrateur
+export const knowledgeWriteLimiter = rateLimit({
+  windowMs:        60 * 60 * 1000,
+  max:             Number(process.env.KNOWLEDGE_WRITE_RATE_LIMIT_MAX) || 30,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  handler:         rateLimitHandler,
+  keyGenerator: (req) => {
+    const adminReq = req as SupabaseAdminRequest;
+    if (adminReq.supabaseAdmin?.userId) return `admin:${adminReq.supabaseAdmin.userId}`;
+    return ipKeyGenerator(req.ip ?? '127.0.0.1');
+  },
 });
 
 // ── 7. Middleware de validation du contenu ────────────────────
