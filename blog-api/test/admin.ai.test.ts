@@ -60,6 +60,7 @@ beforeEach(() => {
     fakes[id].models = [{ id: 'modele-a' }, { id: 'modele-b' }];
     fakes[id].modelListStatus = 200;
     fakes[id].behavior = { kind: 'ok', content: '{"ok":true}' };
+    fakes[id].queue = [];
     fakes[id].acceptedKeys = null;
   }
 });
@@ -370,12 +371,22 @@ describe('test de compatibilité', () => {
     expect(JSON.stringify(fakes.openai.calls.at(-1)?.body)).toContain('image_url');
   });
 
-  it('modèle sans vision : incompatible, enregistré comme tel', async () => {
-    store.keys.groq = STORED_KEY;
-    fakes.groq.behavior = { kind: 'error', status: 400, body: { error: { message: 'image non prise en charge' } } };
-    const res = await call('post', '/features/cv.import.ocr/test').send({ ...TEST, providerId: 'groq' });
+  it('modèle qui refuse l’image : incompatible, capacités partielles enregistrées', async () => {
+    // Première sonde (texte) acceptée, seconde (image) refusée
+    fakes.openai.queue = [{ kind: 'ok', content: 'OK' }, { kind: 'error', status: 400, body: { error: { message: 'image non prise en charge' } } }];
+    const res = await call('post', '/features/cv.import.ocr/test').send(TEST);
+    expect(fakes.openai.calls).toHaveLength(2);
     expect(res.body.status).toBe('incompatible');
-    expect(fnCalled('ai_admin_record_compat')[0].args).toMatchObject({ p_status: 'incompatible', p_capabilities: [] });
+    expect(fnCalled('ai_admin_record_compat')[0].args).toMatchObject({ p_status: 'incompatible', p_capabilities: ['text'] });
+  });
+
+  it('fournisseur sans entrée image (Groq) : OCR incompatible, sans aucun appel', async () => {
+    store.keys.groq = STORED_KEY;
+    fakes.groq.behavior = { kind: 'ok', content: 'rouge' };
+    const res = await call('post', '/features/cv.import.ocr/test').send({ ...TEST, providerId: 'groq' });
+    expect(res.body).toMatchObject({ status: 'incompatible', code: 'vision_unsupported', capabilities: [] });
+    expect(fakes.groq.calls).toHaveLength(0);
+    expect(fnCalled('ai_admin_record_compat')[0].args).toMatchObject({ p_status: 'incompatible' });
   });
 
   it('JSON invalide : incompatible avec une fonctionnalité JSON', async () => {

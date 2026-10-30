@@ -8,6 +8,8 @@ x-secrets: &jwt_secret ${STACK_JWT_SECRET}
 services:
   db:
     image: public.ecr.aws/supabase/postgres:17.6.1.167
+    # Publié pour blog-api (rôle ai_backend), comme le pooler de Supabase en production
+    ports: ["127.0.0.1:58334:5432"]
     environment:
       POSTGRES_PASSWORD: ${STACK_DB_PASSWORD}
     healthcheck:

@@ -23,6 +23,8 @@ services:
       - "127.0.0.1:5000:5000"
     volumes:
       - uploads_data:/app/public/uploads
+      # Certificat Supabase (public, non secret) pour AI_DATABASE_CA_FILE=/run/certs/supabase-ca.crt :
+      # - /etc/blog-api/supabase-ca.crt:/run/certs/supabase-ca.crt:ro
     networks:
       - blog-network
     security_opt:

@@ -25,6 +25,7 @@ describe('runAiFeature', () => {
     [503, 'AI_FEATURE_UNAVAILABLE', true],
     [503, 'AI_FEATURE_DISABLED',    true],
     [429, 'AI_QUOTA_EXCEEDED',      false],
+    [429, 'AI_BUDGET_EXCEEDED',     false],
     [504, 'AI_TIMEOUT',             false],
     [502, 'AI_PROVIDER_ERROR',      false],
   ])('HTTP %i %s → AiFeatureError (indisponible : %s)', async (status, code, unavailable) => {

@@ -91,16 +91,28 @@ const CONFIG_STALE_MS = 5 * 60_000;
 const SECRET_TTL_MS   = 60_000;
 const NOT_CONFIGURED_LOG_MS = 10 * 60_000;
 
-/** Autorité de certification du projet Supabase : la connexion reste vérifiée */
-function tlsOptions() {
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+
+/**
+ * TLS obligatoire et vérifié hors boucle locale : certificat du projet Supabase
+ * (AI_DATABASE_CA_FILE), sinon autorités système. Les paramètres ssl* de l'URL sont
+ * ignorés : ils remplaceraient silencieusement cette configuration.
+ */
+export function connectionOptions(raw: string) {
+  const url = new URL(raw);
+  for (const key of [...url.searchParams.keys()]) if (/^ssl/i.test(key)) url.searchParams.delete(key);
+  if (LOCAL_HOSTS.has(url.hostname.replace(/^\[|\]$/g, ''))) return { connectionString: url.toString(), ssl: undefined };
+
   const caFile = process.env.AI_DATABASE_CA_FILE?.trim();
-  return caFile ? { ca: fs.readFileSync(caFile, 'utf8'), rejectUnauthorized: true } : undefined;
+  return {
+    connectionString: url.toString(),
+    ssl: { rejectUnauthorized: true, ...(caFile ? { ca: fs.readFileSync(caFile, 'utf8') } : {}) },
+  };
 }
 
-export function createPgRuntimeStore(connectionString: string): AiRuntimeStore {
+export function createPgRuntimeStore(raw: string): AiRuntimeStore {
   const pool = new Pool({
-    connectionString,
-    ssl: tlsOptions(),
+    ...connectionOptions(raw),
     max: 4,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,

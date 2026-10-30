@@ -16,6 +16,7 @@ const MESSAGES: Record<string, string> = {
   AI_FEATURE_DISABLED:    'Cette fonction IA est momentanément désactivée.',
   AI_FEATURE_UNAVAILABLE: 'Cette fonction IA est momentanément indisponible.',
   AI_QUOTA_EXCEEDED:      'Limite d’utilisation de l’IA atteinte pour aujourd’hui. Réessayez demain.',
+  AI_BUDGET_EXCEEDED:     'Cette fonction IA a atteint sa limite d’utilisation. Réessayez plus tard.',
   AI_BUSY:                'Le service IA est très sollicité. Réessayez dans un instant.',
   RATE_LIMIT_EXCEEDED:    'Trop de requêtes. Patientez une minute avant de réessayer.',
   AI_TIMEOUT:             'Le service IA n’a pas répondu à temps. Réessayez.',

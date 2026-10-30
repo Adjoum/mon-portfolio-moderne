@@ -57,9 +57,16 @@ describe('.dockerignore', () => {
 describe('variables attendues documentées', () => {
   it('blog-api/.env.example déclare les variables IA sans valeur', () => {
     const example = read('blog-api/.env.example')
-    for (const name of ['OPENAI_API_KEY', 'AI_LOG_HMAC_SECRET', 'AI_ENABLED', 'AI_DISABLED_FEATURES']) {
+    for (const name of ['AI_DATABASE_URL', 'AI_DATABASE_CA_FILE', 'AI_LOG_HMAC_SECRET', 'AI_ENABLED', 'AI_DISABLED_FEATURES']) {
       expect(example, name).toMatch(new RegExp(`^#?\\s*${name}=\\s*(false|true)?\\s*$`, 'm'))
     }
+  })
+
+  it('aucune clé de fournisseur IA attendue dans l’environnement : elles vivent dans Vault', () => {
+    for (const file of ['blog-api/.env.example', '.env.docker.example', 'docker-compose.yml']) {
+      expect(read(file), file).not.toMatch(/^\s*-?\s*(OPENAI|GROQ|XAI|GEMINI|OPENROUTER|ANTHROPIC)_API_KEY\s*[=:]/m)
+    }
+    expect(read('.env.docker.example')).toMatch(/^AI_DATABASE_URL=$/m)
   })
 
   it('.env.example frontend : variables publiques uniquement', () => {

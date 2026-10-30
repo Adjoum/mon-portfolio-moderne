@@ -6,6 +6,7 @@
 //   fake.behavior = { kind: 'ok', content: 'Bonjour' };
 //   fake.models = [{ id: 'modele-a', vision: true }];
 //   fake.calls  → requêtes de génération reçues (méthode, url, en-têtes, corps)
+//   fake.queue  → réponses successives, consommées avant fake.behavior
 
 import http from 'node:http';
 
@@ -120,6 +121,7 @@ export async function startFakeProvider(id, { acceptedKeys = null } = {}) {
   const state = {
     calls: [],
     behavior: { kind: 'ok' },
+    queue: [],
     models: [],
     modelListStatus: 200,
     modelListCalls: 0,
@@ -148,7 +150,7 @@ export async function startFakeProvider(id, { acceptedKeys = null } = {}) {
       state.calls.push({ method: req.method, url: req.url, headers: req.headers, body: JSON.parse(raw || '{}') });
       if (!authorized) return json(res, ...AUTH_ERRORS[id]);
 
-      const b = state.behavior;
+      const b = state.queue.length ? state.queue.shift() : state.behavior;
       if (b.kind === 'hang') {
         pending.add(res);
         res.on('close', () => { if (!res.writableEnded) aborted++; });
@@ -172,6 +174,8 @@ export async function startFakeProvider(id, { acceptedKeys = null } = {}) {
     calls: state.calls,
     get behavior() { return state.behavior; },
     set behavior(b) { state.behavior = b; },
+    get queue() { return state.queue; },
+    set queue(q) { state.queue = q; },
     get models() { return state.models; },
     set models(m) { state.models = m; },
     get modelListStatus() { return state.modelListStatus; },

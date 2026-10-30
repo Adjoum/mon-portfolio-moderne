@@ -63,6 +63,11 @@ export async function runProbes(
   const base = { maxOutputTokens: PROBE_MAX_OUTPUT_TOKENS, params };
   const required = feature.requiredCapabilities;
 
+  // Adaptateur sans entrée image : incompatible sans aucun appel, quoi qu'en dise le modèle
+  if (required.includes('vision') && !adapter.supportsImages) {
+    return { status: 'incompatible', capabilities: [], code: 'vision_unsupported', latencyMs: 0, inputTokens: 0, outputTokens: 0 };
+  }
+
   try {
     await call('text', {
       ...base,

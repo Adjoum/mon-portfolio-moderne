@@ -216,7 +216,8 @@ export function createAiGateway(overrides: Partial<AiGatewayDeps> = {}) {
       const meta = { ...base, provider: entry.provider, model: entry.model };
 
       const adapter = adapterFor(entry.provider);
-      const apiKey = await deps.store.secret(entry.provider).catch(() => null);
+      const visionMissing = feature.requiredCapabilities.includes('vision') && !adapter?.supportsImages;
+      const apiKey = visionMissing ? null : await deps.store.secret(entry.provider).catch(() => null);
       if (!adapter || !apiKey) {
         record({ ...meta, outcome: 'blocked', code: 'AI_FEATURE_UNAVAILABLE' });
         throw new AiError(503, 'AI_FEATURE_UNAVAILABLE');

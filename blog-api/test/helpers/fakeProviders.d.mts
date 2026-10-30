@@ -34,6 +34,8 @@ export interface FakeProvider {
   url: string;
   calls: FakeCall[];
   behavior: FakeProviderBehavior;
+  /** Réponses successives, consommées avant behavior */
+  queue: FakeProviderBehavior[];
   models: FakeModel[];
   modelListStatus: number;
   acceptedKeys: string[] | null;

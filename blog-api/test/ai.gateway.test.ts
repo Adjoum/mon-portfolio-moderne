@@ -209,6 +209,14 @@ describe('fournisseur non configuré ou fonctionnalité désactivée', () => {
     expect(fake.calls).toHaveLength(0);
   });
 
+  it('OCR affecté à un fournisseur sans entrée image : aucun appel', async () => {
+    store.keys.groq = 'cle-factice';
+    store.setFeature('cv.import.ocr', { provider: 'groq' });
+    const res = await run('cv.import.ocr', { input: VALID_INPUTS['cv.import.ocr'] });
+    expect(res.status).toBe(503);
+    expect(fake.calls).toHaveLength(0);
+  });
+
   it('modèle sans tarif : jamais exécuté, le budget serait invérifiable', async () => {
     store.setFeature('cv.generate', { pricing: null });
     expect((await run('cv.generate', { input: VALID_INPUTS['cv.generate'] })).status).toBe(503);

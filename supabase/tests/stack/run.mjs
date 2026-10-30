@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Banc d'intégration P0.CV sur une pile Supabase locale RÉELLE (Postgres, Auth, PostgREST, Storage).
+// Banc d'intégration sur une pile Supabase locale RÉELLE (Postgres, Auth, PostgREST, Storage) :
+// CV public (P0.CV) et centre d'administration multi-IA (ai.mjs).
 //   node supabase/tests/stack/run.mjs [--keep]
 // Jetons et MFA TOTP réels, blog-api compilée et réellement démarrée, aucune clé réelle,
 // aucune donnée de production. Projet Docker isolé « p0cv-stack » (ports 58321-58333).
@@ -12,7 +13,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { runAiScenarios } from './ai.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..', '..');
@@ -22,6 +24,8 @@ const jwt = createRequire(path.join(API_DIR, 'noop.js'))('jsonwebtoken');
 // ── Valeurs factices, propres à ce banc ─────────────────────
 const JWT_SECRET  = 'local-stack-test-jwt-secret-not-used-anywhere-0123456789';
 const DB_PASSWORD = 'local-stack-test-db-password';
+const AI_DB_PASSWORD = 'local-stack-test-ai-backend-password';
+const PROVIDER_IDS = ['openai', 'groq', 'xai', 'gemini', 'openrouter', 'anthropic'];
 const GATEWAY     = 'http://127.0.0.1:58321';
 const API         = 'http://127.0.0.1:58400';
 const staticJwt = role => jwt.sign({ role, iss: 'supabase-local-test', iat: 1700000000, exp: 2000000000 }, JWT_SECRET);
@@ -53,6 +57,7 @@ export const check = (label, ok, detail = '') => {
 // ── Passerelle (rôle de Kong) ───────────────────────────────
 const gatewayState = { failRpc: false };
 const ROUTES = { '/auth/v1': 58331, '/rest/v1': 58332, '/storage/v1': 58333 };
+const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'transfer-encoding', 'te', 'trailer', 'upgrade', 'proxy-authenticate', 'proxy-authorization']);
 const gateway = http.createServer((req, res) => {
   const cors = {
     'Access-Control-Allow-Origin': '*',
@@ -71,14 +76,32 @@ const gateway = http.createServer((req, res) => {
   const upstream = http.request(
     { host: '127.0.0.1', port: ROUTES[prefix], path: req.url.slice(prefix.length) || '/', method: req.method, headers: { ...req.headers, host: `127.0.0.1:${ROUTES[prefix]}` } },
     up => {
-      // Un seul jeu d'en-têtes CORS : un doublon est refusé par les navigateurs
-      const headers = Object.fromEntries(Object.entries(up.headers).filter(([k]) => !k.startsWith('access-control-')));
+      // Un seul jeu d'en-têtes CORS : un doublon est refusé par les navigateurs.
+      // En-têtes « saut par saut » retirés (RFC 9110 §7.6.1) : Storage annonce Keep-Alive
+      // timeout=61, que le client appliquait à la connexion avec cette passerelle.
+      const headers = Object.fromEntries(Object.entries(up.headers)
+        .filter(([k]) => !k.startsWith('access-control-') && !HOP_BY_HOP.has(k)));
       res.writeHead(up.statusCode, { ...headers, ...cors });
       up.pipe(res);
     },
   );
-  upstream.on('error', () => { if (!res.headersSent) res.writeHead(502, cors); res.end(); });
+  // Un service peut répondre avant d'avoir lu tout le corps (fichier refusé). Le reste de la
+  // requête doit alors être lu et jeté : sinon il pollue la connexion, réutilisée ensuite
+  // par le client (ECONNRESET sur l'appel suivant).
+  const drain = () => { req.unpipe(upstream); req.resume(); };
+  res.on('finish', drain);
+  upstream.on('error', err => {
+    console.log(`  [passerelle] ${req.method} ${req.url.split('?')[0]} : erreur amont ${err.code ?? err.message}`);
+    drain();
+    if (!res.headersSent) res.writeHead(502, cors);
+    res.end();
+  });
+  res.on('error', err => console.log(`  [passerelle] ${req.url.split('?')[0]} : erreur réponse ${err.code ?? err.message}`));
   req.pipe(upstream);
+});
+gateway.on('clientError', (err, socket) => {
+  console.log(`  [passerelle] clientError ${err.code ?? err.message}`);
+  socket.destroy();
 });
 
 // ── Authentification réelle ─────────────────────────────────
@@ -166,17 +189,25 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 // ── blog-api réelle ─────────────────────────────────────────
 let apiProcess = null;
 let apiBuild = null;
+let apiLogs = '';
+const aiFakes = {};
 function startApi() {
   apiProcess = spawn(process.execPath, ['index.js'], {
     cwd: apiBuild,   // aucun .env dans ce dossier
     env: {
       PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP,
       NODE_PATH: path.join(API_DIR, 'node_modules'), PORT: '58400', NODE_ENV: 'development', FRONTEND_URL: 'http://127.0.0.1:5173',
-      MONGODB_URI: 'mongodb://127.0.0.1:1/none?serverSelectionTimeoutMS=300', JWT_SECRET: 'fake-jwt', PINECONE_API_KEY: 'fake', PINECONE_INDEX: 'fake', GROQ_API_KEY: 'fake',
+      AI_DATABASE_URL: `postgresql://ai_backend:${AI_DB_PASSWORD}@127.0.0.1:58334/postgres`,
+      AI_LOG_HMAC_SECRET: 'local-stack-test-hmac-secret-0123456789',
+      AI_ADMIN_WRITE_RATE_LIMIT_MAX: '1000',
+      ...Object.fromEntries(Object.entries(aiFakes).map(([id, fake]) => [`AI_DEV_PROVIDER_BASE_URL_${id.toUpperCase()}`, fake.url])),
+      MONGODB_URI: 'mongodb://127.0.0.1:1/none?serverSelectionTimeoutMS=300', JWT_SECRET: 'fake-jwt',
       SUPABASE_URL: GATEWAY, SUPABASE_ANON_KEY: ANON_KEY, CV_WRITE_RATE_LIMIT_MAX: '1000', ADMIN_RATE_LIMIT_MAX: '1000',
     },
-    stdio: ['ignore', 'ignore', 'ignore'],
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
+  // Journaux conservés : le banc vérifie qu'aucune clé n'y apparaît
+  for (const stream of [apiProcess.stdout, apiProcess.stderr]) stream.on('data', chunk => { apiLogs += chunk; });
   return (async () => {
     for (let i = 0; i < 80; i++) { try { await fetch(`${API}/api/health`); return; } catch { await sleep(250); } }
     throw new Error('blog-api non démarrée');
@@ -240,10 +271,13 @@ async function main() {
   check('jetons réels : MFA TOTP validée par Supabase Auth', aalOf(adminAal1) === 'aal1' && aalOf(adminAal2) === 'aal2', `${aalOf(adminAal1)} → ${aalOf(adminAal2)}`);
 
   console.log('▶ Application des migrations (rôle postgres, transaction unique)');
-  for (const file of ['20261030120000_p0a1_admin_access_control', '20261030120100_p0a1_storage_access_control', '20261030150000_cv_public_document', '20261030150100_project_images_no_public_listing']) {
+  for (const file of ['20261030120000_p0a1_admin_access_control', '20261030120100_p0a1_storage_access_control', '20261030150000_cv_public_document', '20261030150100_project_images_no_public_listing',
+    '20261030170000_ai_control_center_schema', '20261030170100_ai_admin_functions', '20261030170200_ai_runtime_functions', '20261030170300_ai_initial_catalog']) {
     psql('postgres', `set client_min_messages = warning;\n${fs.readFileSync(path.join(ROOT, 'supabase/migrations', `${file}.sql`), 'utf8')}`, ['--single-transaction']);
     psql('postgres', `set client_min_messages = warning;\n${fs.readFileSync(path.join(ROOT, 'supabase/migrations', `${file}.sql`), 'utf8')}`, ['--single-transaction']);
   }
+  // Mot de passe du rôle restreint : défini à la main, jamais dans une migration
+  psql('supabase_admin', `alter role ai_backend login password '${AI_DB_PASSWORD}';`);
   psql('supabase_admin', "notify pgrst, 'reload schema';");
   await sleep(1500);
   check('migrations appliquées deux fois sans erreur (idempotence)', true);
@@ -275,6 +309,9 @@ async function main() {
   const big = await put('portfolio-public-documents', `cv/versions/${crypto.randomUUID()}.pdf`, Buffer.alloc(10 * 1024 * 1024 + 10), adminAal2);
   check('admin MFA : fichier > 10 Mo refusé par le bucket', !big.ok, `HTTP ${big.status}`);
   check('aucun objet créé par ces essais', docObjects() === 0, `${docObjects()} objet(s)`);
+
+  const { startFakeProvider } = await import(pathToFileURL(path.join(API_DIR, 'test/helpers/fakeProviders.mjs')).href);
+  for (const id of PROVIDER_IDS) aiFakes[id] = await startFakeProvider(id);
 
   console.log('▶ Compilation et démarrage de blog-api');
   apiBuild = fs.mkdtempSync(path.join(os.tmpdir(), 'p0cv-api-'));
@@ -376,6 +413,11 @@ async function main() {
   check('utilisateur ordinaire : auto-promotion administrateur refusée', promote.status >= 400, `HTTP ${promote.status}`);
   check('rpc is_portfolio_admin : admin vrai, utilisateur faux', (await rpc('is_portfolio_admin', {}, adminAal1)).body === true && (await rpc('is_portfolio_admin', {}, userAal1)).body === false);
 
+  await runAiScenarios({
+    API, check, psql, sqlValue, compose, stopApi, startApi, waitFor, sleep, rest, rpc,
+    fakes: aiFakes, apiLogs: () => apiLogs, tokens: { adminAal2, adminAal1, userAal2 },
+  });
+
   if (process.env.PLAYWRIGHT_CORE_DIR) {
     const { runBrowserScenarios } = await import('./browser.mjs');
     await runBrowserScenarios({
@@ -383,6 +425,13 @@ async function main() {
       active, psql, stopApi, startApi, publicUrl,
     });
   }
+
+  console.log('▶ Retour arrière du centre IA');
+  psql('postgres', `set client_min_messages = warning;\n${fs.readFileSync(path.join(ROOT, 'supabase/rollback/20261030170000_ai_control_center.down.sql'), 'utf8')}`, ['--single-transaction']);
+  check('après retour arrière IA : tables, clés Vault et rôle retirés',
+    sqlValue("select count(*) from information_schema.tables where table_name like 'ai\\_%';") === '0'
+    && sqlValue("select count(*) from vault.secrets where name like 'ai_provider_%';") === '0'
+    && sqlValue("select count(*) from pg_roles where rolname = 'ai_backend';") === '0');
 
   console.log('▶ Retour arrière des migrations du CV');
   for (const file of ['20261030150100_project_images_no_public_listing', '20261030150000_cv_public_document']) {
@@ -395,8 +444,15 @@ async function main() {
 }
 
 const keep = process.argv.includes('--keep');
-main().catch(err => { check(`ERREUR DU BANC : ${err.message}`, false); }).finally(async () => {
+main().catch(err => {
+  // Cause réseau et emplacement : un « fetch failed » seul ne dit pas quel appel a échoué
+  const cause = err.cause ? ` — ${err.cause.code ?? err.cause.message}` : '';
+  const where = (err.stack ?? '').split('\n').filter(l => /stack[\\/](run|ai|browser)\.mjs/.test(l))
+    .map(l => l.trim().replace(/^at /, '').replace(/file:\/\/\S*[\\/]/, '')).join(' ← ');
+  check(`ERREUR DU BANC : ${err.message}${cause} ${where}`, false);
+}).finally(async () => {
   await stopApi().catch(() => {});
+  await Promise.all(Object.values(aiFakes).map(fake => fake.close())).catch(() => {});
   gateway.close();
   gateway.closeAllConnections?.();
   if (apiBuild) fs.rmSync(apiBuild, { recursive: true, force: true });
