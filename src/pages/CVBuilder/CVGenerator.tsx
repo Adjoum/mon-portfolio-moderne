@@ -606,12 +606,23 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
   // ══════════════════════════════════════════════════════════════
   //  RENDER FORM
   // ══════════════════════════════════════════════════════════════
+  const aiUnavailableNotice = !aiAvailable('cv.generate') && (
+    <div className="gp-info-box" role="status" style={{ borderColor: 'rgba(245,158,11,.5)', color: '#fbbf24', marginBottom: 12 }}>
+      ⚠️ La génération de CV par l'IA est momentanément indisponible. Vos informations restent
+      enregistrées dans ce navigateur ; réessayez plus tard.
+      {!aiAvailable('cv.review') && ' La vérification IA avant export est également suspendue.'}
+    </div>
+  );
+
   const renderForm = () => (
     <div className="gp-form-wrap">
       <div className="gp-form-header">
         <h2>⚡ CV Generator Pro</h2>
         <p className="gp-form-subtitle">Remplissez les informations clés — l'IA rédige un CV complet et professionnel.</p>
       </div>
+
+      {/* Fonction IA indisponible : prévenir avant que l'utilisateur ne remplisse le formulaire */}
+      {aiUnavailableNotice}
 
       {/* Import ancien CV */}
       {!showImport ? (
@@ -802,14 +813,8 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
         )}
       </div>
 
-      {/* Fonction IA indisponible : prévenir avant l'action */}
-      {!aiAvailable('cv.generate') && (
-        <div className="gp-info-box" role="status" style={{ borderColor: 'rgba(245,158,11,.5)', color: '#fbbf24', marginBottom: 12 }}>
-          ⚠️ La génération de CV par l'IA est momentanément indisponible. Vos informations restent
-          enregistrées dans ce navigateur ; réessayez plus tard.
-          {!aiAvailable('cv.review') && ' La vérification IA avant export est également suspendue.'}
-        </div>
-      )}
+      {/* Rappel à côté du bouton désactivé */}
+      {aiUnavailableNotice}
 
       {/* Generate button */}
       <button className="gp-generate-btn" onClick={handleGenerate} disabled={!aiAvailable('cv.generate')}
