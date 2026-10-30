@@ -11,7 +11,7 @@ import { restoreSql, executeGrantees, parseInventory } from '../../supabase/chec
 // @ts-expect-error module JavaScript sans déclaration de types
 import { adaptSql } from '../../supabase/backup/restore-lib.mjs'
 // @ts-expect-error module JavaScript sans déclaration de types
-import { summarizeInventory } from '../../supabase/checks/phase0.mjs'
+import { summarizeInventory, comparisonStep } from '../../supabase/checks/phase0.mjs'
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
@@ -128,6 +128,19 @@ describe('rapport de phase 0 (synthèse de l’inventaire)', () => {
     expect(md).toMatch(/\| skills \| \*\*NON\*\* \| 4 \| 0 \|/)
     expect(md).toMatch(/### Politiques du stockage \(1\)[\s\S]*Public read project images/)
     expect(md).toMatch(/\| project-images \| oui \| 9 \| 2\.0 Mo \| aucune \| tous \|/)
+  })
+
+  it('administrateur sans TOTP : seul blocage toléré avant la phase 1, jamais combiné à un autre', () => {
+    const step = (patch: (inv: Inventory) => void) => {
+      const r = compare(inventory(patch))
+      return comparisonStep({ ok: r.status === 0, output: r.out })
+    }
+    const totpOnly = step(inv => { inv.auth.admins_with_verified_totp = 0 })
+    expect(totpOnly.result.ok).toBe(true)
+    expect(totpOnly.title).toMatch(/résolu par la phase 1/)
+    expect(step(inv => { inv.auth.admins_with_verified_totp = 0; inv.server.log_statement = 'all' }).result.ok).toBe(false)
+    expect(step(inv => { inv.auth.admins = 0; inv.auth.admins_with_verified_totp = 0 }).result.ok).toBe(false)
+    expect(step(() => {}).title).toBe('2. Comparaison avec les migrations')
   })
 
   it('table admin_users absente : signalée sans erreur', () => {

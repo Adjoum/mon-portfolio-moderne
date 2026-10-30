@@ -68,6 +68,21 @@ export function summarizeInventory(inv) {
   return out.join('\n');
 }
 
+/**
+ * Résultat de compare-inventory pour la phase 0. Administrateur sans TOTP : c'est la phase 1 qui
+ * l'enrôle, ce blocage n'empêche donc pas la phase 1 (il redevient bloquant avant la phase 3).
+ */
+export function comparisonStep(result) {
+  const blocking = result.output.split('POINTS')[0].match(/^\s+- .*$/gm) ?? [];
+  if (!result.ok && blocking.length && blocking.every(line => /sans TOTP vérifié/.test(line))) {
+    return {
+      title: '2. Comparaison avec les migrations (seul blocage : TOTP, résolu par la phase 1)',
+      result: { ok: true, output: `${result.output}\n\nSeul blocage : administrateur sans TOTP vérifié. La phase 1 l'enrôle ; ce contrôle redevient bloquant avant la phase 3.` },
+    };
+  }
+  return { title: '2. Comparaison avec les migrations', result };
+}
+
 function run(label, args, extraEnv = {}) {
   console.log(`▶ ${label}`);
   const r = spawnSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', env: { ...process.env, ...extraEnv }, maxBuffer: 64 * 1024 * 1024 });
@@ -98,7 +113,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     sections.push('', `## ${title} : ${result.ok ? 'RÉUSSI' : 'ÉCHEC'}`, '', '```text', result.output, '```');
   };
 
-  record('2. Comparaison avec les migrations', run('Comparaison avec les migrations', ['supabase/checks/compare-inventory.mjs', inventoryFile]));
+  const compared = comparisonStep(run('Comparaison avec les migrations', ['supabase/checks/compare-inventory.mjs', inventoryFile]));
+  record(compared.title, compared.result);
   if (!image) {
     record('3. Vérification de la sauvegarde', { ok: false, output: `PostgreSQL ${major} : aucune image de banc connue. Relancez avec SUPABASE_PG_IMAGE=public.ecr.aws/supabase/postgres:<version>.` });
   } else {

@@ -12,8 +12,12 @@ POOLER="${POOLER_HOST:-}"
 
 section() { printf '\n=== %s ===\n' "$1"; }
 has() { command -v "$1" >/dev/null 2>&1; }
-# NOM=valeur → NOM ; toute autre ligne est ignorée
-names() { sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=.*/\2/p' | sort -u | tr '\n' ' '; echo; }
+# NOM=valeur → NOM ; toute autre ligne est ignorée. Une variable définie plusieurs fois est
+# signalée (NOM(×2)) : selon l'outil, c'est la première ou la dernière valeur qui s'applique.
+names() {
+  sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=.*/\2/p' | sort | uniq -c |
+    awk '{ printf "%s%s ", $2, ($1 > 1 ? "(×" $1 ")" : "") } END { print "" }'
+}
 # Masque toute affectation NOM=valeur dans une ligne de commande
 mask() { sed -E 's/([A-Za-z_][A-Za-z0-9_]*)=[^[:space:]]+/\1=<masqué>/g'; }
 # Structure d'un fichier compose : clés, images, construction, ports ; aucune valeur d'environnement
@@ -29,7 +33,8 @@ gitinfo() {
   git -c safe.directory='*' -C "$1" log -1 --format='    commit %h (%cd) %s' --date=short
   echo "    branche : $(git -c safe.directory='*' -C "$1" rev-parse --abbrev-ref HEAD)"
   git -c safe.directory='*' -C "$1" remote -v 2>/dev/null | awk '$3 == "(fetch)" {print "    distant : " $1 " " $2}' | sed -E 's#://[^@/]*@#://<masqué>@#'
-  git -c safe.directory='*' -C "$1" status --short | head -10 | sed 's/^/    /'
+  # --no-optional-locks : git status ne réécrit pas l'index
+  git --no-optional-locks -c safe.directory='*' -C "$1" status --short | head -10 | sed 's/^/    /'
 }
 
 section "Système"

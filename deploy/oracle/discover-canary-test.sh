@@ -12,7 +12,7 @@ for d in /etc/blog-api /srv/app; do [ ! -e "$d" ] || { echo "Refus : $d existe d
 apt-get update -qq >/dev/null && apt-get install -y -qq git procps >/dev/null 2>&1
 mkdir -p /etc/blog-api /srv/app /usr/local/bin
 printf 'OPENAI_API_KEY=sk-CANARY01aaaaaaaaaaaaaaaaaaaaa\nexport AI_DATABASE_URL="postgres://u:CANARY02@h/db"\n' > /etc/blog-api/api.env
-printf 'JWT_SECRET=CANARY03\nMONGODB_URI=mongodb://a:CANARY04@m/db\n' > /srv/app/.env
+printf 'JWT_SECRET=CANARY03\nMONGODB_URI=mongodb://a:CANARY04@m/db\nJWT_SECRET=CANARY18\n' > /srv/app/.env
 cat > /srv/app/docker-compose.yml <<'Y'
 services:
   api:
@@ -46,5 +46,6 @@ sleep 1
 out=$(SUPABASE_REF=exemple sh /scripts/discover.sh 2>&1)
 leaks=$(printf '%s\n' "$out" | grep -c CANARY || true)
 printf '%s\n' "$out" | grep -q 'pid .* dossier /srv/app' || { echo "ÉCHEC : processus Node non détecté"; exit 1; }
+printf '%s\n' "$out" | grep -q 'JWT_SECRET(×2)' || { echo "ÉCHEC : variable en double non signalée"; exit 1; }
 [ "$leaks" -eq 0 ] || { printf '%s\n' "$out" | grep CANARY; echo "ÉCHEC : $leaks fuite(s)"; exit 1; }
-echo "OK : aucune fuite, processus Node détecté"
+echo "OK : aucune fuite (18 faux secrets), processus Node détecté, variable en double signalée"
