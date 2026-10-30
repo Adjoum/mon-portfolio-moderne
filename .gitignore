@@ -68,3 +68,9 @@ ehthumbs.db
 *.7z
 secrets/
 docker-compose.override.yml
+
+# Inventaires et sauvegardes de la base de production : jamais dans Git
+# (la sauvegarde contient les comptes, empreintes de mots de passe et secrets TOTP)
+supabase/checks/results/
+supabase/backup/out/
+*.dump

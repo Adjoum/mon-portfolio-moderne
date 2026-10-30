@@ -1,0 +1,184 @@
+// Outils de mise en production Supabase et Oracle : inventaire, comparaison, restauration,
+// sauvegarde. Contrôles sans base ni réseau ; la répétition complète est
+// supabase/tests/rehearsal/run.mjs (Docker).
+import { describe, it, expect } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { spawnSync } from 'node:child_process'
+// @ts-expect-error module JavaScript sans déclaration de types
+import { restoreSql, executeGrantees, parseInventory } from '../../supabase/checks/restore-from-inventory.mjs'
+// @ts-expect-error module JavaScript sans déclaration de types
+import { adaptSql } from '../../supabase/backup/restore-lib.mjs'
+
+const ROOT = path.resolve(__dirname, '..', '..')
+const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
+
+/** Inventaire minimal d'un projet prêt pour les migrations */
+const inventory = (patch: (inv: any) => void = () => {}) => {
+  const inv: any = {
+    inventory_version: 'p1ai.1',
+    generated_at: '2026-10-30T12:00:00Z',
+    server: {
+      version: '17.6', version_num: 170006, current_user: 'postgres', can_create_roles: true, database_size_mb: 12,
+      log_parameter_max_length_on_error: '0', log_min_error_statement: 'error', log_statement: 'ddl',
+      log_min_duration_statement: '-1', log_parameter_max_length: '-1', pgaudit_log: 'none',
+      pgaudit_log_parameter: 'off', role_settings: [],
+    },
+    extensions: [{ name: 'supabase_vault', version: '0.3.1', schema: 'vault' }],
+    vault: { schema_present: true, secrets: 0, create_secret_executable: true },
+    schemas: ['auth', 'public', 'storage', 'vault'],
+    roles: [{ name: 'postgres', login: true, createrole: true }],
+    tables: [{ schema: 'public', name: 'visits', rls: true, force_rls: false, rows: 2908 }],
+    columns: [], constraints: [], functions: [], triggers: [], grants: [], buckets: [],
+    policies: [{ schema: 'public', table: 'visits', name: 'Public read visits', permissive: 'PERMISSIVE',
+                 roles: ['anon'], cmd: 'SELECT', using: 'true', with_check: null }],
+    auth: { tables: { users: 1 }, verified_totp_factors: 1, admins: 1, admins_with_verified_totp: 1 },
+    migration_history: null,
+  }
+  patch(inv)
+  return inv
+}
+
+const compare = (inv: unknown) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inventaire-'))
+  const file = path.join(dir, 'inventaire.json')
+  // Le SQL Editor exporte parfois la cellule dans un tableau : format accepté
+  fs.writeFileSync(file, JSON.stringify([{ inventory: JSON.stringify(inv) }]))
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'supabase/checks/compare-inventory.mjs'), file], { encoding: 'utf8' })
+  fs.rmSync(dir, { recursive: true, force: true })
+  const blocking = r.stdout.split('\nPOINTS')[0]
+  return { status: r.status, out: r.stdout, blocking }
+}
+
+describe('comparaison de l’inventaire avec les migrations', () => {
+  it('projet prêt : aucun blocage, lecture publique de visits signalée', () => {
+    const r = compare(inventory())
+    expect(r.status).toBe(0)
+    expect(r.out).toMatch(/BLOCAGES \(0\)/)
+    expect(r.out).toMatch(/public\.visits : lecture ouverte à anon/)
+  })
+
+  it('administrateur sans TOTP vérifié : blocage', () => {
+    const r = compare(inventory(inv => { inv.auth.admins_with_verified_totp = 0 }))
+    expect(r.status).toBe(1)
+    expect(r.blocking).toMatch(/sans TOTP vérifié/)
+  })
+
+  it('admin_users vide : blocage', () => {
+    const r = compare(inventory(inv => { inv.auth.admins = 0; inv.auth.admins_with_verified_totp = 0 }))
+    expect(r.status).toBe(1)
+    expect(r.blocking).toMatch(/admin_users est vide/)
+  })
+
+  it('table existante sans les colonnes attendues : blocage', () => {
+    const r = compare(inventory(inv => { inv.tables.push({ schema: 'public', name: 'admin_users', rls: true, force_rls: false, rows: 1 }) }))
+    expect(r.status).toBe(1)
+    expect(r.blocking).toMatch(/public\.admin_users existe déjà SANS les colonnes/)
+  })
+
+  it('collision avec une table du centre IA : blocage', () => {
+    const r = compare(inventory(inv => { inv.tables.push({ schema: 'public', name: 'ai_providers', rls: false, force_rls: false, rows: 0 }) }))
+    expect(r.status).toBe(1)
+    expect(r.blocking).toMatch(/ai_providers existe déjà/)
+  })
+
+  it('journalisation des paramètres de requête : blocage (les clés API seraient écrites dans les journaux)', () => {
+    expect(compare(inventory(inv => { inv.server.log_statement = 'all' })).blocking).toMatch(/log_statement = all/)
+    expect(compare(inventory(inv => { inv.server.pgaudit_log = 'write, function'; inv.server.pgaudit_log_parameter = 'on' })).blocking).toMatch(/pgaudit/)
+    // Paramètres tronqués à 0 : rien n'est journalisé
+    expect(compare(inventory(inv => { inv.server.log_statement = 'all'; inv.server.log_parameter_max_length = '0' })).status).toBe(0)
+  })
+
+  it('PostgreSQL 15 : accepté, restauration annoncée par le client 17', () => {
+    const r = compare(inventory(inv => { inv.server.version = '15.14'; inv.server.version_num = 150014 }))
+    expect(r.status).toBe(0)
+    expect(r.out).toMatch(/pg_restore 17/)
+    expect(compare(inventory(inv => { inv.server.version_num = 140010 })).status).toBe(1)
+  })
+
+  it('rôle sans droit de création de rôle : blocage', () => {
+    expect(compare(inventory(inv => { inv.server.can_create_roles = false })).status).toBe(1)
+  })
+})
+
+describe('restauration générée depuis l’inventaire', () => {
+  it('lit l’inventaire sous ses différentes formes d’export', () => {
+    const inv = inventory()
+    for (const raw of [JSON.stringify(inv), JSON.stringify(JSON.stringify(inv)), JSON.stringify([{ inventory: inv }])]) {
+      expect(parseInventory(raw).inventory_version).toBe('p1ai.1')
+    }
+    expect(() => parseInventory('{"a":1}')).toThrow()
+  })
+
+  it('droits EXECUTE lus dans les ACL', () => {
+    expect(executeGrantees(null)).toEqual(['public'])
+    expect(executeGrantees('{postgres=X/postgres,authenticated=X/postgres,anon=r/postgres}')).toEqual(['postgres', 'authenticated'])
+    expect(executeGrantees('{=X/postgres}')).toEqual(['public'])
+  })
+
+  it('une transaction qui recrée les politiques exactes et ne touche à aucune donnée', () => {
+    const sql: string = restoreSql(inventory(), [])
+    expect(sql).toMatch(/^begin;$/m)
+    expect(sql).toMatch(/^commit;$/m)
+    expect(sql).toMatch(/create policy "Public read visits" on "public"\."visits"/)
+    expect(sql).not.toMatch(/\b(delete from|truncate|drop table|update public)\b/i)
+  })
+
+  it('limites des buckets rétablies (P0.A1 restreint project-images), sans bloquer la transaction', () => {
+    const sql: string = restoreSql(inventory(inv => {
+      inv.buckets = [
+        { id: 'project-images', public: true, file_size_limit: null, allowed_mime_types: null, objects: 2, bytes: 1 },
+        { id: 'avatars', public: false, file_size_limit: 1048576, allowed_mime_types: ['image/png', "x'y"], objects: 0, bytes: 0 },
+      ]
+    }), [])
+    expect(sql).toMatch(/set file_size_limit = null, allowed_mime_types = null where id = 'project-images'/)
+    expect(sql).toMatch(/set file_size_limit = 1048576, allowed_mime_types = array\['image\/png', 'x''y'\]::text\[\] where id = 'avatars'/)
+    expect(sql).toMatch(/exception when insufficient_privilege/)
+    expect(restoreSql(inventory(inv => { inv.buckets = [{ id: 'b', file_size_limit: '1; drop table x', allowed_mime_types: null }] }), []))
+      .toMatch(/set file_size_limit = null,/)
+  })
+
+  it('les noms sont protégés (guillemets doublés)', () => {
+    const sql: string = restoreSql(inventory(inv => { inv.policies[0].name = 'x"; drop table visits; --' }), [])
+    expect(sql).toContain('"x""; drop table visits; --"')
+  })
+})
+
+describe('sauvegarde et restauration', () => {
+  it('paramètre propre à pg_dump 17 retiré pour un serveur plus ancien', () => {
+    const sql = 'SET statement_timeout = 0;\nSET transaction_timeout = 0;\nSELECT 1;\n'
+    expect(adaptSql(sql, 15)).not.toMatch(/transaction_timeout/)
+    expect(adaptSql(sql, 17)).toBe(sql)
+  })
+
+  it('backup.sh : lecture seule, mot de passe jamais en argument ni écrit', () => {
+    const sh = read('supabase/backup/backup.sh')
+    const commands = sh.split('\n').filter(l => !l.trim().startsWith('#'))
+    expect(sh).toMatch(/stty -echo/)
+    expect(commands.join('\n')).not.toMatch(/\b(pg_restore|dropdb|createdb)\b|psql\b(?!\s+-XAtc 'select version\(\)')/)
+    expect(commands.join('\n')).not.toMatch(/PGPASSWORD=\S|password=/i)
+    expect(sh).toMatch(/sha256sum/)
+  })
+
+  it('les résultats de production ne peuvent pas entrer dans Git', () => {
+    const ignore = read('.gitignore')
+    for (const rule of ['supabase/checks/results/', 'supabase/backup/out/', '*.dump', 'secrets/']) expect(ignore).toContain(rule)
+  })
+})
+
+describe('inventaire de la VM Oracle (deploy/oracle/discover.sh)', () => {
+  const sh = read('deploy/oracle/discover.sh')
+  const code = sh.split('\n').filter(l => !l.trim().startsWith('#')).join('\n')
+
+  it('n’affiche jamais de valeur : ni env, ni contenu de fichier, ni configuration pm2 complète', () => {
+    expect(code).not.toMatch(/\b(printenv|pm2 (jlist|env|show|prettylist)|docker (exec|compose (up|down|restart)))\b/)
+    expect(code).not.toMatch(/^\s*env\b|\bcat\s+[^|]*\.env/m)
+    expect(code).toMatch(/\.Config\.Env[^\n]*\|\s*names/)
+    expect(code).toMatch(/names < "\$f"/)
+  })
+
+  it('aucune commande qui modifie la VM', () => {
+    expect(code).not.toMatch(/\b(systemctl (start|stop|restart|reload|enable|disable)|nginx -s|apt(-get)? |rm -|mv |chmod |chown |tee |kill )/)
+  })
+})
