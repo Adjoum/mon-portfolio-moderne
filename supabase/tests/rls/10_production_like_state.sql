@@ -63,14 +63,22 @@ alter table public.contacts enable row level security;
 create policy "Anyone can send a message" on public.contacts for insert with check (true);
 create policy "Authenticated read messages" on public.contacts for select to authenticated using (true);
 
--- ── AI Lab (SQL commenté de src/lib/supabase.ts, simplifié) ─
+-- ── AI Lab (SQL commenté de src/lib/supabase.ts) ───────────
+-- Toutes les colonnes du schéma réel : le dashboard trie par createdat (tests/infra/recette-schema.test.ts).
+-- Seules différences : valeurs par défaut de icon et description, pour des jeux d'essai concis.
+-- Les déclencheurs set_updatedat de la production sont ajoutés par 18_production_traits.sql.
 create table public.ailab_capabilities (
   id uuid primary key default gen_random_uuid(), slug text unique not null, icon text not null default 'Brain',
-  title text not null, description text not null default '', sortorder int not null default 0, active boolean not null default true
+  title text not null, description text not null default '', sortorder int not null default 0, active boolean not null default true,
+  createdat timestamptz not null default now(), updatedat timestamptz not null default now()
 );
 create table public.ailab_projects (
   id uuid primary key default gen_random_uuid(), slug text unique not null, icon text not null default 'Brain',
-  title text not null, description text not null default '', active boolean not null default true, sortorder int not null default 0
+  title text not null, description text not null default '', technologies text[] not null default '{}',
+  color text not null default 'from-blue-500 to-cyan-500', imageurl text, githuburl text, liveurl text, demourl text,
+  demoavailable boolean not null default false, featured boolean not null default false,
+  active boolean not null default true, sortorder int not null default 0,
+  createdat timestamptz not null default now(), updatedat timestamptz not null default now()
 );
 create table public.ailab_project_capabilities (
   project_id uuid references public.ailab_projects(id) on delete cascade,
