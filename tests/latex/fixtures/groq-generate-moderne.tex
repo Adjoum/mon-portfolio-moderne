@@ -1,0 +1,67 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage[a4paper,margin=1.4cm]{geometry}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{graphicx}
+\usepackage{parskip}
+\usepackage{array}
+
+\definecolor{primaire}{HTML}{1E3A8A}
+\definecolor{secondaire}{HTML}{64748B}
+\hypersetup{colorlinks=true,urlcolor=primaire}
+\pagestyle{empty}
+\titleformat{\section}{\large\bfseries\color{primaire}}{}{0em}{}[{\color{primaire}\titlerule}]
+\titlespacing*{\section}{0pt}{8pt}{4pt}
+\setlist[itemize]{leftmargin=1.2em,itemsep=1pt,topsep=2pt}
+\newcommand{\poste}[3]{\textbf{#1} \hfill \textit{#2}\\{\color{secondaire}#3}}
+
+\begin{document}
+
+\begin{minipage}[t]{0.74\textwidth}
+  {\LARGE\bfseries Awa Konan}\\[3pt]
+  {\large\color{primaire} Data Analyst -- Santé publique}\\[6pt]
+  Abidjan, Côte d'Ivoire \textbullet{} +225 00 00 00 00 00\\
+  \href{mailto:awa.konan@exemple.ci}{awa.konan@exemple.ci} \textbullet{} \href{https://exemple.ci}{exemple.ci}
+\end{minipage}
+\hfill
+\begin{minipage}[t]{0.22\textwidth}
+\raggedleft
+%%PHOTO%%
+\end{minipage}
+
+\section{Profil}
+Analyste de données spécialisée en santé publique : collecte, nettoyage et visualisation d'indicateurs
+épidémiologiques, avec une attention particulière à la qualité des données et à leur restitution.
+
+\section{Expérience professionnelle}
+\poste{Data Analyst}{2023 -- aujourd'hui}{Institut fictif de santé, Abidjan}
+\begin{itemize}
+  \item Conception de tableaux de bord Power BI pour 12 districts sanitaires.
+  \item Automatisation des rapports hebdomadaires (Python, SQL) : 6 heures gagnées par semaine.
+\end{itemize}
+\poste{Assistante statisticienne}{2021 -- 2023}{Projet de recherche fictif, Bouaké}
+\begin{itemize}
+  \item Analyse d'enquêtes ménages (n = 4 800), pondération et intervalles de confiance.
+\end{itemize}
+
+\section{Compétences}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{3.6cm} X}
+Données & Python (pandas), SQL, R, Excel avancé \\
+Visualisation & Power BI, Tableau, matplotlib \\
+Méthodes & Statistiques descriptives, régression, séries temporelles \\
+\end{tabularx}
+
+\section{Formation}
+\poste{Master Big Data}{2022}{Université fictive}
+
+\section{Langues}
+Français : langue maternelle \textbullet{} Anglais : courant (C1)
+
+\end{document}

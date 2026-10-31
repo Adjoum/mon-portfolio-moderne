@@ -1,0 +1,18 @@
+[
+  {
+    "name": "classe moderncv (souvent proposée par un modèle malgré le prompt)",
+    "code": "\\documentclass[11pt,a4paper]{moderncv}\n\\moderncvstyle{classic}\n\\name{Awa}{Konan}\n\\begin{document}\n\\makecvtitle\n\\end{document}\n",
+    "expected": "LATEX_CLASS_NOT_ALLOWED"
+  },
+  {
+    "name": "paquet fontawesome5 (icônes, non installé)",
+    "code": "\\documentclass{article}\n\\usepackage{fontawesome5}\n\\begin{document}\n\\faEnvelope{} awa@exemple.ci\n\\end{document}\n",
+    "expected": "LATEX_PACKAGE_NOT_ALLOWED"
+  },
+  {
+    "name": "commande inconnue (erreur LaTeX ordinaire, ligne indiquée)",
+    "code": "\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\begin{document}\nProfil\n\\textbfz{Awa Konan}\n\\end{document}\n",
+    "expected": "LATEX_COMPILE_ERROR",
+    "line": 5
+  }
+]
