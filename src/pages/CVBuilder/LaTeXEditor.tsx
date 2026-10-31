@@ -1,319 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { runAiFeature } from "../../lib/aiClient";
 import { useAiAvailability } from "../../hooks/useAiAvailability";
-
-
-
-
-
-const TEMPLATES: Record<string, { name: string; emoji: string; code: string }> = {
-  overleafClassic: {
-    name: "Premium Hero",
-    emoji: "✨",
-    code: `\\documentclass[11pt,a4paper]{article}
-
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage[french]{babel}
-\\usepackage[a4paper,top=1.25cm,bottom=1.35cm,left=1.35cm,right=1.35cm]{geometry}
-\\usepackage{parskip}
-\\usepackage{enumitem}
-\\usepackage{xcolor}
-\\usepackage{hyperref}
-\\usepackage{array}
-\\usepackage{titlesec}
-\\usepackage{lmodern}
-\\usepackage{tabularx}
-\\usepackage{graphicx}
-\\usepackage{multicol}
-
-\\definecolor{mainblue}{HTML}{0F4C81}
-\\definecolor{softblue}{HTML}{EDF4FB}
-\\definecolor{accent}{HTML}{1D9BF0}
-\\definecolor{textdark}{HTML}{1F2937}
-\\definecolor{textmuted}{HTML}{6B7280}
-
-\\hypersetup{
-  colorlinks=true,
-  urlcolor=mainblue,
-  linkcolor=mainblue
-}
-
-\\pagestyle{empty}
-\\setlength{\\parindent}{0pt}
-\\setlength{\\columnsep}{0.6cm}
-\\setlist[itemize]{leftmargin=1.1em,itemsep=2pt,topsep=2pt}
-\\titleformat{\\section}{\\large\\bfseries\\color{mainblue}}{}{0em}{}[\\titlerule]
-\\titlespacing{\\section}{0pt}{10pt}{6pt}
-
-\\newcommand{\\cvtag}[1]{%
-  \\fcolorbox{mainblue!20}{softblue}{\\footnotesize\\textcolor{mainblue}{\\strut #1}}\\hspace{4pt}
-}
-
-\\begin{document}
-
-\\begin{minipage}[t]{0.72\\textwidth}
-    {\\Huge\\bfseries\\textcolor{textdark}{KOFFI WILFRIED ADJOUMANI}}\\\\[4pt]
-    {\\large\\textcolor{mainblue}{Technicien Supérieur de Santé \\;|\\; Data Analyst \\;|\\; Développeur IA}}\\\\[10pt]
-    \\small
-    San-Pedro, Côte d'Ivoire \\quad\\textbullet\\quad +225 XX XX XX XX XX \\\\
-    \\href{mailto:votreemail@email.com}{votreemail@email.com} \\quad\\textbullet\\quad
-    \\href{https://www.linkedin.com/in/koffi-wilfried-adjoumani/}{LinkedIn} \\quad\\textbullet\\quad
-    \\href{https://github.com/Adjoum}{GitHub} \\quad\\textbullet\\quad
-    \\href{https://agjoumani-koffi.com}{Portfolio}
-\\end{minipage}
-\\hfill
-\\begin{minipage}[t]{0.23\\textwidth}
-   \\raggedleft
-    %%PHOTO%%
-\\end{minipage}
-
-\\vspace{0.35cm}
-
-\\colorbox{softblue}{%
-\\parbox{\\dimexpr\\textwidth-2\\fboxsep\\relax}{%
-\\textbf{Profil}\\\\[3pt]
-Technicien supérieur de santé spécialisé en imagerie médicale, en parallèle d'une formation en \\textbf{Data Analytics Industriel} et en \\textbf{Big Data Analytics}. Je conçois des solutions mêlant santé, data, intelligence artificielle et développement web, avec une forte orientation impact, modernité et performance.
-}}
-\\vspace{0.35cm}
-
-\\section{Compétences clés}
-\\cvtag{Python}
-\\cvtag{SQL}
-\\cvtag{Power BI}
-\\cvtag{Excel}
-\\cvtag{JavaScript}
-\\cvtag{TypeScript}
-\\cvtag{React}
-\\cvtag{Next.js}
-\\cvtag{Tailwind CSS}
-\\cvtag{MongoDB}
-\\cvtag{Supabase}
-\\cvtag{IA \\/ Automatisation}
-
-\\section{Expérience professionnelle}
-\\textbf{Technicien Supérieur de Santé -- Imagerie Médicale} \\hfill \\textit{Depuis 2024}\\\\
-\\textcolor{textmuted}{EPHR / CHR San-Pedro, Côte d'Ivoire}
-\\begin{itemize}
-  \\item Réalisation et suivi des examens d'imagerie médicale, notamment en tomodensitométrie.
-  \\item Préparation, accompagnement et prise en charge des patients dans le respect des protocoles.
-  \\item Contribution à l'amélioration de l'organisation du service et de la fluidité opérationnelle.
-\\end{itemize}
-
-\\section{Formation}
-\\begin{tabularx}{\\textwidth}{>{\\bfseries}p{0.67\\textwidth} >{\\raggedleft\\arraybackslash}X}
-Master 1 Big Data Analytics -- Université Virtuelle de Côte d'Ivoire (UVCI) & En cours \\\\
-Licence 3 Data Analytics Industriel -- INPHB & En cours \\\\
-Diplôme d'État en Imagerie Médicale -- INFAS & Obtenu \\\\
-Licence en Physique -- Université & Obtenue \\\\
-\\end{tabularx}
-
-\\section{Projets phares}
-\\textbf{Portfolio professionnel personnel}\\\\
-Conception d'un portfolio moderne pour présenter mes compétences, mes projets et mon positionnement professionnel.
-
-\\vspace{0.15cm}
-\\textbf{Applications web et SaaS}\\\\
-Développement de solutions intégrant IA, automatisation, gestion de données et interfaces modernes.
-
-\\vspace{0.15cm}
-\\textbf{Projets Data / IA}\\\\
-Création d'outils d'analyse, de tableaux de bord et de solutions intelligentes orientées santé et performance.
-
-\\section{Langues et centres d'intérêt}
-\\begin{multicols}{2}
-\\textbf{Langues}
-\\begin{itemize}
-  \\item Français : courant
-  \\item Anglais : intermédiaire
-\\end{itemize}
-
-\\columnbreak
-
-\\textbf{Centres d'intérêt}
-\\begin{itemize}
-  \\item Intelligence artificielle
-  \\item Data science
-  \\item Santé numérique
-  \\item Innovation technologique
-\\end{itemize}
-\\end{multicols}
-
-\\end{document}`,
-  },
-
-  executiveClean: {
-    name: "Executive Clean",
-    emoji: "💼",
-    code: `\\documentclass[11pt,a4paper]{article}
-
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage[french]{babel}
-\\usepackage[a4paper,top=1.4cm,bottom=1.4cm,left=1.5cm,right=1.5cm]{geometry}
-\\usepackage{parskip}
-\\usepackage{enumitem}
-\\usepackage{xcolor}
-\\usepackage{hyperref}
-\\usepackage{array}
-\\usepackage{titlesec}
-\\usepackage{lmodern}
-\\usepackage{tabularx}
-\\usepackage{graphicx}
-
-\\definecolor{mainblue}{HTML}{123B66}
-\\definecolor{softgray}{HTML}{F6F8FA}
-\\definecolor{textmuted}{HTML}{6B7280}
-
-\\hypersetup{
-  colorlinks=true,
-  urlcolor=mainblue,
-  linkcolor=mainblue
-}
-
-\\pagestyle{empty}
-\\setlist[itemize]{leftmargin=1.2em,itemsep=2pt,topsep=2pt}
-\\titleformat{\\section}{\\large\\bfseries\\color{mainblue}}{}{0em}{}
-\\titlespacing{\\section}{0pt}{10pt}{4pt}
-
-\\begin{document}
-
-\\begin{center}
-  {\\Huge \\textbf{KOFFI WILFRIED ADJOUMANI}}\\\\[4pt]
-  {\\large \\textcolor{mainblue}{Technicien Supérieur de Santé -- Imagerie Médicale \\;|\\; Data Analyst}}\\\\[8pt]
-  San-Pedro, Côte d'Ivoire \\quad\\textbullet\\quad +225 XX XX XX XX XX \\quad\\textbullet\\quad
-  \\href{mailto:votreemail@email.com}{votreemail@email.com}\\\\[4pt]
-  \\href{https://www.linkedin.com/in/koffi-wilfried-adjoumani/}{LinkedIn}
-  \\quad\\textbullet\\quad
-  \\href{https://github.com/Adjoum}{GitHub}
-  \\quad\\textbullet\\quad
-  \\href{https://agjoumani-koffi.com}{Portfolio}
-\\end{center}
-
-\\vspace{0.2cm}
-\\hrule
-\\vspace{0.35cm}
-
-\\section{Profil}
-Professionnel de santé spécialisé en imagerie médicale, avec un parcours complémentaire en data analytics, big data et développement de solutions numériques. Profil hybride alliant expertise terrain, culture data et vision technologique.
-
-\\section{Compétences}
-\\begin{tabularx}{\\textwidth}{>{\\bfseries}p{4.2cm} X}
-Analyse de données & Excel, Power BI, SQL, Python, visualisation, tableaux de bord \\\\
-Développement web & HTML, CSS, JavaScript, TypeScript, React, Next.js, Tailwind CSS \\\\
-IA / Automatisation & Prompt engineering, assistants IA, automatisation, outils métier intelligents \\\\
-Base de données & MongoDB, MySQL, Prisma, Supabase \\\\
-\\end{tabularx}
-
-\\section{Expérience professionnelle}
-\\textbf{Technicien Supérieur de Santé -- Imagerie Médicale} \\hfill \\textit{Depuis 2024}\\\\
-\\textcolor{textmuted}{EPHR / CHR San-Pedro, Côte d'Ivoire}
-\\begin{itemize}
-  \\item Réalisation des examens et suivi des activités en imagerie médicale.
-  \\item Participation à l'amélioration de l'efficacité opérationnelle du service.
-  \\item Prise en charge des patients en scanner dans le respect des standards de qualité.
-\\end{itemize}
-
-\\section{Formation}
-\\textbf{Master 1 Big Data Analytics} \\hfill \\textit{En cours}\\\\
-Université Virtuelle de Côte d'Ivoire (UVCI)
-
-\\textbf{Licence 3 Data Analytics Industriel} \\hfill \\textit{En cours}\\\\
-Institut National Polytechnique Félix Houphouët-Boigny (INPHB)
-
-\\textbf{Diplôme d'État en Imagerie Médicale} \\hfill \\textit{Obtenu}\\\\
-INFAS
-
-\\section{Projets}
-\\textbf{Portfolio professionnel personnel}\\\\
-Site de présentation de mon parcours, de mes réalisations et de mes projets tech.
-
-\\vspace{0.15cm}
-\\textbf{Applications web et SaaS}\\\\
-Conception de solutions numériques modernes intégrant data, IA et automatisation.
-
-\\section{Langues}
-Français : courant \\quad\\textbullet\\quad Anglais : intermédiaire
-
-\\section{Centres d'intérêt}
-Intelligence artificielle, santé numérique, data science, innovation, développement web.
-
-\\end{document}`,
-  },
-
-  minimal: {
-    name: "Minimal",
-    emoji: "✏️",
-    code: `\\documentclass[11pt,a4paper]{article}
-
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage[french]{babel}
-\\usepackage[a4paper,margin=2cm]{geometry}
-\\usepackage{hyperref}
-\\usepackage{xcolor}
-\\usepackage{lmodern}
-
-\\definecolor{mainblue}{HTML}{0F4C81}
-
-\\hypersetup{
-  colorlinks=true,
-  urlcolor=mainblue,
-  linkcolor=mainblue
-}
-
-\\pagestyle{empty}
-
-\\begin{document}
-
-{\\LARGE\\textbf{Votre Nom}} \\hfill \\href{mailto:email@example.com}{email@example.com}\\\\
-\\textcolor{mainblue}{Votre poste} \\hfill +225 XX XX XX XX XX\\\\
-Ville, Pays \\hfill \\href{https://linkedin.com/in/votreprofil}{LinkedIn}
-
-\\bigskip
-\\hrule
-\\bigskip
-
-\\section*{Profil}
-Présentez ici votre profil en 3 à 4 lignes avec une proposition de valeur claire.
-
-\\section*{Expérience}
-\\textbf{Poste} \\hfill 2022--présent\\\\
-Entreprise, Ville\\\\
-Description du rôle, des missions et de l'impact.
-
-\\bigskip
-\\textbf{Poste précédent} \\hfill 2020--2022\\\\
-Entreprise, Ville\\\\
-Description synthétique.
-
-\\section*{Formation}
-\\textbf{Diplôme} \\hfill 2022\\\\
-Institution
-
-\\bigskip
-\\textbf{Diplôme} \\hfill 2020\\\\
-Institution
-
-\\section*{Compétences}
-Compétence 1, Compétence 2, Compétence 3, Compétence 4
-
-\\section*{Liens}
-\\href{https://github.com/votreprofil}{GitHub} \\quad\\textbullet\\quad
-\\href{https://votresite.com}{Portfolio}
-
-\\end{document}`,
-  },
-};
-
-
-const PHOTO_PLACEHOLDER =
-  "\\colorbox{softblue}{\\parbox[c][3.8cm][c]{3.2cm}{\\centering\\textcolor{textmuted}{\\small Photo\\\\optionnelle}}}";
+import { compileLatexPdf, LatexCompileError, stripCodeFences } from "../../lib/latexCompile";
+import { TEMPLATES, buildFinalLatex } from "./latexTemplates";
 
 // Fonctions IA de l'éditeur : exécutées par blog-api (latex.generate / latex.improve).
 // Prompts et modèle sont définis côté serveur ; aucune clé dans le navigateur.
 async function aiGenerateLatex(info: string, template: string, existing: string): Promise<string> {
-  return runAiFeature("latex.generate", { info, template, existing });
+  return stripCodeFences(await runAiFeature("latex.generate", { info, template, existing }));
 }
 
 
@@ -324,62 +18,10 @@ async function aiImproveSelection(selection: string, instruction: string, fullCo
   return content.replace(/```latex\n?/g, "").replace(/```\n?/g, "").trim();
 }
 
-/*async function compileLatex(code: string): Promise<string> {
-  const API_BASE =
-    import.meta.env.VITE_API_URL || "http://localhost:5000";
-
-  const res = await fetch(`${API_BASE}/cv/compile`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ code }),
-    credentials: "include",
-  });
-
-  if (!res.ok) {
-    let msg = "Échec de compilation";
-    try {
-      const data = await res.json();
-      msg = data?.error || msg;
-    } catch {
-      // rien
-    }
-    throw new Error(msg);
-  }
-
-  const pdfBlob = await res.blob();
-  return URL.createObjectURL(pdfBlob);
-}  */
-
-// Compilation PDF côté serveur désactivée (audit sécurité P0, faille S2) :
-// elle reviendra via un conteneur isolé (latex-runner). L'export .tex reste disponible.
-const LATEX_PREVIEW_AVAILABLE = false;
-
-async function compileLatex(code: string, photo: string | null): Promise<string> {
-  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
-
-  const res = await fetch(`${API_BASE}/cv/compile`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, photo: photo || undefined }),
-    credentials: "include",
-  });
-
-  if (!res.ok) {
-    let msg = "Échec de compilation";
-    try {
-      const data = await res.json();
-      msg = data?.error || msg;
-    } catch {
-      // rien
-    }
-    throw new Error(msg);
-  }
-
-  const pdfBlob = await res.blob();
-  return URL.createObjectURL(pdfBlob);
-}
+// Aperçu PDF : compilé par le service isolé latex-runner, via blog-api (src/lib/latexCompile.ts).
+// Compilation à la demande (bouton, Ctrl+S) ou automatique 3 s après la dernière frappe ;
+// immédiate après un changement de template, une génération IA ou une modification de la photo.
+const AUTO_COMPILE_DELAY_MS = 3000;
 
 
 function CropModal({
@@ -471,7 +113,10 @@ function CropModal({
 export default function LaTeXCVEditor() {
   const [code, setCode] = useState(TEMPLATES.overleafClassic.code);
   const [pdfUrl, setPdfUrl] = useState("");
-  const [renderError, setRenderError] = useState<string | null>(null);
+  const [compiledKey, setCompiledKey] = useState("");
+  const [compileError, setCompileError] = useState<LatexCompileError | null>(null);
+  const [previewUnavailable, setPreviewUnavailable] = useState(false);
+  const [autoCompile, setAutoCompile] = useState(true);
   const [rendering, setRendering] = useState(false);
   const [activeTemplate, setActiveTemplate] = useState("overleafClassic");
   const [showAIPanel, setShowAIPanel] = useState(false);
@@ -490,18 +135,123 @@ export default function LaTeXCVEditor() {
   const [cropSrc, setCropSrc] = useState<string | null>(null);
 
   const editorRef = useRef<HTMLDivElement>(null);
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectionRangeRef = useRef<{ start: number; end: number } | null>(null);
 
+  // État de la compilation, hors rendu : une seule requête à la fois par onglet
+  const latestRef = useRef({ code, photoData, photoWidth });
+  const pdfUrlRef = useRef("");
+  const compileRef = useRef({ running: false, pending: false, lastKey: "", pausedUntil: 0, downloadWhenReady: false });
+  const compileNowRef = useRef(true);   // première compilation dès l'ouverture
+  const runCompileRef = useRef<(force: boolean) => Promise<void>>(async () => {});
 
+  // Code final : %%PHOTO%% devient la photo (photo.jpg) ou un cadre vide (latexTemplates.ts)
+  const buildFinalCode = useCallback((raw: string) => buildFinalLatex(raw, !!photoData, photoWidth), [photoData, photoWidth]);
+  const currentKey = `${buildFinalCode(code)}\u0000${photoData ?? ""}`;
 
-  // Construit le code final : remplace %%PHOTO%% par l'image (ou le placeholder)
-  const buildFinalCode = useCallback((raw: string) => {
-    const replacement = photoData
-      ? `\\includegraphics[width=${photoWidth}cm,keepaspectratio]{photo.jpg}`
-      : PHOTO_PLACEHOLDER;
-    return raw.replace(/%%PHOTO%%/g, replacement);
-  }, [photoData, photoWidth]);
+  useEffect(() => {
+    latestRef.current = { code, photoData, photoWidth };
+  }, [code, photoData, photoWidth]);
+
+  const downloadPdf = (url: string) => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "cv.pdf";
+    a.click();
+  };
+
+  const runCompile = useCallback(async (force: boolean) => {
+    const state = compileRef.current;
+    if (state.running) {
+      state.pending = true;
+      return;
+    }
+    const latest = latestRef.current;
+    const finalCode = buildFinalLatex(latest.code, !!latest.photoData, latest.photoWidth);
+    const key = `${finalCode}\u0000${latest.photoData ?? ""}`;
+    if (!force && (key === state.lastKey || Date.now() < state.pausedUntil)) return;
+
+    state.running = true;
+    setRendering(true);
+    try {
+      const blob = await compileLatexPdf(finalCode, latest.photoData);
+      const url = URL.createObjectURL(blob);
+      if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
+      pdfUrlRef.current = url;
+      state.lastKey = key;
+      setPdfUrl(url);
+      setCompiledKey(key);
+      setCompileError(null);
+      setPreviewUnavailable(false);
+      if (state.downloadWhenReady) downloadPdf(url);
+    } catch (e) {
+      const err = e instanceof LatexCompileError
+        ? e
+        : new LatexCompileError("LATEX_NETWORK", 0, "Service de compilation injoignable.");
+      setCompileError(err);
+      if (err.unavailable) setPreviewUnavailable(true);
+      if (err.code === "LATEX_BUSY") {
+        // Service occupé : nouvel essai automatique après le délai indiqué
+        const delay = (err.retryAfterSec ?? 3) * 1000;
+        setTimeout(() => void runCompileRef.current(false), delay);
+      } else if (err.throttled) {
+        state.pausedUntil = Date.now() + (err.retryAfterSec ?? 60) * 1000;
+      } else if (!err.unavailable) {
+        // Erreur du document : pas de nouvelle tentative tant qu'il n'est pas modifié
+        state.lastKey = key;
+      }
+    } finally {
+      state.running = false;
+      state.downloadWhenReady = false;
+      setRendering(false);
+      if (state.pending) {
+        state.pending = false;
+        void runCompileRef.current(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    runCompileRef.current = runCompile;
+  }, [runCompile]);
+
+  // Compilation automatique : immédiate après un template, l'IA ou la photo ; sinon 3 s après la frappe
+  useEffect(() => {
+    if (!autoCompile || previewUnavailable) return;
+    const delay = compileNowRef.current ? 0 : AUTO_COMPILE_DELAY_MS;
+    compileNowRef.current = false;
+    const timer = setTimeout(() => void runCompile(false), delay);
+    return () => clearTimeout(timer);
+  }, [code, photoData, photoWidth, autoCompile, previewUnavailable, runCompile]);
+
+  useEffect(() => () => {
+    if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
+  }, []);
+
+  // Ctrl+S / Cmd+S : compiler maintenant (hors de Monaco, qui a sa propre commande)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void runCompileRef.current(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const compileNow = () => {
+    setPreviewUnavailable(false);
+    void runCompile(true);
+  };
+
+  const goToLine = (line: number) => {
+    type LineTarget = { revealLineInCenter(n: number): void; setPosition(p: { lineNumber: number; column: number }): void; focus(): void };
+    const ed = (window as unknown as { __monacoEditor?: LineTarget }).__monacoEditor;
+    if (!ed) return;
+    ed.revealLineInCenter(line);
+    ed.setPosition({ lineNumber: line, column: 1 });
+    ed.focus();
+  };
 
   // Lit la photo, la redimensionne (max 500px) et la compresse en JPEG
   /*const handlePhotoUpload = (file: File) => {
@@ -531,50 +281,6 @@ export default function LaTeXCVEditor() {
     };
     reader.readAsDataURL(file);
   };
-
-  /*const doRender = useCallback(async () => {
-    setRendering(true);
-    setRenderError(null);
-
-    try {
-        if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-        const nextPdfUrl = await compileLatex(code);
-        setPdfUrl(nextPdfUrl);
-    } catch (e: any) {
-        setRenderError(e.message || "Erreur de compilation");
-        setPdfUrl("");
-    } finally {
-        setRendering(false);
-    }
-    }, [code, pdfUrl]);  */
-
-  const doRender = useCallback(async () => {
-    if (!LATEX_PREVIEW_AVAILABLE) return;
-    setRendering(true);
-    setRenderError(null);
-    try {
-      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-      const nextPdfUrl = await compileLatex(buildFinalCode(code), photoData);
-      setPdfUrl(nextPdfUrl);
-    } catch (e: any) {
-      setRenderError(e.message || "Erreur de compilation");
-      setPdfUrl("");
-    } finally {
-      setRendering(false);
-    }
-  }, [code, pdfUrl, photoData, buildFinalCode]);
-
-
-  useEffect(() => {
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => {
-      void doRender();
-    }, 1000);
-
-    return () => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    };
-  }, [code, photoData, photoWidth]);
 
   useEffect(() => {
     const w = window as any;
@@ -630,6 +336,8 @@ export default function LaTeXCVEditor() {
         });
 
         editor.onDidChangeModelContent(() => setCode(editor.getValue()));
+        // Ctrl+S / Cmd+S dans l'éditeur : compiler maintenant
+        editor.addCommand(w.monaco.KeyMod.CtrlCmd | w.monaco.KeyCode.KeyS, () => void runCompileRef.current(true));
 
         editor.onDidChangeCursorSelection(() => {
           const sel = editor.getSelection();
@@ -672,6 +380,7 @@ export default function LaTeXCVEditor() {
   }, [code]);
 
   const handleTemplateChange = (id: string) => {
+    compileNowRef.current = true;
     setActiveTemplate(id);
     setCode(TEMPLATES[id].code);
   };
@@ -683,7 +392,10 @@ export default function LaTeXCVEditor() {
 
     try {
       const r = await aiGenerateLatex(aiInfo, TEMPLATES[activeTemplate].code, code);
-      if (r.trim()) setCode(r.trim());
+      if (r.trim()) {
+        compileNowRef.current = true;
+        setCode(r.trim());
+      }
       else setAiError("Aucun code retourné.");
     } catch (e: any) {
       setAiError(e.message);
@@ -702,6 +414,7 @@ export default function LaTeXCVEditor() {
       if (improved) {
         const range = selectionRangeRef.current;
         if (range) {
+          compileNowRef.current = true;
           setCode((prev) => prev.slice(0, range.start) + improved + prev.slice(range.end));
         }
       } else {
@@ -714,25 +427,35 @@ export default function LaTeXCVEditor() {
     }
   };
 
-  /*const handleDownloadTex = () => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([code], { type: "text/plain" }));
-    a.download = "cv.tex";
-    a.click();
-  }; */
-
   const handleDownloadTex = () => {
+    const url = URL.createObjectURL(new Blob([buildFinalCode(code)], { type: "text/plain;charset=utf-8" }));
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([buildFinalCode(code)], { type: "text/plain" }));
+    a.href = url;
     a.download = "cv.tex";
     a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  };
+
+  // PDF à jour : téléchargé tel quel ; sinon compilé d'abord, puis téléchargé
+  const pdfStale = !!pdfUrl && compiledKey !== currentKey;
+  const handleDownloadPdf = () => {
+    if (pdfUrl && !pdfStale) return downloadPdf(pdfUrl);
+    compileRef.current.downloadWhenReady = true;
+    compileNow();
   };
 
   const copyCode = () => navigator.clipboard.writeText(code);
 
-  const statusColor = rendering ? "#f59e0b" : renderError ? "#ef4444" : pdfUrl ? "#22c55e" : "#6b7280";
-  const statusText = !LATEX_PREVIEW_AVAILABLE ? "Aperçu indisponible"
-    : rendering ? "Compilation..." : renderError ? "Erreur" : pdfUrl ? "PDF prêt" : "En attente";
+  const statusColor = rendering ? "#f59e0b"
+    : previewUnavailable ? "#6b7280"
+    : compileError ? "#ef4444"
+    : pdfStale ? "#60a5fa"
+    : pdfUrl ? "#22c55e" : "#6b7280";
+  const statusText = rendering ? "Compilation..."
+    : previewUnavailable ? "Aperçu indisponible"
+    : compileError ? (compileError.throttled ? "Limite atteinte" : "Erreur")
+    : pdfStale ? "Modifié, non compilé"
+    : pdfUrl ? "PDF prêt" : "En attente";
 
   return (
     <div
@@ -760,7 +483,7 @@ export default function LaTeXCVEditor() {
       >
         <div style={{ display: "flex", flexDirection: "column" }}>
           <span style={{ fontWeight: 800, fontSize: 15, color: "#e6edf3" }}>📘 LaTeX CV Editor</span>
-          <span style={{ fontSize: 10, color: "#8b949e" }}>mode Overleaf-compatible · PDF serveur</span>
+          <span style={{ fontSize: 10, color: "#8b949e" }}>mode Overleaf-compatible · PDF compilé en environnement isolé</span>
           
         </div>
         <button
@@ -820,8 +543,21 @@ export default function LaTeXCVEditor() {
           <button onClick={copyCode} style={btnStyle}>
             📋 Copier
           </button>
-          <button onClick={handleDownloadTex} style={btnStyle}>
+          <button onClick={handleDownloadTex} style={btnStyle} title="Télécharger le code source (.tex)">
             ⬇ .tex
+          </button>
+          <button
+            onClick={handleDownloadPdf}
+            disabled={rendering || (previewUnavailable && !pdfUrl)}
+            style={{
+              ...btnStyle,
+              background: pdfUrl && !pdfStale ? "#1f6feb" : btnStyle.background,
+              color: pdfUrl && !pdfStale ? "#fff" : btnStyle.color,
+              opacity: rendering || (previewUnavailable && !pdfUrl) ? 0.5 : 1,
+            }}
+            title={pdfStale ? "Compiler les dernières modifications puis télécharger le PDF" : "Télécharger le PDF compilé"}
+          >
+            ⬇ PDF
           </button>
         </div>
       </header>
@@ -859,7 +595,7 @@ export default function LaTeXCVEditor() {
                   style={{ width: "100%" }}
                 />
                 <button
-                  onClick={() => setPhotoData(null)}
+                  onClick={() => { compileNowRef.current = true; setPhotoData(null); }}
                   style={{ ...btnStyle, color: "#f87171", borderColor: "#7f1d1d", background: "rgba(239,68,68,.08)" }}
                 >
                   🗑 Retirer la photo
@@ -1086,71 +822,86 @@ export default function LaTeXCVEditor() {
           >
             <span>👁 Aperçu PDF</span>
             {rendering && <span style={{ color: "#f59e0b", fontSize: 10 }}>⏳ Compilation...</span>}
+            <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} title="Compiler automatiquement 3 s après la dernière modification">
+              <input type="checkbox" checked={autoCompile} onChange={(e) => setAutoCompile(e.target.checked)} />
+              Auto
+            </label>
+            <button
+              onClick={compileNow}
+              disabled={rendering}
+              style={{ ...btnStyle, padding: "4px 10px", color: "#e6edf3", opacity: rendering ? 0.5 : 1 }}
+              title="Compiler maintenant (Ctrl+S)"
+            >
+              ▶ Compiler
+            </button>
           </div>
 
-          {renderError && (
+          {compileError && !previewUnavailable && (
             <div
+              role="alert"
               style={{
                 margin: 12,
                 padding: 14,
                 borderRadius: 8,
                 flexShrink: 0,
-                background: "#1a0000",
-                border: "1px solid #7f1d1d",
-                fontFamily: "monospace",
+                maxHeight: "40%",
+                overflow: "auto",
+                background: compileError.throttled || compileError.code === "LATEX_BUSY" ? "rgba(245,158,11,.08)" : "#1a0000",
+                border: `1px solid ${compileError.throttled || compileError.code === "LATEX_BUSY" ? "rgba(245,158,11,.35)" : "#7f1d1d"}`,
                 fontSize: 12,
-                color: "#fca5a5",
-                lineHeight: 1.7,
-                whiteSpace: "pre-wrap",
+                color: compileError.throttled || compileError.code === "LATEX_BUSY" ? "#fbbf24" : "#fca5a5",
+                lineHeight: 1.6,
               }}
             >
-              <div style={{ fontWeight: 700, marginBottom: 6, color: "#f87171" }}>⚠️ Erreur de compilation</div>
-              {renderError}
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>⚠️ {compileError.message}</div>
+              {compileError.line && !compileError.details.length && (
+                <button onClick={() => goToLine(compileError.line!)} style={lineLinkStyle}>Aller à la ligne {compileError.line}</button>
+              )}
+              {compileError.details.length > 0 && (
+                <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none", fontFamily: "monospace", display: "flex", flexDirection: "column", gap: 6 }}>
+                  {compileError.details.map((d, i) => (
+                    <li key={i}>
+                      {d.line ? (
+                        <button onClick={() => goToLine(d.line!)} style={lineLinkStyle}>Ligne {d.line}</button>
+                      ) : null}{" "}
+                      {d.message}
+                      {d.context && <div style={{ color: "#8b949e", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{d.context}</div>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {pdfUrl && <div style={{ marginTop: 8, color: "#8b949e", fontSize: 11 }}>Dernier PDF valide affiché ci-dessous.</div>}
             </div>
           )}
 
-          {pdfUrl ? (
+          {previewUnavailable ? (
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#8b949e", fontSize: 13, flexDirection: "column", gap: 10 }}>
+              <div style={{ fontSize: 32 }}>📄</div>
+              <div style={{ maxWidth: 380, textAlign: "center", lineHeight: 1.6 }}>
+                {compileError?.message ?? "L'aperçu PDF est momentanément indisponible."}
+                <br />
+                Le fichier <strong>.tex</strong> reste téléchargeable pour Overleaf ou votre distribution LaTeX.
+                <div style={{ marginTop: 12, display: "flex", gap: 8, justifyContent: "center" }}>
+                  <button onClick={handleDownloadTex} style={{ ...btnStyle, background: "#1f6feb", color: "#fff", fontSize: 12, fontWeight: 700 }}>
+                    ⬇ Télécharger .tex
+                  </button>
+                  <button onClick={compileNow} style={{ ...btnStyle, fontSize: 12 }}>
+                    ↻ Réessayer
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : pdfUrl ? (
             <iframe
-                key={pdfUrl}
-                src={pdfUrl}
-                style={{ flex: 1, border: "none", background: "#fff" }}
-                title="PDF Preview"
+              key={pdfUrl}
+              src={pdfUrl}
+              style={{ flex: 1, border: "none", background: "#fff", opacity: compileError ? 0.6 : 1 }}
+              title="Aperçu PDF du CV"
             />
-            ) : !renderError ? (
-            <div
-                style={{
-                flex: 1,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#4b5563",
-                fontSize: 13,
-                flexDirection: "column",
-                gap: 10,
-                }}
-            >
-                <div style={{ fontSize: 32 }}>📄</div>
-                {LATEX_PREVIEW_AVAILABLE ? (
-                  <div>Le PDF compilé apparaîtra ici</div>
-                ) : (
-                  <div style={{ maxWidth: 360, textAlign: "center", lineHeight: 1.6 }}>
-                    L'aperçu PDF est momentanément indisponible.
-                    <br />
-                    Téléchargez le fichier <strong>.tex</strong> puis compilez-le sur Overleaf
-                    ou avec votre distribution LaTeX.
-                    <div style={{ marginTop: 12 }}>
-                      <button
-                        onClick={handleDownloadTex}
-                        style={{
-                          padding: "6px 14px", borderRadius: 7, fontSize: 12, fontWeight: 700,
-                          cursor: "pointer", border: "1px solid #21262d", background: "#1f6feb", color: "#fff",
-                        }}
-                      >
-                        ⬇ Télécharger .tex
-                      </button>
-                    </div>
-                  </div>
-                )}
+          ) : !compileError ? (
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#4b5563", fontSize: 13, flexDirection: "column", gap: 10 }}>
+              <div style={{ fontSize: 32 }}>📄</div>
+              <div>{rendering ? "Compilation du PDF..." : "Le PDF compilé apparaîtra ici"}</div>
             </div>
           ) : null}
         </div>
@@ -1159,7 +910,7 @@ export default function LaTeXCVEditor() {
         <CropModal
           src={cropSrc}
           onCancel={() => setCropSrc(null)}
-          onConfirm={(dataUrl) => { setPhotoData(dataUrl); setCropSrc(null); }}
+          onConfirm={(dataUrl) => { compileNowRef.current = true; setPhotoData(dataUrl); setCropSrc(null); }}
         />
       )}
     </div>
@@ -1175,6 +926,18 @@ const btnStyle: React.CSSProperties = {
   border: "1px solid #21262d",
   background: "#21262d",
   color: "#8b949e",
+};
+
+const lineLinkStyle: React.CSSProperties = {
+  padding: "1px 6px",
+  borderRadius: 5,
+  fontSize: 11,
+  fontWeight: 700,
+  cursor: "pointer",
+  border: "1px solid #7f1d1d",
+  background: "rgba(239,68,68,.12)",
+  color: "#fecaca",
+  fontFamily: "inherit",
 };
 
 const textareaStyle: React.CSSProperties = {
