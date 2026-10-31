@@ -1,0 +1,166 @@
+# Recette locale du centre multi-IA : complète docker-compose.yml, jamais utilisée seule.
+# Lancée par scripts/recette.mjs, qui génère ses secrets dans secrets/recette (ignoré par Git).
+#
+# Projet Docker isolé « portfolio-recette » : aucun port ni volume commun avec le banc
+# supabase/tests/stack (p0cv-stack, ports 58321-58400) ni avec les autres piles Supabase du poste.
+# Aucune valeur de production : l'API lit .env.docker.test, jamais .env.docker.
+#
+# L'API exige HTTPS vers Supabase et TLS vérifié vers Postgres hors boucle locale. Depuis un
+# conteneur, ces services ne sont pas sur la boucle locale : ils présentent donc un certificat
+# émis par une autorité locale jetable, que seul le conteneur de l'API reconnaît. Le code suit
+# ainsi le même chemin qu'en production, sans aucune exception.
+
+services:
+
+  # ── Surcharges des services de docker-compose.yml ──────────
+  api:
+    container_name: recette-api
+    environment:
+      - NODE_EXTRA_CA_CERTS=/run/certs/supabase-ca.crt
+    volumes:
+      - ./secrets/recette/tls/ca.crt:/run/certs/supabase-ca.crt:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  mongo:
+    container_name: recette-mongo
+    ports: !reset []
+
+  # ── Supabase local : mêmes images que le banc d'intégration ─
+  db:
+    image: public.ecr.aws/supabase/postgres:17.6.1.167
+    container_name: recette-db
+    restart: unless-stopped
+    # Postgres refuse une clé aux droits larges : celle du dossier monté est recopiée.
+    # La clé racine de Vault est hors du volume de données : sans ce fichier stable, recréer le
+    # conteneur en générerait une nouvelle et les clés enregistrées seraient indéchiffrables.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        install -d -o postgres -g postgres -m 700 /run/recette-tls
+        install -o postgres -g postgres -m 644 /certs/server.crt /run/recette-tls/server.crt
+        install -o postgres -g postgres -m 600 /certs/server.key /run/recette-tls/server.key
+        install -o postgres -g postgres -m 640 /run/vault-root.key /etc/postgresql-custom/pgsodium_root.key
+        exec docker-entrypoint.sh "$$@"
+      - --
+    command:
+      - postgres
+      - -D
+      - /etc/postgresql
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/run/recette-tls/server.crt
+      - -c
+      - ssl_key_file=/run/recette-tls/server.key
+    environment:
+      POSTGRES_PASSWORD: ${RECETTE_DB_PASSWORD:?généré par scripts/recette.mjs}
+    volumes:
+      - ./secrets/recette/tls:/certs:ro
+      - ./secrets/recette/vault-root.key:/run/vault-root.key:ro
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - blog-network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  auth:
+    image: public.ecr.aws/supabase/gotrue:v2.197.0
+    container_name: recette-auth
+    restart: unless-stopped
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: ${RECETTE_PUBLIC_URL}/auth/v1
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${RECETTE_DB_PASSWORD}@db:5432/postgres
+      GOTRUE_SITE_URL: http://localhost:5173
+      GOTRUE_JWT_SECRET: ${RECETTE_JWT_SECRET}
+      # Émetteur attendu par l'API : <SUPABASE_URL>/auth/v1
+      GOTRUE_JWT_ISSUER: https://gateway:8443/auth/v1
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      # Comme le souhaite la production à terme : aucun compte créé depuis le site
+      GOTRUE_DISABLE_SIGNUP: "true"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_MFA_TOTP_ENROLL_ENABLED: "true"
+      GOTRUE_MFA_TOTP_VERIFY_ENABLED: "true"
+    networks:
+      - blog-network
+    depends_on:
+      db:
+        condition: service_healthy
+
+  rest:
+    image: public.ecr.aws/supabase/postgrest:v14.15
+    container_name: recette-rest
+    restart: unless-stopped
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${RECETTE_DB_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${RECETTE_JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: ${RECETTE_JWT_SECRET}
+      PGRST_APP_SETTINGS_JWT_EXP: "3600"
+    networks:
+      - blog-network
+    depends_on:
+      db:
+        condition: service_healthy
+
+  storage:
+    image: public.ecr.aws/supabase/storage-api:v1.73.1
+    container_name: recette-storage
+    restart: unless-stopped
+    environment:
+      ANON_KEY: ${RECETTE_ANON_KEY}
+      SERVICE_KEY: ${RECETTE_SERVICE_KEY}
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: ${RECETTE_JWT_SECRET}
+      AUTH_JWT_SECRET: ${RECETTE_JWT_SECRET}
+      AUTH_JWT_ALGORITHM: HS256
+      DATABASE_URL: postgres://supabase_storage_admin:${RECETTE_DB_PASSWORD}@db:5432/postgres
+      FILE_SIZE_LIMIT: "52428800"
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+      ENABLE_IMAGE_TRANSFORMATION: "false"
+    volumes:
+      - storage_data:/var/lib/storage
+    networks:
+      - blog-network
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Rôle de Kong : HTTP pour le navigateur (seul port publié), HTTPS pour l'API
+  gateway:
+    image: nginx:alpine
+    container_name: recette-gateway
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:58521:8000"
+    volumes:
+      - ./env/recette/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./secrets/recette/tls:/etc/nginx/tls:ro
+    networks:
+      - blog-network
+    depends_on:
+      - auth
+      - rest
+      - storage
+
+volumes:
+  db_data:
+  storage_data:

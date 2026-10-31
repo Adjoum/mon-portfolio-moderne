@@ -7,6 +7,7 @@ const mock = vi.hoisted(() => ({
   rpc:     { data: null as unknown, error: null as unknown },
   aal:     { data: { currentLevel: 'aal1', nextLevel: 'aal1' }, error: null as unknown },
   factors: { data: { all: [] as unknown[], totp: [] as { id: string }[] }, error: null as unknown },
+  enroll:  { calls: 0 },
 }))
 
 vi.mock('./supabase', () => ({
@@ -16,13 +17,20 @@ vi.mock('./supabase', () => ({
       mfa: {
         getAuthenticatorAssuranceLevel: async () => mock.aal,
         listFactors: async () => mock.factors,
+        unenroll: async () => ({ error: null }),
+        // Comme Supabase Auth : un second facteur du même nom est refusé
+        enroll: async () => {
+          mock.enroll.calls += 1
+          if (mock.enroll.calls > 1) return { data: null, error: { code: 'mfa_factor_name_conflict' } }
+          return { data: { id: 'factor-1', totp: { qr_code: 'data:image/svg+xml,qr', secret: 'SECRET' } }, error: null }
+        },
       },
     },
     rpc: vi.fn(async () => mock.rpc),
   },
 }))
 
-const { resolveAdminGateStatus, evaluateAdminAccess, describeAdminApiError, adminFetch } = await import('./adminAuth')
+const { resolveAdminGateStatus, evaluateAdminAccess, describeAdminApiError, adminFetch, startTotpEnrollment } = await import('./adminAuth')
 const { supabase } = await import('./supabase')
 
 beforeEach(() => {
@@ -30,6 +38,7 @@ beforeEach(() => {
   mock.rpc     = { data: true, error: null }
   mock.aal     = { data: { currentLevel: 'aal1', nextLevel: 'aal1' }, error: null }
   mock.factors = { data: { all: [], totp: [] }, error: null }
+  mock.enroll.calls = 0
 })
 
 describe('resolveAdminGateStatus', () => {
@@ -84,6 +93,23 @@ describe('evaluateAdminAccess (client Supabase simulé)', () => {
     mock.aal = { data: { currentLevel: 'aal2', nextLevel: 'aal2' }, error: null }
     mock.factors = { data: { all: [], totp: [{ id: 'factor-1' }] }, error: null }
     expect((await evaluateAdminAccess()).status).toBe('ready')
+  })
+})
+
+describe('startTotpEnrollment', () => {
+  // React StrictMode exécute deux fois l'effet de montage en développement
+  it('deux appels simultanés : un seul enrôlement, le même QR code', async () => {
+    const [first, second] = await Promise.all([startTotpEnrollment(), startTotpEnrollment()])
+    expect(mock.enroll.calls).toBe(1)
+    expect(second).toEqual(first)
+    expect(first).toMatchObject({ factorId: 'factor-1', secret: 'SECRET' })
+  })
+
+  it('un nouvel essai reste possible une fois le précédent terminé', async () => {
+    await startTotpEnrollment()
+    mock.enroll.calls = 0
+    await expect(startTotpEnrollment()).resolves.toMatchObject({ factorId: 'factor-1' })
+    expect(mock.enroll.calls).toBe(1)
   })
 })
 

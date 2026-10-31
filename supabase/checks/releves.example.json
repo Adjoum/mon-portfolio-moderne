@@ -1,0 +1,30 @@
+{
+  "_note": "Remplace les captures d'écran. Copier vers supabase/checks/results/releves.json (ignoré par Git), puis répondre par true, false ou un texte court. Jamais de mot de passe ni de clé ici.",
+  "supabase": {
+    "motDePasseBaseConnu": null,
+    "hotePooler": null,
+    "certificatTelecharge": null,
+    "smtp": null,
+    "modelesEmailsVerifies": null,
+    "sauvegardesAutomatiques": null,
+    "performanceAdvisor": null
+  },
+  "vercel": {
+    "brancheProduction": null,
+    "offre": null,
+    "autoAssignDomaines": null,
+    "nomsVariables": null
+  },
+  "oracle": {
+    "portsConsoleVerifies": null
+  },
+  "recette": {
+    "reussie": null,
+    "date": null
+  },
+  "decisions": {
+    "acheminementCode": null,
+    "fermerInscriptions": null,
+    "formatsImages": null
+  }
+}

@@ -63,8 +63,21 @@ export async function evaluateAdminAccess(): Promise<AdminAccess> {
   }
 }
 
-/** Démarre l'enrôlement TOTP (les facteurs TOTP non vérifiés précédents sont retirés) */
-export async function startTotpEnrollment(): Promise<{ factorId: string; qrCode: string; secret: string }> {
+export interface TotpEnrollment { factorId: string; qrCode: string; secret: string }
+
+let enrollmentInProgress: Promise<TotpEnrollment> | null = null
+
+/**
+ * Démarre l'enrôlement TOTP. Des appels simultanés partagent le même enrôlement (React StrictMode
+ * monte deux fois le composant en développement) : Supabase Auth refuse deux facteurs de même nom.
+ */
+export function startTotpEnrollment(): Promise<TotpEnrollment> {
+  enrollmentInProgress ??= enrollTotp().finally(() => { enrollmentInProgress = null })
+  return enrollmentInProgress
+}
+
+/** Les facteurs TOTP non vérifiés précédents sont retirés */
+async function enrollTotp(): Promise<TotpEnrollment> {
   const { data: existing } = await supabase.auth.mfa.listFactors()
   for (const factor of existing?.all ?? []) {
     if (factor.factor_type === 'totp' && factor.status !== 'verified') {

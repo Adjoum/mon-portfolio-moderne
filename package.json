@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "dev:recette": "vite --mode recette",
+    "recette:up": "node scripts/recette.mjs up",
+    "recette:verify": "node scripts/recette.mjs verify",
+    "recette:down": "node scripts/recette.mjs down",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
