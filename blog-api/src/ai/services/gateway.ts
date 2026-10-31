@@ -268,7 +268,7 @@ export function createAiGateway(overrides: Partial<AiGatewayDeps> = {}) {
             ? usageCost(inputTokens, outputTokens, entry.pricing)
             : reservedCost;
 
-          const content = feature.parseOutput ? feature.parseOutput(result.content) : result.content;
+          const content = feature.parseOutput ? feature.parseOutput(result.content, input) : result.content;
           await settle(cost, {
             ...meta, outcome: 'ok', latencyMs: Date.now() - started, inputChars, outputChars: content.length,
             inputTokens, outputTokens, costMicroUsd: cost,

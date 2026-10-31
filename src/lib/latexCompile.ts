@@ -63,8 +63,33 @@ function readDetails(raw: unknown): LatexCompileDetail[] {
   })
 }
 
-/** Compile le source (photo optionnelle en data URL JPEG) et renvoie le PDF */
-export async function compileLatexPdf(code: string, photo: string | null, signal?: AbortSignal): Promise<Blob> {
+/** Avertissement de mise en page relevé par TeX (débordement, caractère absent de la police…) */
+export interface LatexWarning { kind: 'overfull' | 'missing-char' | 'other'; line?: number; message: string }
+
+export interface LatexCompileResult { pdf: Blob; warnings: LatexWarning[] }
+
+/** En-tête X-Latex-Warnings (JSON, filtré par le serveur) : relu sans faire confiance à son contenu */
+export function readWarnings(header: string | null): LatexWarning[] {
+  if (!header) return []
+  try {
+    const parsed: unknown = JSON.parse(header)
+    if (!Array.isArray(parsed)) return []
+    return parsed.slice(0, 20).flatMap((w): LatexWarning[] => {
+      if (!w || typeof w !== 'object' || typeof (w as { message?: unknown }).message !== 'string') return []
+      const { kind, line, message } = w as { kind?: unknown; line?: unknown; message: string }
+      return [{
+        kind: kind === 'overfull' || kind === 'missing-char' ? kind : 'other',
+        message: message.slice(0, 200),
+        ...(Number.isInteger(line) ? { line: line as number } : {}),
+      }]
+    })
+  } catch {
+    return []
+  }
+}
+
+/** Compile le source (photo optionnelle en data URL JPEG) et renvoie le PDF et ses avertissements */
+export async function compileLatexPdf(code: string, photo: string | null, signal?: AbortSignal): Promise<LatexCompileResult> {
   let res: Response
   try {
     res = await fetch(`${API_URL}/cv/compile`, {
@@ -85,7 +110,7 @@ export async function compileLatexPdf(code: string, photo: string | null, signal
     if (!(res.headers.get('content-type') ?? '').startsWith('application/pdf') || header !== '%PDF-') {
       throw new LatexCompileError('LATEX_INVALID_RESPONSE', res.status, FALLBACK.LATEX_INVALID_RESPONSE)
     }
-    return new Blob([bytes], { type: 'application/pdf' })
+    return { pdf: new Blob([bytes], { type: 'application/pdf' }), warnings: readWarnings(res.headers.get('X-Latex-Warnings')) }
   }
 
   const body = await res.json().catch(() => null) as { code?: unknown; error?: unknown; details?: unknown; line?: unknown } | null

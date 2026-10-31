@@ -1,6 +1,7 @@
 // latex-runner/src/server.mjs
 // Service de compilation isolé, joignable uniquement par blog-api sur un réseau Docker interne.
 //   GET  /healthz   → { status: 'ok' }
+//   GET  /policy    → classes, paquets et commandes interdites (lecture seule, pour les assistants IA)
 //   POST /compile   { tex, photo? (JPEG en base64) } → application/pdf, ou { code, … } en JSON
 //
 // Aucune dépendance npm, aucun secret : un jeton partagé serait lisible par le processus TeX
@@ -8,7 +9,7 @@
 // Aucun contenu de document n'est journalisé.
 
 import http from 'node:http';
-import { checkSource, PolicyError } from './policy.mjs';
+import { checkSource, describePolicy, PolicyError } from './policy.mjs';
 import { cleanWorkRoot, compile, CompileError, LIMITS } from './compile.mjs';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -109,6 +110,7 @@ export function createServer() {
   const server = http.createServer((req, res) => {
     const url = req.url ?? '/';
     if (req.method === 'GET' && url === '/healthz') return send(res, 200, { status: 'ok' });
+    if (req.method === 'GET' && url === '/policy') return send(res, 200, describePolicy());
     if (url === '/compile') {
       if (req.method !== 'POST') return send(res, 405, { code: 'LATEX_METHOD_NOT_ALLOWED' });
       return void handleCompile(req, res).catch(() => { if (!res.headersSent) send(res, 500, { code: 'LATEX_INTERNAL' }); });

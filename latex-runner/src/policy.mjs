@@ -36,7 +36,7 @@ export const ALLOWED_PACKAGES = new Set([
  * Séquences de contrôle interdites (nom exact) :
  * fichiers, commandes externes, réécriture du lexique, moteurs Lua, primitives pdfTeX de lecture.
  */
-const FORBIDDEN_COMMANDS = [
+export const FORBIDDEN_COMMANDS = [
   // Écriture et lecture de fichiers, flux, commandes externes
   'write', 'openout', 'closeout', 'openin', 'closein', 'read', 'readline', 'newwrite', 'newread',
   'input', 'include', 'includeonly', 'InputIfFileExists', 'IfFileExists', 'listfiles',
@@ -52,7 +52,7 @@ const FORBIDDEN_COMMANDS = [
 ];
 
 /** Environnements qui écrivent des fichiers (un .sty écrit dans le dossier remplacerait un paquet relu) */
-const FORBIDDEN_ENVIRONMENTS = ['filecontents', 'filecontents*'];
+export const FORBIDDEN_ENVIRONMENTS = ['filecontents', 'filecontents*'];
 
 const LOAD = /\\(documentclass|usepackage|RequirePackage)\s*(?:\[[^\]]*\]\s*)*\{([^}]*)\}/g;
 
@@ -73,6 +73,17 @@ function* controlSequences(source) {
       i++;  // symbole de contrôle : le caractère suivant en fait partie
     }
   }
+}
+
+/** Politique publiable : transmise par blog-api aux assistants IA (latex.fix), jamais modifiable par eux */
+export function describePolicy() {
+  return {
+    classes: [...ALLOWED_CLASSES],
+    packages: [...ALLOWED_PACKAGES].sort(),
+    forbiddenCommands: FORBIDDEN_COMMANDS.map(c => `\\${c}`),
+    forbiddenEnvironments: [...FORBIDDEN_ENVIRONMENTS],
+    maxSourceBytes: MAX_SOURCE_BYTES,
+  };
 }
 
 export class PolicyError extends Error {

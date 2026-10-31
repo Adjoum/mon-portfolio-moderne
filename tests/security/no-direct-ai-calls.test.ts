@@ -40,10 +40,13 @@ describe('sources servies au navigateur', () => {
 
   it('les fonctionnalités IA passent par le client unique src/lib/aiClient.ts', () => {
     const users = browserFiles.filter(f => fs.readFileSync(path.join(ROOT, f), 'utf8').includes('runAiFeature('))
-    expect(users.sort()).toEqual([
+    const studio = users.filter(f => f.startsWith('src/features/latex-studio/'))
+    expect(users.filter(f => !studio.includes(f)).sort()).toEqual([
       'src/lib/aiClient.ts',
       'src/pages/CVBuilder/CVGeneratorPro_part1.tsx',
-      'src/pages/CVBuilder/LaTeXEditor.tsx',
     ])
+    // Studio LaTeX : appels via aiClient uniquement, jamais d'URL de fournisseur
+    expect(studio.length).toBeGreaterThan(0)
+    for (const f of studio) expect(fs.readFileSync(path.join(ROOT, f), 'utf8')).not.toMatch(/api\.(openai|groq|anthropic|x\.ai)|generativelanguage|openrouter\.ai/)
   })
 })

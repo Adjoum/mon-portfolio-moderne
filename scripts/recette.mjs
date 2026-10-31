@@ -36,6 +36,8 @@ const API = 'http://127.0.0.1:5000';
 const PUBLIC_SUPABASE = 'http://localhost:58521';
 const GATEWAY = 'http://127.0.0.1:58521';
 const MODELS = { openai: 'gpt-6-astra', groq: 'openai/gpt-oss-120b' };
+// Fonctionnalités du registre (blog-api/src/ai/features/registry.ts), dont les 4 du studio LaTeX
+const FEATURE_COUNT = 13;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const random = (bytes = 32) => crypto.randomBytes(bytes).toString('hex');
@@ -300,7 +302,7 @@ async function verify() {
   check('API : /api/health', health === 200, `HTTP ${health}`);
   const features = await fetch(`${API}/api/ai/features`).then(r => r.json()).then(b => b.features).catch(() => null);
   const featureCount = Array.isArray(features) ? features.length : Object.keys(features ?? {}).length;
-  check('API : 9 fonctionnalités au registre', featureCount === 9, `${featureCount}`);
+  check(`API : ${FEATURE_COUNT} fonctionnalités au registre`, featureCount === FEATURE_COUNT, `${featureCount}`);
 
   // Aperçu PDF : service isolé, joint uniquement par l'API (contrôles complets : scripts/latex-recette.mjs)
   const runner = JSON.parse(spawnSync('docker', ['inspect', 'recette-latex-runner'], { encoding: 'utf8' }).stdout || '[]')[0];
@@ -328,8 +330,8 @@ async function verify() {
 
   const ssl = sqlValue("select count(*) filter (where s.ssl), count(*) from pg_stat_activity a join pg_stat_ssl s using (pid) where a.usename = 'ai_backend';").split('|');
   check('API → Postgres : connexions ai_backend chiffrées (certificat vérifié par l’API)', Number(ssl[1]) > 0 && ssl[0] === ssl[1], `${ssl[0]}/${ssl[1]}`);
-  check('base : les 9 migrations sont appliquées (schéma IA, 6 fournisseurs, 9 affectations)',
-    sqlValue('select (select count(*) from public.ai_providers), (select count(*) from public.ai_feature_assignments);') === '6|9');
+  check(`base : migrations appliquées (schéma IA, 6 fournisseurs, ${FEATURE_COUNT} affectations synchronisées par l’API)`,
+    sqlValue('select (select count(*) from public.ai_providers), (select count(*) from public.ai_feature_assignments);') === `6|${FEATURE_COUNT}`);
   // État de la recette : il évolue normalement avec vos essais, ce ne sont pas des contrôles
   const info = (label, value) => console.log(`ℹ ${label} : ${value}`);
   info('fonctionnalités actives', sqlValue('select count(*) from public.ai_feature_assignments where enabled;'));

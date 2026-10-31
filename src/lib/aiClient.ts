@@ -7,7 +7,8 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
 export type AiFeatureId =
   | 'cv.generate' | 'cv.review' | 'cv.import.structure' | 'cv.import.ocr'
-  | 'latex.generate' | 'latex.improve'
+  | 'latex.generate' | 'latex.improve' | 'latex.fix'
+  | 'latex.import.structure' | 'latex.import.ocr' | 'latex.rewrite'
 
 /** Délai côté navigateur : au-delà du plus long délai serveur (85 s) */
 const CLIENT_TIMEOUT_MS = 100_000

@@ -17,7 +17,7 @@ describe('limiteur IA par IP', () => {
     const statuses: number[] = [];
     for (let i = 0; i < 4; i++) {
       statuses.push((await request(app).post('/api/ai/run/latex.improve')
-        .send({ input: { selection: 'x', instruction: 'y' } })).status);
+        .send({ input: { selection: 'x', instruction: 'y', target: { organization: 'Organisme' } } })).status);
     }
     expect(statuses).toEqual([200, 200, 200, 429]);
     expect(fake.calls).toHaveLength(3);

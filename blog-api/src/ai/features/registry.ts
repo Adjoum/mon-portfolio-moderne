@@ -16,15 +16,12 @@ import {
   CV_PROMPT_VERSION, cvGenerateSystem, cvGenerateUser, CV_REVIEW_SYSTEM,
   CV_OCR_SYSTEM, CV_OCR_USER, CV_STRUCTURE_SYSTEM, type CvIntake,
 } from './prompts/cv.v1';
-import {
-  LATEX_PROMPT_VERSION, LATEX_GENERATE_SYSTEM, LATEX_IMPROVE_SYSTEM,
-  latexGenerateUser, latexImproveUser,
-} from './prompts/latex.v1';
+import { LATEX_FEATURES } from './latexStudio';
 import { ASSISTANTS_PROMPT_VERSION, INKSPACE_SYSTEM, NOVAMIND_SYSTEM, agentSystem } from './prompts/assistants.v1';
 
 export const FEATURE_IDS = [
   'cv.generate', 'cv.review', 'cv.import.structure', 'cv.import.ocr',
-  'latex.generate', 'latex.improve',
+  'latex.generate', 'latex.improve', 'latex.fix', 'latex.import.structure', 'latex.import.ocr', 'latex.rewrite',
   'agent.chat', 'inkspace.generate', 'novamind.diagram',
 ] as const;
 export type FeatureId = (typeof FEATURE_IDS)[number];
@@ -65,8 +62,8 @@ export interface FeatureDefinition<Input = any> {
   parseInput(raw: unknown): Input;
   /** Exécutée après les quotas : peut interroger une source externe (recherche de contexte) */
   buildRequest(input: Input, ctx: BuildContext): BuiltRequest | Promise<BuiltRequest>;
-  /** Contrôle et normalise la sortie du modèle ; lève une ProviderError si elle est inexploitable */
-  parseOutput?(content: string): string;
+  /** Contrôle et normalise la sortie du modèle (avec l'entrée validée) ; lève une ProviderError si elle est inexploitable */
+  parseOutput?(content: string, input: Input): string;
 }
 
 
@@ -201,59 +198,7 @@ export const FEATURES: Record<FeatureId, FeatureDefinition> = {
     }),
   },
 
-  'latex.generate': {
-    id: 'latex.generate',
-    section: 'Éditeur LaTeX',
-    authLevel: 'public',
-    personalData: true,
-    requiredCapabilities: ['text'],
-    output: 'text',
-    promptVersion: LATEX_PROMPT_VERSION,
-    bodyLimit: 'small',
-    timeoutMs: 85_000,
-    maxOutputTokens: 3000,
-    quotas: { perSubjectPerDay: 3, globalPerDay: 100, concurrency: 2 },
-    rateLimitPerMinute: 6,
-    parseInput(raw) {
-      const o = strictObject(raw, 'input', ['info', 'template', 'existing']);
-      return {
-        info:     text(o, 'info', { max: 8000, required: true }),
-        template: text(o, 'template', { max: 20_000 }),
-        existing: text(o, 'existing', { max: 30_000 }),
-      };
-    },
-    buildRequest: ({ info, template, existing }: { info: string; template: string; existing: string }) => ({
-      system: LATEX_GENERATE_SYSTEM,
-      messages: userText(latexGenerateUser(info, template, existing)),
-    }),
-  },
-
-  'latex.improve': {
-    id: 'latex.improve',
-    section: 'Éditeur LaTeX',
-    authLevel: 'public',
-    personalData: true,
-    requiredCapabilities: ['text'],
-    output: 'text',
-    promptVersion: LATEX_PROMPT_VERSION,
-    bodyLimit: 'small',
-    timeoutMs: 60_000,
-    maxOutputTokens: 1800,
-    quotas: { perSubjectPerDay: 15, globalPerDay: 400, concurrency: 4 },
-    rateLimitPerMinute: 6,
-    parseInput(raw) {
-      const o = strictObject(raw, 'input', ['selection', 'instruction', 'context']);
-      return {
-        selection:   text(o, 'selection', { max: 8000, required: true }),
-        instruction: text(o, 'instruction', { max: 1000, required: true }),
-        context:     text(o, 'context', { max: 4000 }),
-      };
-    },
-    buildRequest: ({ selection, instruction, context }: { selection: string; instruction: string; context: string }) => ({
-      system: LATEX_IMPROVE_SYSTEM,
-      messages: userText(latexImproveUser(selection, instruction, context)),
-    }),
-  },
+  ...LATEX_FEATURES,
 
   'agent.chat': {
     id: 'agent.chat',

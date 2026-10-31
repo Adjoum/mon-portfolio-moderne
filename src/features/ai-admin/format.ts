@@ -13,6 +13,10 @@ export const FEATURE_LABELS: Record<string, string> = {
   'cv.import.ocr':       'Import de CV — lecture d’image (OCR)',
   'latex.generate':      'LaTeX — génération',
   'latex.improve':       'LaTeX — amélioration',
+  'latex.fix':           'LaTeX — correction des erreurs de compilation',
+  'latex.import.structure': 'LaTeX — import de CV (structuration)',
+  'latex.import.ocr':    'LaTeX — import de CV (lecture d’image)',
+  'latex.rewrite':       'LaTeX — réécriture ciblée',
 }
 
 export const featureLabel = (id: string) => FEATURE_LABELS[id] ?? id

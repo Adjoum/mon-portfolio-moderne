@@ -100,6 +100,7 @@ export function createApp(options: AppOptions = {}) {
   app.use('/api/admin/ai', express.json({ limit: '32kb' }));
   // Passerelle IA : 256 Ko, sauf la lecture d'image (data URL d'au plus 4 Mo)
   app.use('/api/ai/run/cv.import.ocr', express.json({ limit: '6mb' }));
+  app.use('/api/ai/run/latex.import.ocr', express.json({ limit: '6mb' }));
   app.use('/api/ai', express.json({ limit: '256kb' }));
   // URL historiques des assistants : entrées texte uniquement
   app.use('/api/agent/chat', express.json({ limit: '128kb' }));

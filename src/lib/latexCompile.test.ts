@@ -12,8 +12,9 @@ afterEach(() => vi.restoreAllMocks())
 describe('compileLatexPdf', () => {
   it('appelle blog-api avec { code, photo } uniquement, sans identifiant ni cookie', async () => {
     const spy = respond(200, PDF, { 'Content-Type': 'application/pdf' })
-    const blob = await compileLatexPdf('\\documentclass{article}', 'data:image/jpeg;base64,/9j/')
-    expect(blob.type).toBe('application/pdf')
+    const { pdf, warnings } = await compileLatexPdf('\\documentclass{article}', 'data:image/jpeg;base64,/9j/')
+    expect(pdf.type).toBe('application/pdf')
+    expect(warnings).toEqual([])
 
     const [url, init] = spy.mock.calls[0]
     expect(String(url)).toMatch(/\/cv\/compile$/)

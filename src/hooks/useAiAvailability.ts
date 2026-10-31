@@ -8,6 +8,15 @@ import { fetchAiAvailability, type AiFeatureId, type AiFeatureStatus } from '../
  * alors affichée au moment de l'appel, jamais passée sous silence.
  */
 export function useAiAvailability() {
+  const statuses = useAiStatuses()
+  return (feature: AiFeatureId) => statuses?.[feature]?.available ?? true
+}
+
+/**
+ * Disponibilité connue avec certitude (null tant que la réponse n'est pas arrivée) : pour les
+ * options qui ne doivent être proposées QUE si le serveur les confirme (lecture d'image).
+ */
+export function useAiStatuses(): Record<string, AiFeatureStatus> | null {
   const [statuses, setStatuses] = useState<Record<string, AiFeatureStatus> | null>(null)
 
   useEffect(() => {
@@ -16,5 +25,5 @@ export function useAiAvailability() {
     return () => { cancelled = true }
   }, [])
 
-  return (feature: AiFeatureId) => statuses?.[feature]?.available ?? true
+  return statuses
 }
