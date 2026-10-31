@@ -29,7 +29,7 @@ import tagsRouter     from './routes/tags';
 import { createGroqRouter } from './routes/groq';
 import knowledgeRouter from './routes/knowledge';
 import { createAgentRouter } from './routes/agent';
-import cvRouter from './routes/cv';
+import { createCvRouter, type CvRouterOptions } from './routes/cv';
 import { createAiRouter } from './routes/ai';
 import adminCvRouter from './routes/adminCv';
 import { createAdminAiRouter } from './routes/adminAi';
@@ -39,6 +39,8 @@ import { createAiStore } from './ai/services/store';
 export interface AppOptions {
   /** Dépendances de la passerelle IA (remplacées dans les tests : faux fournisseur, quotas) */
   ai?: Partial<AiGatewayDeps>;
+  /** Compilation LaTeX (tests : faux runner) */
+  latex?: CvRouterOptions;
 }
 
 export function createApp(options: AppOptions = {}) {
@@ -102,6 +104,8 @@ export function createApp(options: AppOptions = {}) {
   // URL historiques des assistants : entrées texte uniquement
   app.use('/api/agent/chat', express.json({ limit: '128kb' }));
   app.use('/api/groq', express.json({ limit: '16kb' }));
+  // Compilation LaTeX : source ≤ 200 Ko + photo JPEG ≤ 2 Mo encodée en base64
+  app.use('/api/cv/compile', express.json({ limit: '3mb' }));
   app.use(express.json({ limit: '2mb' }));
   app.use(cookieParser());
   // Servir les images uploadées localement
@@ -142,7 +146,7 @@ export function createApp(options: AppOptions = {}) {
   app.use('/api/groq', createGroqRouter(aiGateway));
   app.use('/api/agent/knowledge', knowledgeRouter);
   app.use('/api/agent', createAgentRouter(aiGateway));
-  app.use('/api/cv', cvRouter);
+  app.use('/api/cv', createCvRouter(options.latex));
   app.use('/api/ai', createAiRouter(aiGateway));
   app.use('/api/admin/cv', adminCvRouter);
   app.use('/api/admin/ai', createAdminAiRouter(aiGateway, aiStore));

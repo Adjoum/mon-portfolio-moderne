@@ -190,6 +190,17 @@ export function aiFeatureLimiter(featureId: string, perMinute: () => number): Ra
   return limiter;
 }
 
+// ── 6f. Compilation LaTeX (service latex-runner) — par IP ─────
+// 60 compilations par 10 minutes : l'éditeur compile 3 s après la dernière frappe, et jamais deux fois
+// le même source. Quotas journaliers et concurrence : src/latex/compile.ts
+export const latexCompileLimiter = rateLimit({
+  windowMs:        10 * 60 * 1000,
+  limit:           () => Number(process.env.LATEX_COMPILE_PER_10MIN) || 60,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  handler:         rateLimitHandler,
+});
+
 // ── 7. Middleware de validation du contenu ────────────────────
 // Rejeter les commentaires trop courts ou trop longs
 // et détecter les patterns de spam basiques
