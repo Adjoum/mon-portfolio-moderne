@@ -5,7 +5,7 @@ import { FlaskConical, Plus, Save, Settings2 } from 'lucide-react'
 import { aiAdmin, PROVIDER_IDS, type Catalog, type FeatureState, type Overview, type ProviderId } from '../api'
 import { BLOCKERS, CAPABILITIES, KEY_STATUS, MODEL_STATUS, PARAM_LABELS, REASONING_LEVELS, featureLabel, formatDate, formatUsd } from '../format'
 import { Badge, Button, Card, Field, NoticeBanner } from '../ui'
-import { inputClass } from '../styles'
+import { inputClass, selectClass } from '../styles'
 import { useServerAction } from '../useServerAction'
 
 const NEW_MODEL = '__nouveau__'
@@ -29,7 +29,7 @@ function ParamsEditor({ supported, params, onChange, idPrefix }: { supported: st
           <Field key={name} label={PARAM_LABELS[name] ?? name} htmlFor={id} hint="Vide : valeur par défaut du fournisseur">
             {name === 'reasoning_effort'
               ? (
-                <select id={id} value={value} onChange={e => set(name, e.target.value)} className={inputClass}>
+                <select id={id} value={value} onChange={e => set(name, e.target.value)} className={selectClass}>
                   <option value="">Par défaut</option>
                   {REASONING_LEVELS.map(level => <option key={level} value={level}>{level}</option>)}
                 </select>
@@ -100,16 +100,29 @@ function AssignmentEditor({ feature, overview, reload, onClose }: { feature: Fea
       </p>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Fournisseur" htmlFor={`${id}-provider`}>
-          <select id={`${id}-provider`} value={providerId} onChange={e => changeProvider(e.target.value as ProviderId)} className={inputClass}>
-            {PROVIDER_IDS.map(p => {
-              const state = overview.providers.find(x => x.id === p)!
-              return <option key={p} value={p}>{state.displayName} — {state.keyStatus === 'valid' && !state.enabled ? 'désactivé' : KEY_STATUS[state.keyStatus].toLowerCase()}</option>
+        <Field
+          label="Fournisseur"
+          htmlFor={`${id}-provider`}
+          hint={provider.keyStatus === 'valid' ? undefined : 'Aucune clé valide pour ce fournisseur : ajoutez-la dans la rubrique « Fournisseurs » avant de tester ou d’activer.'}
+        >
+          <select id={`${id}-provider`} value={providerId} onChange={e => changeProvider(e.target.value as ProviderId)} className={selectClass}>
+            {/* Les six fournisseurs restent proposés ; ceux sans clé valide sont regroupés à part */}
+            {([['Configurés', true], ['Sans clé valide (à configurer dans « Fournisseurs »)', false]] as const).map(([label, configured]) => {
+              const states = PROVIDER_IDS.map(p => overview.providers.find(x => x.id === p)!).filter(state => (state.keyStatus === 'valid') === configured)
+              return states.length > 0 && (
+                <optgroup key={label} label={label}>
+                  {states.map(state => (
+                    <option key={state.id} value={state.id}>
+                      {state.displayName} — {state.keyStatus === 'valid' && !state.enabled ? 'désactivé' : KEY_STATUS[state.keyStatus].toLowerCase()}
+                    </option>
+                  ))}
+                </optgroup>
+              )
             })}
           </select>
         </Field>
         <Field label="Modèle" htmlFor={`${id}-model`}>
-          <select id={`${id}-model`} value={modelId} onChange={e => setModelId(e.target.value === NEW_MODEL ? NEW_MODEL : e.target.value)} className={inputClass}>
+          <select id={`${id}-model`} value={modelId} onChange={e => setModelId(e.target.value === NEW_MODEL ? NEW_MODEL : e.target.value)} className={selectClass}>
             <option value="">— Choisir un modèle —</option>
             {selectable.map(m => <option key={m.modelId} value={m.modelId}>{m.modelId} ({MODEL_STATUS[m.status].toLowerCase()})</option>)}
             <option value={NEW_MODEL}>+ Saisir un nouvel identifiant…</option>
