@@ -192,6 +192,12 @@ function applySchema(stack) {
   psql('supabase_admin', "notify pgrst, 'reload schema';");
 }
 
+/** Bases de recette créées avant une correction de l'état initial : colonnes ajoutées, rien d'effacé */
+function alignSchema() {
+  step('Alignement de la base sur le schéma réel (AI Lab), données, comptes et clés conservés');
+  psql('postgres', `set client_min_messages = warning;\n${fs.readFileSync(path.join(ROOT, 'env/recette/schema-alignment.sql'), 'utf8')}`, ['--single-transaction']);
+}
+
 async function authAdmin(pathname, stack, init = {}) {
   const res = await fetch(`${GATEWAY}/auth/v1${pathname}`, {
     ...init,
@@ -255,8 +261,9 @@ async function up() {
   await waitFor('PostgREST', `${GATEWAY}/rest/v1/`, { headers: { apikey: stack.RECETTE_ANON_KEY } });
   await waitFor('Storage', `${GATEWAY}/storage/v1/status`);
   if (!started) applySchema(stack);
-  step('API dans Docker et MongoDB (construction de l’image depuis le code courant)');
-  mustCompose('up', '-d', '--build', 'mongo', 'api');
+  alignSchema();
+  step('API, compilation LaTeX isolée et MongoDB dans Docker (images construites depuis le code courant)');
+  mustCompose('up', '-d', '--build', 'mongo', 'latex-runner', 'api');
   await waitFor('API', `${API}/api/health`);
   await ensureAdmin(stack);
   step('Frontend Vite (mode recette)');
@@ -278,8 +285,8 @@ async function verify() {
   };
 
   const running = new Set(mustCompose('ps', '--status', 'running', '--format', '{{.Service}}').split(/\r?\n/).filter(Boolean));
-  const missing = ['db', 'auth', 'rest', 'storage', 'gateway', 'mongo', 'api'].filter(s => !running.has(s));
-  check('sept conteneurs en marche', missing.length === 0, missing.length ? `manquants : ${missing.join(', ')}` : '');
+  const missing = ['db', 'auth', 'rest', 'storage', 'gateway', 'mongo', 'latex-runner', 'api'].filter(s => !running.has(s));
+  check('huit conteneurs en marche', missing.length === 0, missing.length ? `manquants : ${missing.join(', ')}` : '');
 
   const apiEnv = fs.readFileSync(API_ENV, 'utf8');
   const webEnv = fs.readFileSync(WEB_ENV, 'utf8');
@@ -294,6 +301,30 @@ async function verify() {
   const features = await fetch(`${API}/api/ai/features`).then(r => r.json()).then(b => b.features).catch(() => null);
   const featureCount = Array.isArray(features) ? features.length : Object.keys(features ?? {}).length;
   check('API : 9 fonctionnalités au registre', featureCount === 9, `${featureCount}`);
+
+  // Aperçu PDF : service isolé, joint uniquement par l'API (contrôles complets : scripts/latex-recette.mjs)
+  const runner = JSON.parse(spawnSync('docker', ['inspect', 'recette-latex-runner'], { encoding: 'utf8' }).stdout || '[]')[0];
+  const host = runner?.HostConfig ?? {};
+  const runnerNets = Object.keys(runner?.NetworkSettings?.Networks ?? {});
+  const internal = runnerNets.length === 1
+    && JSON.parse(spawnSync('docker', ['network', 'inspect', runnerNets[0]], { encoding: 'utf8' }).stdout || '[]')[0]?.Internal === true;
+  check('latex-runner : lecture seule, aucune capacité, no-new-privileges, réseau interne, aucun port',
+    host.ReadonlyRootfs === true && host.CapDrop?.includes('ALL') && !host.CapAdd?.length && host.SecurityOpt?.includes('no-new-privileges:true')
+    && internal && !Object.keys(host.PortBindings ?? {}).length && !host.Privileged);
+  check('latex-runner : aucune variable secrète', !(runner?.Config?.Env ?? []).some(e => /KEY|SECRET|TOKEN|PASSWORD|DATABASE|MONGO|SUPABASE/i.test(e.split('=')[0])));
+  // Adresse fictive (plage de test 198.18.0.0/15) : vos propres compilations ne sont pas décomptées
+  const compileApi = body => fetch(`${API}/api/cv/compile`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '198.18.0.1' }, body: JSON.stringify(body) });
+  const pdf = await compileApi({ code: '\\documentclass{article}\\usepackage[utf8]{inputenc}\\begin{document}Recette é\\end{document}' })
+    .then(async r => ({ status: r.status, type: r.headers.get('content-type'), head: Buffer.from(await r.arrayBuffer()).subarray(0, 5).toString('latin1') })).catch(() => ({ status: 0 }));
+  check('aperçu PDF : document compilé par l’API via latex-runner', pdf.status === 200 && pdf.type === 'application/pdf' && pdf.head === '%PDF-', `HTTP ${pdf.status}`);
+  const refused = await compileApi({ code: '\\documentclass{article}\\begin{document}\\input{/etc/passwd}\\end{document}' }).then(r => r.json()).catch(() => null);
+  check('aperçu PDF : lecture de fichier refusée (\\input)', refused?.code === 'LATEX_FORBIDDEN_COMMAND', refused?.code ?? 'aucune réponse');
+
+  // AI Lab : colonnes du schéma réel, triées comme le dashboard
+  const ailabColumns = sqlValue("select count(*) from information_schema.columns where table_schema = 'public' and ((table_name = 'ailab_capabilities' and column_name in ('createdat', 'updatedat')) or (table_name = 'ailab_projects' and column_name in ('createdat', 'updatedat', 'technologies', 'color', 'imageurl', 'githuburl', 'liveurl', 'demourl', 'demoavailable', 'featured')));");
+  check('AI Lab : colonnes du schéma réel présentes (createdat, updatedat, technologies…)', ailabColumns === '12', `${ailabColumns}/12`);
+  const ailabAnon = await fetch(`${GATEWAY}/rest/v1/ailab_capabilities?select=*&order=sortorder.asc,createdat.desc`, { headers: { apikey: stack.RECETTE_ANON_KEY } }).then(r => r.status).catch(() => 0);
+  check('AI Lab : tri par createdat accepté par PostgREST', ailabAnon === 200, `HTTP ${ailabAnon}`);
 
   const ssl = sqlValue("select count(*) filter (where s.ssl), count(*) from pg_stat_activity a join pg_stat_ssl s using (pid) where a.usename = 'ai_backend';").split('|');
   check('API → Postgres : connexions ai_backend chiffrées (certificat vérifié par l’API)', Number(ssl[1]) > 0 && ssl[0] === ssl[1], `${ssl[0]}/${ssl[1]}`);
@@ -345,6 +376,22 @@ async function verify() {
     check('centre IA : administrateur sans MFA refusé', noMfa.status === 403, `HTTP ${noMfa.status}`);
     check('centre IA : administrateur avec MFA accepté (jeton vérifié par l’API, HTTPS, RPC)', withMfa.status === 200, `HTTP ${withMfa.status}`);
     check('centre IA : les 6 fournisseurs affichés', body?.providers?.length === 6, `${body?.providers?.length}`);
+
+    // AI Lab, comme le dashboard (AILabManager.tsx) : lecture triée par createdat, ajout puis retrait
+    const rest = (pathname, init = {}) => fetch(`${GATEWAY}/rest/v1/${pathname}`, {
+      ...init, headers: { apikey: stack.RECETTE_ANON_KEY, Authorization: `Bearer ${aal2}`, 'Content-Type': 'application/json', ...init.headers },
+    });
+    const projectSelect = 'id,slug,title,technologies,color,imageurl,demoavailable,featured,active,sortorder,createdat,updatedat,ailab_project_capabilities(capability_id,ailab_capabilities(id,slug,title,createdat,updatedat))';
+    const lists = await Promise.all([
+      rest('ailab_capabilities?select=*&order=sortorder.asc,createdat.desc'),
+      rest(`ailab_projects?select=${projectSelect}&order=sortorder.asc,createdat.desc`),
+    ]);
+    check('AI Lab : listes du dashboard chargées (administrateur avec MFA)', lists.every(r => r.status === 200), lists.map(r => r.status).join(', '));
+    const slug = `controle-${crypto.randomUUID()}`;
+    const created = await rest('ailab_capabilities', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ slug, icon: 'Brain', title: 'Contrôle', description: 'Ligne temporaire de verify' }) });
+    const row = (await created.json().catch(() => []))[0];
+    await rest(`ailab_capabilities?slug=eq.${slug}`, { method: 'DELETE' });
+    check('AI Lab : ajout d’une capacité (createdat et updatedat renseignés), puis retrait', created.status === 201 && !!row?.createdat && !!row?.updatedat, `HTTP ${created.status}`);
   } finally {
     await authAdmin(`/admin/users/${user.id}`, stack, { method: 'DELETE', body: '{}' });
   }

@@ -9,6 +9,7 @@
     "recette:up": "node scripts/recette.mjs up",
     "recette:verify": "node scripts/recette.mjs verify",
     "recette:down": "node scripts/recette.mjs down",
+    "recette:latex": "node scripts/latex-recette.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",

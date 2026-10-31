@@ -137,6 +137,7 @@ describe('journal TeX : erreurs filtrées, jamais le journal brut', () => {
     expect(errors).toHaveLength(5)
     for (const e of errors) {
       expect(e.message.length).toBeLessThanOrEqual(240)
+      // eslint-disable-next-line no-control-regex
       expect(e.message).not.toMatch(/[\u0000-\u001f]/)
     }
   })

@@ -103,7 +103,6 @@ export function checkSource(source) {
   if (typeof source !== 'string' || !source.trim()) throw new PolicyError('LATEX_INVALID_SOURCE');
   if (Buffer.byteLength(source, 'utf8') > MAX_SOURCE_BYTES) throw new PolicyError('LATEX_TOO_LARGE');
   // Caractères de contrôle (hors tabulation et fins de ligne) : aucun usage légitime dans un .tex
-  // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(source)) throw new PolicyError('LATEX_INVALID_SOURCE');
 
   const hat = source.indexOf('^^');

@@ -1,11 +1,12 @@
-# docker-compose.yml — API et frontend, démarrage local ou sur la VM Oracle
+# docker-compose.yml — API, compilation LaTeX isolée et frontend, démarrage local ou sur la VM Oracle
 #
-#   docker compose up -d --build             API + frontend (MongoDB externe, Atlas par exemple)
+#   docker compose up -d --build             API + latex-runner + frontend (MongoDB externe, Atlas par exemple)
 #   docker compose --profile dev up -d       ajoute MongoDB local et son interface
 #
 # Secrets : uniquement dans .env.docker (non versionné, modèle : .env.docker.example) ;
 # tests locaux : .env.docker.test, avec API_ENV_FILE et --env-file .env.docker.test.
 # Tous les ports sont liés à 127.0.0.1 : sur la VM, nginx sert de frontal.
+# latex-runner n'a ni secret ni port publié : réseau interne latex-net, partagé avec l'API seule.
 
 services:
 
@@ -22,6 +23,9 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=5000
+      # Aperçu PDF de l'éditeur LaTeX, délégué au service isolé ci-dessous (doc 22).
+      # Sans cette variable, POST /api/cv/compile répond 503 et l'éditeur propose le .tex.
+      - LATEX_RUNNER_URL=http://latex-runner:3000
     ports:
       - "127.0.0.1:5000:5000"
     volumes:
@@ -30,6 +34,7 @@ services:
       # - /etc/blog-api/supabase-ca.crt:/run/certs/supabase-ca.crt:ro
     networks:
       - blog-network
+      - latex-net
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -44,6 +49,51 @@ services:
       mongo:
         condition: service_healthy
         required: false
+      latex-runner:
+        condition: service_healthy
+        required: false
+
+  # ── Compilation LaTeX isolée (aperçu PDF de l'éditeur) ─────
+  # Reçoit uniquement { tex, photo } de l'API ; aucun secret, aucun fichier d'environnement,
+  # aucun port publié. Réseau interne sans sortie : ni Internet, ni hôte, seule l'API le joint.
+  # TeX tourne sans shell-escape, lecture et écriture limitées au dossier de travail (doc 22).
+  latex-runner:
+    build:
+      context: ./latex-runner
+      dockerfile: Dockerfile
+    container_name: latex-runner
+    restart: unless-stopped
+    environment:
+      - LATEX_MAX_CONCURRENCY=2
+      - LATEX_TIMEOUT_MS=20000
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      # Espace de travail jetable : un dossier par compilation, supprimé aussitôt ; rien n'y est exécutable
+      - /work:rw,size=64m,mode=0700,uid=10001,gid=10001,noexec,nosuid,nodev
+      - /tmp:rw,size=1m,mode=1777,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Processus d'initialisation : récupère tout processus TeX orphelin
+    init: true
+    pids_limit: 64
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    ulimits:
+      nofile:
+        soft: 256
+        hard: 256
+      core: 0
+    networks:
+      - latex-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "3"
 
   # ── Frontend React (Nginx) ────────────────────────────────
   frontend:
@@ -121,3 +171,7 @@ volumes:
 networks:
   blog-network:
     driver: bridge
+  # Réseau de compilation : interne (aucune route vers Internet ni vers l'hôte), API ↔ latex-runner
+  latex-net:
+    driver: bridge
+    internal: true

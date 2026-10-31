@@ -128,3 +128,39 @@ describe('exploitation (P0.A3)', () => {
     expect(read('nginx.conf')).toContain(headers['Content-Security-Policy-Report-Only'])
   })
 })
+
+describe('latex-runner : compilation LaTeX isolée (faille S2)', () => {
+  const compose = read('docker-compose.yml')
+  const runner = compose.slice(compose.indexOf('\n  latex-runner:'), compose.indexOf('\n  frontend:'))
+  const api = compose.slice(compose.indexOf('\n  api:'), compose.indexOf('\n  latex-runner:'))
+  const dockerfile = read('latex-runner/Dockerfile')
+
+  it('durcissement du conteneur : lecture seule, aucune capacité, utilisateur non root, ressources bornées', () => {
+    for (const line of ['read_only: true', '- ALL', '- no-new-privileges:true', 'user: "10001:10001"', 'init: true', 'pids_limit: 64', 'mem_limit: 512m', 'memswap_limit: 512m', 'cpus: 1.0']) {
+      expect(runner, line).toContain(line)
+    }
+    expect(runner).toMatch(/- \/work:rw,size=64m,[^\n]*noexec,nosuid,nodev/)
+    expect(runner).not.toMatch(/privileged|cap_add|SYS_ADMIN|seccomp:unconfined|apparmor:unconfined/)
+  })
+
+  it('aucun secret, aucun port, aucun volume : seul le réseau interne partagé avec l’API', () => {
+    expect(runner).not.toMatch(/env_file|ports:|volumes:/)
+    expect(runner).not.toMatch(/KEY|SECRET|TOKEN|PASSWORD|MONGO|SUPABASE|DATABASE/)
+    expect(runner).toMatch(/networks:\s*\n\s*- latex-net\s*\n/)
+    expect(compose).toMatch(/latex-net:\s*\n\s*driver: bridge\s*\n\s*internal: true/)
+    expect(api).toContain('- latex-net')
+    expect(api).toContain('LATEX_RUNNER_URL=http://latex-runner:3000')
+  })
+
+  it('image épinglée, sans secret, politique TeX pour documents non fiables', () => {
+    expect(dockerfile).toMatch(/^FROM node:24-[^\s]+@sha256:[0-9a-f]{64}$/m)
+    expect(dockerfile).not.toMatch(/^\s*(ARG|ENV)\s+\w*(KEY|SECRET|TOKEN|PASSWORD)/m)
+    for (const setting of ["'shell_escape = f'", "'openin_any = p'", "'openout_any = p'"]) expect(dockerfile).toContain(setting)
+    expect(dockerfile).toMatch(/^USER 10001:10001$/m)
+    expect(read('latex-runner/.dockerignore').split(/\r?\n/)).toEqual(expect.arrayContaining(['.env', '.env.*', 'test']))
+  })
+
+  it('l’image de l’API ne contient toujours aucune chaîne TeX', () => {
+    expect(read('blog-api/Dockerfile')).not.toMatch(/texlive|latexmk|pdflatex/)
+  })
+})

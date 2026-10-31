@@ -13,7 +13,6 @@ export function sanitize(text, max = MAX_MESSAGE) {
     // Dossier de travail et chemins de la distribution : seul le nom du fichier reste
     // (chemins absolus ou relatifs « ./ » seulement : une URL du document reste intacte)
     .replace(/(^|[\s(`'"<=])\.{0,2}\/(?:[\w.@+-]+\/)*([\w.@+-]+)/g, '$1$2')
-    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001F\u007F]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
