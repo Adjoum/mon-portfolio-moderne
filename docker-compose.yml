@@ -6,7 +6,7 @@
 # Secrets : uniquement dans .env.docker (non versionné, modèle : .env.docker.example) ;
 # tests locaux : .env.docker.test, avec API_ENV_FILE et --env-file .env.docker.test.
 # Tous les ports sont liés à 127.0.0.1 : sur la VM, nginx sert de frontal.
-# latex-runner n'a ni secret ni port publié : réseau interne latex-net, partagé avec l'API seule.
+# latex-runner et cv-extractor n'ont ni secret ni port publié : chacun sur son réseau interne, partagé avec l'API seule.
 
 services:
 
@@ -26,6 +26,9 @@ services:
       # Aperçu PDF de l'éditeur LaTeX, délégué au service isolé ci-dessous (doc 22).
       # Sans cette variable, POST /api/cv/compile répond 503 et l'éditeur propose le .tex.
       - LATEX_RUNNER_URL=http://latex-runner:3000
+      # Import de CV du studio : extraction du texte par le service isolé cv-extractor (doc 23).
+      # Sans cette variable, POST /api/cv/import répond 503.
+      - CV_EXTRACTOR_URL=http://cv-extractor:3100
     ports:
       - "127.0.0.1:5000:5000"
     volumes:
@@ -35,6 +38,7 @@ services:
     networks:
       - blog-network
       - latex-net
+      - extract-net
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -50,6 +54,9 @@ services:
         condition: service_healthy
         required: false
       latex-runner:
+        condition: service_healthy
+        required: false
+      cv-extractor:
         condition: service_healthy
         required: false
 
@@ -89,6 +96,45 @@ services:
       core: 0
     networks:
       - latex-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "3"
+
+  # ── Extraction isolée des CV importés (studio LaTeX) ───────
+  # Reçoit uniquement les octets du fichier et son format ; aucun secret, aucun port publié.
+  # Réseau interne distinct : ni Internet, ni hôte, ni latex-runner, seule l'API le joint.
+  # Le fichier n'est jamais écrit : extraction en mémoire, dans un thread borné (doc 23).
+  cv-extractor:
+    build:
+      context: ./cv-extractor
+      dockerfile: Dockerfile
+    container_name: cv-extractor
+    restart: unless-stopped
+    environment:
+      - EXTRACT_MAX_CONCURRENCY=2
+      - EXTRACT_TIMEOUT_MS=20000
+    user: "10002:10002"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,size=1m,mode=1777,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    pids_limit: 64
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    ulimits:
+      nofile:
+        soft: 256
+        hard: 256
+      core: 0
+    networks:
+      - extract-net
     logging:
       driver: json-file
       options:
@@ -173,5 +219,9 @@ networks:
     driver: bridge
   # Réseau de compilation : interne (aucune route vers Internet ni vers l'hôte), API ↔ latex-runner
   latex-net:
+    driver: bridge
+    internal: true
+  # Réseau d'extraction : interne, API ↔ cv-extractor
+  extract-net:
     driver: bridge
     internal: true

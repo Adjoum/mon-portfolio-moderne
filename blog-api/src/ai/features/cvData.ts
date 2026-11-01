@@ -179,6 +179,6 @@ export function normalizeCvData(raw: unknown, mode: Mode): CvData {
 
 /** Nombres présents dans un texte (« 40 % », « 2 500 », « 3,5 »), normalisés pour comparaison */
 export function numbersIn(text: string): string[] {
-  return [...text.replace(/(\d)[\s  ](?=\d{3}\b)/g, '$1').matchAll(/\d+(?:[.,]\d+)?/g)]
+  return [...text.replace(/(\d)\s(?=\d{3}\b)/g, '$1').matchAll(/\d+(?:[.,]\d+)?/g)]
     .map(m => m[0].replace(',', '.').replace(/^0+(?=\d)/, ''));
 }

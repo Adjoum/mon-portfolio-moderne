@@ -265,7 +265,7 @@ async function up() {
   if (!started) applySchema(stack);
   alignSchema();
   step('API, compilation LaTeX isolée et MongoDB dans Docker (images construites depuis le code courant)');
-  mustCompose('up', '-d', '--build', 'mongo', 'latex-runner', 'api');
+  mustCompose('up', '-d', '--build', 'mongo', 'latex-runner', 'cv-extractor', 'api');
   await waitFor('API', `${API}/api/health`);
   await ensureAdmin(stack);
   step('Frontend Vite (mode recette)');
@@ -287,8 +287,8 @@ async function verify() {
   };
 
   const running = new Set(mustCompose('ps', '--status', 'running', '--format', '{{.Service}}').split(/\r?\n/).filter(Boolean));
-  const missing = ['db', 'auth', 'rest', 'storage', 'gateway', 'mongo', 'latex-runner', 'api'].filter(s => !running.has(s));
-  check('huit conteneurs en marche', missing.length === 0, missing.length ? `manquants : ${missing.join(', ')}` : '');
+  const missing = ['db', 'auth', 'rest', 'storage', 'gateway', 'mongo', 'latex-runner', 'cv-extractor', 'api'].filter(s => !running.has(s));
+  check('neuf conteneurs en marche', missing.length === 0, missing.length ? `manquants : ${missing.join(', ')}` : '');
 
   const apiEnv = fs.readFileSync(API_ENV, 'utf8');
   const webEnv = fs.readFileSync(WEB_ENV, 'utf8');
@@ -321,6 +321,19 @@ async function verify() {
   check('aperçu PDF : document compilé par l’API via latex-runner', pdf.status === 200 && pdf.type === 'application/pdf' && pdf.head === '%PDF-', `HTTP ${pdf.status}`);
   const refused = await compileApi({ code: '\\documentclass{article}\\begin{document}\\input{/etc/passwd}\\end{document}' }).then(r => r.json()).catch(() => null);
   check('aperçu PDF : lecture de fichier refusée (\\input)', refused?.code === 'LATEX_FORBIDDEN_COMMAND', refused?.code ?? 'aucune réponse');
+
+  // Import de CV : extraction isolée (contrôles complets : tests/extract)
+  const extractor = JSON.parse(spawnSync('docker', ['inspect', 'recette-cv-extractor'], { encoding: 'utf8' }).stdout || '[]')[0];
+  const xh = extractor?.HostConfig ?? {};
+  const xNets = Object.keys(extractor?.NetworkSettings?.Networks ?? {});
+  const xInternal = xNets.length === 1 && xNets[0] !== runnerNets[0]
+    && JSON.parse(spawnSync('docker', ['network', 'inspect', xNets[0]], { encoding: 'utf8' }).stdout || '[]')[0]?.Internal === true;
+  check('cv-extractor : lecture seule, aucune capacité, réseau interne distinct de celui du runner, aucun port, aucun secret',
+    xh.ReadonlyRootfs === true && xh.CapDrop?.includes('ALL') && !xh.CapAdd?.length && xh.SecurityOpt?.includes('no-new-privileges:true') && xInternal
+    && !Object.keys(xh.PortBindings ?? {}).length && !(extractor?.Config?.Env ?? []).some(e => /KEY|SECRET|TOKEN|PASSWORD|DATABASE|MONGO|SUPABASE/i.test(e.split('=')[0])));
+  const imported = await fetch(`${API}/api/cv/import`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-File-Type': 'text/plain', 'X-Forwarded-For': '198.18.0.2' }, body: 'Awa Konan\nData Analyst' })
+    .then(r => r.json()).catch(() => null);
+  check('import de CV : texte extrait par cv-extractor via l’API', imported?.text === 'Awa Konan\nData Analyst', imported?.code ?? '');
 
   // AI Lab : colonnes du schéma réel, triées comme le dashboard
   const ailabColumns = sqlValue("select count(*) from information_schema.columns where table_schema = 'public' and ((table_name = 'ailab_capabilities' and column_name in ('createdat', 'updatedat')) or (table_name = 'ailab_projects' and column_name in ('createdat', 'updatedat', 'technologies', 'color', 'imageurl', 'githuburl', 'liveurl', 'demourl', 'demoavailable', 'featured')));");

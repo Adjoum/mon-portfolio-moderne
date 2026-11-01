@@ -9,7 +9,7 @@
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { needsRerun, parseLog } from './log.mjs';
+import { needsRerun, parseLog, parseWarnings } from './log.mjs';
 
 export const WORK_ROOT = process.env.LATEX_WORK_DIR || '/work';
 export const MAX_PDF_BYTES = 10 * 1024 * 1024;
@@ -154,7 +154,7 @@ async function readLog(dir) {
 /**
  * Compile un source déjà contrôlé par la politique.
  * @param {{ tex: string, photo?: Buffer, signal?: AbortSignal, limits?: typeof LIMITS }} job
- * @returns {Promise<{ pdf: Buffer, passes: number, ms: number }>}
+ * @returns {Promise<{ pdf: Buffer, passes: number, warnings: { kind: string, line?: number, message: string }[], ms: number }>}
  */
 export async function compile({ tex, photo, signal, limits = LIMITS }) {
   const started = Date.now();
@@ -165,6 +165,7 @@ export async function compile({ tex, photo, signal, limits = LIMITS }) {
     if (photo) await fs.writeFile(path.join(dir, 'photo.jpg'), photo, { mode: 0o600 });
 
     let passes = 0;
+    let warnings = [];
     for (;;) {
       passes++;
       const result = await runPass(dir, deadline, signal, limits);
@@ -181,6 +182,7 @@ export async function compile({ tex, photo, signal, limits = LIMITS }) {
         if (/TeX capacity exceeded/.test(log)) throw new CompileError('LATEX_RESOURCE_LIMIT', errors);
         throw new CompileError('LATEX_COMPILE_ERROR', errors.length ? errors : [{ message: 'La compilation a échoué sans message exploitable.' }]);
       }
+      warnings = parseWarnings(log);
       if (passes >= MAX_PASSES || !needsRerun(log)) break;
     }
 
@@ -190,7 +192,7 @@ export async function compile({ tex, photo, signal, limits = LIMITS }) {
     if (stat.size > MAX_PDF_BYTES) throw new CompileError('LATEX_RESOURCE_LIMIT');
     const pdf = await fs.readFile(pdfPath);
     if (pdf.subarray(0, 5).toString('latin1') !== '%PDF-') throw new CompileError('LATEX_INTERNAL');
-    return { pdf, passes, ms: Date.now() - started };
+    return { pdf, passes, warnings, ms: Date.now() - started };
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
   }

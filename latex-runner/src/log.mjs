@@ -69,3 +69,36 @@ export function parseLog(log) {
 export function needsRerun(log) {
   return /Rerun to get|Label\(s\) may have changed|There were undefined references|Please rerun LaTeX/i.test(String(log));
 }
+
+const MAX_WARNINGS = 10;
+/** Débordement visible à l'œil : au-delà d'un point typographique */
+const OVERFULL_MIN_PT = 1;
+
+/**
+ * Avertissements de mise en page (compilation réussie) : texte qui déborde de la marge et
+ * caractères absents de la police (qui disparaîtraient du PDF). Numéros de ligne du document.
+ * @returns {{ kind: 'overfull'|'missing-char', line?: number, message: string }[]}
+ */
+export function parseWarnings(log) {
+  const warnings = [];
+  for (const raw of String(log).split(/\r?\n/)) {
+    if (warnings.length >= MAX_WARNINGS) break;
+    const overfull = /^Overfull \\([hv])box \((\d+(?:\.\d+)?)pt too (wide|high)\)(?: in paragraph at lines (\d+)--\d+| detected at line (\d+)| in alignment at lines (\d+)--\d+)?/.exec(raw);
+    if (overfull) {
+      const pt = Number(overfull[2]);
+      if (pt < OVERFULL_MIN_PT) continue;
+      const line = Number(overfull[4] ?? overfull[5] ?? overfull[6]) || undefined;
+      const message = overfull[1] === 'h'
+        ? `Texte trop large de ${pt.toFixed(1)} pt : il dépasse dans la marge.`
+        : `Contenu trop haut de ${pt.toFixed(1)} pt : il dépasse en bas de page.`;
+      if (!warnings.some(w => w.line === line && w.kind === 'overfull')) warnings.push({ kind: 'overfull', ...(line ? { line } : {}), message });
+      continue;
+    }
+    const missing = /^Missing character: There is no (.{1,8}?) (?:\(U\+[0-9A-F]+\) )?in font/.exec(raw);
+    if (missing) {
+      const message = sanitize(`Caractère absent de la police, non imprimé : ${missing[1]}`, 120);
+      if (!warnings.some(w => w.message === message)) warnings.push({ kind: 'missing-char', message });
+    }
+  }
+  return warnings;
+}

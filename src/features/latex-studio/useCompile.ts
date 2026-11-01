@@ -82,8 +82,8 @@ export function useCompile(code: string, photo: string | null, photoWidth: numbe
   useEffect(() => {
     if (!autoCompile || unavailable) return
     const delay = immediate.current ? 0 : AUTO_COMPILE_DELAY_MS
-    immediate.current = false
-    const timer = setTimeout(() => void run(false), delay)
+    // Drapeau levé au déclenchement, pas avant : un effet monté deux fois (React StrictMode) reste immédiat
+    const timer = setTimeout(() => { immediate.current = false; void run(false) }, delay)
     return () => clearTimeout(timer)
   }, [input, autoCompile, unavailable, run])
 

@@ -164,3 +164,35 @@ describe('latex-runner : compilation LaTeX isolée (faille S2)', () => {
     expect(read('blog-api/Dockerfile')).not.toMatch(/texlive|latexmk|pdflatex/)
   })
 })
+
+describe('cv-extractor : extraction isolée des CV importés', () => {
+  const compose = read('docker-compose.yml')
+  const service = compose.slice(compose.indexOf('\n  cv-extractor:'), compose.indexOf('\n  frontend:'))
+  const api = compose.slice(compose.indexOf('\n  api:'), compose.indexOf('\n  latex-runner:'))
+  const dockerfile = read('cv-extractor/Dockerfile')
+
+  it('durcissement identique à latex-runner, sans espace de travail sur disque', () => {
+    for (const line of ['read_only: true', '- ALL', '- no-new-privileges:true', 'user: "10002:10002"', 'init: true', 'pids_limit: 64', 'mem_limit: 512m', 'cpus: 1.0']) {
+      expect(service, line).toContain(line)
+    }
+    expect(service).not.toMatch(/env_file|ports:|volumes:|privileged|cap_add|KEY|SECRET|TOKEN|PASSWORD|MONGO|SUPABASE/)
+    expect(service).not.toContain('/work')
+  })
+
+  it('réseau interne propre : ni Internet, ni latex-runner ; seule l’API le joint', () => {
+    expect(service).toMatch(/networks:\s*\n\s*- extract-net\s*\n/)
+    expect(service).not.toContain('latex-net')
+    expect(compose).toMatch(/extract-net:\s*\n\s*driver: bridge\s*\n\s*internal: true/)
+    expect(api).toContain('- extract-net')
+    expect(api).toContain('CV_EXTRACTOR_URL=http://cv-extractor:3100')
+  })
+
+  it('image épinglée, dépendances figées, sans module natif ni script d’installation', () => {
+    expect(dockerfile).toMatch(/^FROM node:24-[^\s]+@sha256:[0-9a-f]{64}$/m)
+    expect(dockerfile).toContain('npm ci --omit=dev --omit=optional --ignore-scripts')
+    expect(dockerfile).toMatch(/^USER 10002:10002$/m)
+    const pkg = JSON.parse(read('cv-extractor/package.json'))
+    for (const version of Object.values(pkg.dependencies)) expect(version).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(fs.existsSync(path.join(ROOT, 'cv-extractor/package-lock.json'))).toBe(true)
+  })
+})

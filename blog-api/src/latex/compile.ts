@@ -6,6 +6,8 @@
 // uniquement { tex, photo } : ni en-tête du visiteur, ni cookie, ni adresse IP, ni variable.
 // La réponse du runner est revérifiée (PDF réel, taille bornée, erreurs filtrées à nouveau).
 
+import { createQuota } from './quota';
+
 export const MAX_TEX_BYTES = 200 * 1024;
 export const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 export const MAX_PDF_BYTES = 10 * 1024 * 1024;
@@ -109,6 +111,28 @@ export function sanitizeDetails(raw: unknown): CompileDetail[] {
   });
 }
 
+export interface CompileWarning { kind: 'overfull' | 'missing-char'; line?: number; message: string }
+
+/**
+ * Avertissements de mise en page du runner (en-tête X-Latex-Warnings, JSON en base64), relus sans
+ * lui faire confiance : nature connue, numéro de ligne entier, texte filtré et borné.
+ */
+export function sanitizeWarnings(header: string | null): CompileWarning[] {
+  if (!header || header.length > 8192 || !/^[A-Za-z0-9+/]+={0,2}$/.test(header)) return [];
+  let parsed: unknown;
+  try { parsed = JSON.parse(Buffer.from(header, 'base64').toString('utf8')); } catch { return []; }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.slice(0, 10).flatMap((item): CompileWarning[] => {
+    if (!item || typeof item !== 'object') return [];
+    const w = item as Record<string, unknown>;
+    if (w.kind !== 'overfull' && w.kind !== 'missing-char') return [];
+    const [detail] = sanitizeDetails([{ message: w.message, line: w.line }]);
+    return detail ? [{ kind: w.kind, ...detail }] : [];
+  });
+}
+
+export interface CompileOutput { pdf: Buffer; warnings: CompileWarning[] }
+
 const RUNNER_REFUSALS = new Set([
   'LATEX_FORBIDDEN_COMMAND', 'LATEX_PACKAGE_NOT_ALLOWED', 'LATEX_CLASS_NOT_ALLOWED', 'LATEX_INVALID_SOURCE',
   'LATEX_COMPILE_ERROR', 'LATEX_TIMEOUT', 'LATEX_RESOURCE_LIMIT',
@@ -143,7 +167,7 @@ export function looksLikePdf(buf: Buffer): boolean {
 
 export interface LatexCompiler {
   readonly config: LatexCompileConfig;
-  compile(subject: string, input: CompileInput, signal: AbortSignal): Promise<Buffer>;
+  compile(subject: string, input: CompileInput, signal: AbortSignal): Promise<CompileOutput>;
 }
 
 export function createLatexCompiler(
@@ -153,49 +177,9 @@ export function createLatexCompiler(
   const doFetch = deps.fetch ?? fetch;
   const now = deps.now ?? Date.now;
 
-  // Quotas journaliers en mémoire : une seule instance de l'API (VM Oracle). La compilation ne
-  // coûte que du CPU local ; un redémarrage remet les compteurs à zéro, la limite par 10 minutes
-  // et la concurrence restent en place.
-  let day = '';
-  let globalCount = 0;
-  const perSubject = new Map<string, number>();
-  const runningBySubject = new Map<string, number>();
-  let running = 0;
-  const MAX_TRACKED_SUBJECTS = 100_000;
+  const quota = createQuota(config, now);
 
-  const today = () => new Date(now()).toISOString().slice(0, 10);
-  const secondsToMidnight = () => {
-    const t = now();
-    return Math.max(60, Math.ceil((Date.UTC(new Date(t).getUTCFullYear(), new Date(t).getUTCMonth(), new Date(t).getUTCDate() + 1) - t) / 1000));
-  };
-
-  function reserve(subject: string) {
-    const d = today();
-    if (d !== day) {
-      day = d;
-      globalCount = 0;
-      perSubject.clear();
-    }
-    if (running >= config.maxConcurrency) throw new LatexCompileError(503, 'LATEX_BUSY', { retryAfterSec: 3 });
-    if ((runningBySubject.get(subject) ?? 0) >= 1) throw new LatexCompileError(429, 'LATEX_BUSY', { retryAfterSec: 2 });
-    const used = perSubject.get(subject) ?? 0;
-    if (used >= config.perSubjectPerDay || globalCount >= config.globalPerDay) {
-      throw new LatexCompileError(429, 'LATEX_QUOTA_EXCEEDED', { retryAfterSec: secondsToMidnight() });
-    }
-    if (!perSubject.has(subject) && perSubject.size >= MAX_TRACKED_SUBJECTS) throw new LatexCompileError(503, 'LATEX_BUSY', { retryAfterSec: 60 });
-    perSubject.set(subject, used + 1);
-    globalCount++;
-    running++;
-    runningBySubject.set(subject, (runningBySubject.get(subject) ?? 0) + 1);
-    return () => {
-      running--;
-      const left = (runningBySubject.get(subject) ?? 1) - 1;
-      if (left > 0) runningBySubject.set(subject, left);
-      else runningBySubject.delete(subject);
-    };
-  }
-
-  async function callRunner(input: CompileInput, signal: AbortSignal): Promise<Buffer> {
+  async function callRunner(input: CompileInput, signal: AbortSignal): Promise<CompileOutput> {
     // Seules données transmises : le source et la photo. Aucun en-tête du visiteur.
     const body = JSON.stringify(input.photo ? { tex: input.tex, photo: input.photo.toString('base64') } : { tex: input.tex });
     const timeout = AbortSignal.timeout(config.timeoutMs);
@@ -220,7 +204,7 @@ export function createLatexCompiler(
         const pdf = await readCapped(res, MAX_PDF_BYTES);
         if (!pdf) throw new LatexCompileError(422, 'LATEX_RESOURCE_LIMIT');
         if (!looksLikePdf(pdf)) throw new LatexCompileError(502, 'LATEX_RUNNER_ERROR');
-        return pdf;
+        return { pdf, warnings: sanitizeWarnings(res.headers.get('x-latex-warnings')) };
       }
       const raw = type.includes('application/json') ? await readCapped(res, 64 * 1024) : null;
       let payload: Record<string, unknown> = {};
@@ -247,11 +231,15 @@ export function createLatexCompiler(
   return {
     config,
     async compile(subject, input, signal) {
-      const release = reserve(subject);
+      const slot = quota.reserve(subject);
+      if ('refusal' in slot) {
+        const { code, status, retryAfterSec } = slot.refusal;
+        throw new LatexCompileError(status, code === 'BUSY' ? 'LATEX_BUSY' : 'LATEX_QUOTA_EXCEEDED', { retryAfterSec });
+      }
       try {
         return await callRunner(input, signal);
       } finally {
-        release();
+        slot.release();
       }
     },
   };

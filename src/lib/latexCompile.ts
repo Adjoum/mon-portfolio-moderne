@@ -68,11 +68,12 @@ export interface LatexWarning { kind: 'overfull' | 'missing-char' | 'other'; lin
 
 export interface LatexCompileResult { pdf: Blob; warnings: LatexWarning[] }
 
-/** En-tête X-Latex-Warnings (JSON, filtré par le serveur) : relu sans faire confiance à son contenu */
+/** En-tête X-Latex-Warnings (JSON en base64, filtré par le serveur) : relu sans faire confiance à son contenu */
 export function readWarnings(header: string | null): LatexWarning[] {
-  if (!header) return []
+  if (!header || header.length > 8192) return []
   try {
-    const parsed: unknown = JSON.parse(header)
+    const json = new TextDecoder().decode(Uint8Array.from(atob(header), c => c.charCodeAt(0)))
+    const parsed: unknown = JSON.parse(json)
     if (!Array.isArray(parsed)) return []
     return parsed.slice(0, 20).flatMap((w): LatexWarning[] => {
       if (!w || typeof w !== 'object' || typeof (w as { message?: unknown }).message !== 'string') return []

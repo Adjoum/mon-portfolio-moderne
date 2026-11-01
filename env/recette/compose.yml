@@ -31,6 +31,9 @@ services:
   latex-runner:
     container_name: recette-latex-runner
 
+  cv-extractor:
+    container_name: recette-cv-extractor
+
   # ── Supabase local : mêmes images que le banc d'intégration ─
   db:
     image: public.ecr.aws/supabase/postgres:17.6.1.167

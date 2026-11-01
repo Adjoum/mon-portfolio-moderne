@@ -201,6 +201,16 @@ export const latexCompileLimiter = rateLimit({
   handler:         rateLimitHandler,
 });
 
+// ── 6g. Import de CV (service cv-extractor) — par IP ──────────
+// 20 fichiers par 10 minutes ; quotas journaliers et concurrence : src/latex/import.ts
+export const cvImportLimiter = rateLimit({
+  windowMs:        10 * 60 * 1000,
+  limit:           () => Number(process.env.CV_IMPORT_PER_10MIN) || 20,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  handler:         rateLimitHandler,
+});
+
 // ── 7. Middleware de validation du contenu ────────────────────
 // Rejeter les commentaires trop courts ou trop longs
 // et détecter les patterns de spam basiques

@@ -119,7 +119,97 @@ async function p1(browser) {
   await second.context.close();
 }
 
-const SCENARIOS = { p1 };
+const FIXTURES = path.join(ROOT, 'tests', 'extract', 'fixtures');
+const IMPORTED = {
+  identity: { fullName: 'Awa Konan', headline: 'Data Analyst', email: 'awa.konan@exemple.ci', phone: '', location: 'Abidjan', links: [] },
+  summary: 'Analyste de données en santé publique.',
+  experiences: [{ id: 'e1', role: 'Data Analyst', organization: 'Institut fictif de santé', location: 'Abidjan', start: '2023', end: 'aujourd’hui', bullets: ['Tableaux de bord Power BI pour 12 districts sanitaires', 'Automatisation des rapports hebdomadaires'] }],
+  education: [{ id: 'd1', degree: 'Master Big Data', institution: 'Université fictive', location: '', start: '', end: '2022', details: '' }],
+  skills: [{ id: 's1', category: 'Données', items: ['Python', 'SQL', 'Power BI'] }],
+  projects: [], languages: [{ name: 'Français', level: 'natif' }], certifications: [], publications: [], interests: [],
+};
+
+async function p2(browser) {
+  console.log('\n▶ P2 — Import et reconstruction d’un CV (extraction réelle isolée, IA simulée)');
+  const rewritten = JSON.parse(JSON.stringify(IMPORTED));
+  rewritten.summary = 'Analyste de données orientée santé publique et aide à la décision.'
+  rewritten.experiences[0].bullets = ['Conception de tableaux de bord Power BI pour 12 districts sanitaires', 'Automatisation des rapports hebdomadaires de suivi'];
+  const { context, page, calls } = await newStudio(browser, {
+    ai: {
+      'latex.import.structure': () => IMPORTED,
+      'latex.import.ocr': () => 'AWA KONAN\nData Analyst',
+      'latex.rewrite': () => ({ cv: rewritten, flags: [{ path: 'experiences.e1.bullets[1]', reason: 'number' }], suggestions: ['Ajoutez vos certifications si vous en avez.'] }),
+    },
+  });
+  await page.getByRole('tab', { name: /Importer/ }).click();
+  const input = page.locator('input[type=file][accept*=".docx"]');
+
+  // DOCX : extraction par cv-extractor via l'API, puis structuration (simulée)
+  await input.setInputFiles(path.join(FIXTURES, 'cv.docx'));
+  await page.getByRole('tab', { name: /Données/, selected: true }).waitFor({ timeout: 30_000 });
+  const structure = calls.find(c => c.feature === 'latex.import.structure')?.input;
+  check('DOCX extrait dans l’environnement isolé, texte transmis à la structuration', /Awa Konan/.test(structure?.text ?? '') && /12 districts/.test(structure?.text ?? ''));
+  check('données importées présentées pour vérification', (await page.getByLabel('Nom complet').inputValue()) === 'Awa Konan');
+  check('aucun nom de fichier transmis à l’IA', !JSON.stringify(calls).includes('cv.docx'));
+
+  // Réécriture ciblée : organisme obligatoire
+  const rewriteButton = page.getByRole('button', { name: /Réécriture professionnelle/ });
+  check('réécriture impossible sans organisme visé', await rewriteButton.isDisabled());
+  await page.getByLabel(/Organisme ou institution/).first().fill('Organisation mondiale fictive');
+  await page.getByLabel(/Poste visé/).first().fill('Data Scientist');
+  await rewriteButton.click();
+  const dialog = page.getByRole('dialog', { name: /Réécriture proposée/ });
+  await dialog.waitFor();
+  check('modifications présentées avant / après, propositions chiffrées écartées signalées', (await dialog.innerText()).includes('aide à la décision') && /chiffre absent/.test(await dialog.innerText()));
+  const sent = calls.find(c => c.feature === 'latex.rewrite')?.input;
+  check('cible transmise : organisme et poste', sent?.target?.organization === 'Organisation mondiale fictive' && sent?.target?.role === 'Data Scientist');
+  await page.screenshot({ path: path.join(OUT, 'p2-reecriture.png') });
+  await dialog.getByRole('button', { name: /Appliquer/ }).click();
+
+  // Génération depuis le modèle choisi, compilation réelle
+  await page.getByRole('button', { name: /Générer le CV avec le modèle/ }).click();
+  await page.getByText('PDF prêt').waitFor({ timeout: 30_000 });
+  const code = await codeArea(page).inputValue();
+  check('code LaTeX généré à partir des données (texte reformulé accepté)', code.includes('Awa Konan') && code.includes('aide à la décision'));
+  check('aucune coordonnée inventée dans le code', !/XX XX|00 00 00|votreemail/.test(code));
+  await page.locator('img[alt="Page 1 du CV"]').waitFor();
+  await page.screenshot({ path: path.join(OUT, 'p2-cv-genere.png') });
+
+  // Fichier à macros refusé ; image lue par l'IA (capacité visuelle annoncée)
+  await page.getByRole('tab', { name: /Importer/ }).click();
+  await input.setInputFiles(path.join(FIXTURES, 'cv-macro.docx'));
+  await page.getByRole('alert').filter({ hasText: 'macros' }).waitFor({ timeout: 30_000 });
+  check('DOCX à macros refusé avec un message clair', true);
+  await input.setInputFiles(path.join(FIXTURES, 'cv-image.jpg'));
+  await page.getByRole('tab', { name: /Données/, selected: true }).waitFor({ timeout: 30_000 });
+  const ocr = calls.filter(c => c.feature === 'latex.import.ocr');
+  check('image réencodée en JPEG puis lue par l’IA', ocr.length === 1 && /^data:image\/jpeg;base64,/.test(ocr[0].input.image));
+  await context.close();
+}
+
+async function p3(browser) {
+  console.log('\n▶ P3 — Modèles premium et contrôle qualité (compilation réelle)');
+  const { context, page } = await newStudio(browser);
+  await page.getByRole('tab', { name: /Modèles/ }).click();
+  const thumbs = page.getByRole('list', { name: 'Modèles de CV' }).getByRole('button');
+  check('huit modèles avec miniature', (await thumbs.count()) === 8 && (await page.locator('ul[aria-label="Modèles de CV"] img').evaluateAll(imgs => imgs.every(i => i.naturalWidth > 0))));
+  for (const name of ['Software Architect', 'Minimal ATS Pro']) {
+    await thumbs.filter({ hasText: name }).click();
+    await page.getByRole('button', { name: 'Générer le CV avec ce modèle' }).click();
+    await page.getByText('PDF prêt').waitFor({ timeout: 30_000 });
+    const report = page.getByText(/Contrôle qualité/).first();
+    await report.waitFor({ timeout: 15_000 });
+    const text = await report.innerText();
+    check(`${name} : compilé, contrôle qualité affiché (« ${text.slice(0, 60)} »)`, /Contrôle qualité/.test(text));
+  }
+  check('modèle ATS : pas d’option photo', (await page.getByLabel('Emplacement pour la photo').count()) === 0);
+  await page.locator('summary', { hasText: 'Contrôle qualité' }).click();
+  check('textes d’exemple signalés par le contrôle qualité', await page.getByText(/Contenu d’exemple ou fictif encore présent/).first().isVisible());
+  await page.screenshot({ path: path.join(OUT, 'p3-modeles.png') });
+  await context.close();
+}
+
+const SCENARIOS = { p1, p2, p3 };
 
 const selected = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(SCENARIOS);
 const browser = await pw.chromium.launch();

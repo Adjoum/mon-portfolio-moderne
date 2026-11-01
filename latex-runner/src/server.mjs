@@ -91,9 +91,12 @@ async function handleCompile(req, res) {
   res.on('close', () => { if (!res.writableEnded) controller.abort(); });
   const started = Date.now();
   try {
-    const { pdf, passes } = await compile({ tex: job.tex, photo: job.photo, signal: controller.signal });
+    const { pdf, passes, warnings } = await compile({ tex: job.tex, photo: job.photo, signal: controller.signal });
     console.log(`[latex] ok passes=${passes} ms=${Date.now() - started} bytes=${pdf.length}`);
-    res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': pdf.length, 'Cache-Control': 'no-store' });
+    const headers = { 'Content-Type': 'application/pdf', 'Content-Length': pdf.length, 'Cache-Control': 'no-store' };
+    // Avertissements de mise en page (débordements, caractères absents) : JSON en base64, en-tête ASCII
+    if (warnings.length) headers['X-Latex-Warnings'] = Buffer.from(JSON.stringify(warnings)).toString('base64');
+    res.writeHead(200, headers);
     res.end(pdf);
   } catch (err) {
     const code = err instanceof CompileError ? err.code : 'LATEX_INTERNAL';

@@ -1,0 +1,17 @@
+Awa Konan
+Data Analyst - Santé publique
+Abidjan, Côte d'Ivoire - awa.konan@exemple.ci
+
+Expérience
+Data Analyst - Institut fictif de santé (2023 - aujourd'hui)
+- Tableaux de bord Power BI pour 12 districts sanitaires
+- Automatisation des rapports hebdomadaires (Python, SQL)
+
+Formation
+Master Big Data - Université fictive (2022)
+
+Compétences
+Python, SQL, Power BI, statistiques
+
+Langues
+Français (natif), Anglais (C1)

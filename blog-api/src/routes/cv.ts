@@ -1,5 +1,6 @@
 // blog-api/src/routes/cv.ts
 // POST /api/cv/compile — compilation LaTeX → PDF de l'éditeur LaTeX
+// POST /api/cv/import  — texte d'un CV importé (PDF, DOCX, TXT, RTF), extrait par cv-extractor
 //
 // L'ancienne implémentation (retirée en P0.A1, faille S2) exécutait latexmk dans CE processus,
 // qui détient tous les secrets du serveur. Elle ne revient pas : aucun processus TeX n'est lancé
@@ -12,7 +13,8 @@
 
 import { Router, type Request, type Response } from 'express';
 import { ipKeyGenerator } from 'express-rate-limit';
-import { latexCompileLimiter } from '../middleware/rateLimit';
+import { cvImportLimiter, latexCompileLimiter } from '../middleware/rateLimit';
+import { createImporter, importConfigFromEnv, ImportError, type CvImporter } from '../latex/import';
 import {
   createLatexCompiler, latexConfigFromEnv, parseCompileBody, LatexCompileError,
   type LatexCompiler,
@@ -50,12 +52,69 @@ function sendError(res: Response, err: LatexCompileError) {
 export interface CvRouterOptions {
   /** Compilateur injecté (tests) ; par défaut, construit depuis LATEX_RUNNER_URL */
   compiler?: LatexCompiler | null;
+  /** Extracteur injecté (tests) ; par défaut, construit depuis CV_EXTRACTOR_URL */
+  importer?: CvImporter | null;
+}
+
+const IMPORT_MESSAGES: Record<string, string> = {
+  IMPORT_DISABLED:          'L’import de CV est momentanément indisponible. Vous pouvez saisir vos informations ou coller votre texte.',
+  IMPORT_UNSUPPORTED_TYPE:  'Format non pris en charge : PDF, DOCX, TXT ou RTF (ou image JPG/PNG lue par l’IA).',
+  IMPORT_TYPE_MISMATCH:     'Le contenu du fichier ne correspond pas à son type.',
+  IMPORT_EMPTY:             'Le fichier est vide.',
+  IMPORT_TOO_LARGE:         'Fichier trop volumineux (10 Mo au maximum).',
+  IMPORT_INVALID_FILE:      'Fichier illisible ou endommagé.',
+  IMPORT_ACTIVE_CONTENT:    'Document refusé : il contient des macros ou du contenu actif. Enregistrez-le au format .docx standard ou en PDF.',
+  IMPORT_TOO_COMPLEX:       'Document trop volumineux ou trop complexe une fois décompressé.',
+  IMPORT_PROTECTED:         'Document protégé par mot de passe.',
+  IMPORT_TIMEOUT:           'La lecture du fichier a pris trop de temps.',
+  IMPORT_BUSY:              'Le service d’import est très sollicité. Réessayez dans un instant.',
+  IMPORT_QUOTA_EXCEEDED:    'Limite d’imports atteinte pour aujourd’hui.',
+  IMPORT_UNAVAILABLE:       'Le service d’import est momentanément indisponible.',
+  IMPORT_EXTRACTOR_ERROR:   'Le service d’import a rencontré une erreur.',
+};
+
+function sendImportError(res: Response, err: ImportError) {
+  if (err.retryAfterSec) res.setHeader('Retry-After', String(err.retryAfterSec));
+  res.status(err.status).json({ error: IMPORT_MESSAGES[err.code] ?? IMPORT_MESSAGES.IMPORT_EXTRACTOR_ERROR, code: err.code });
+}
+
+/** Import : texte extrait en mémoire, jamais écrit sur disque, journalisé ni conservé */
+function importRoutes(router: Router, importer: CvImporter | null) {
+  router.post('/import', cvImportLimiter, async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const file = Buffer.isBuffer(req.body) ? req.body : null;
+    const controller = new AbortController();
+    res.on('close', () => { if (!res.writableEnded) controller.abort(); });
+    try {
+      if (!importer) throw new ImportError(503, 'IMPORT_DISABLED');
+      if (!file) throw new ImportError(415, 'IMPORT_UNSUPPORTED_TYPE');
+      const subject = `ip:${ipKeyGenerator(req.ip ?? '127.0.0.1')}`;
+      res.json(await importer.extract(subject, file, String(req.headers['x-file-type'] ?? ''), controller.signal));
+    } catch (err) {
+      if (err instanceof ImportError) {
+        if (err.code === 'IMPORT_ABORTED') return;
+        console.log(`[IMPORT] ${err.code}`);
+        return sendImportError(res, err);
+      }
+      console.error('[IMPORT] erreur inattendue :', (err as Error)?.name);
+      sendImportError(res, new ImportError(500, 'IMPORT_EXTRACTOR_ERROR'));
+    } finally {
+      // Le fichier n'est conservé nulle part : son tampon est effacé dès la réponse
+      file?.fill(0);
+    }
+  });
+  router.all('/import', (_req: Request, res: Response) => {
+    res.setHeader('Allow', 'POST');
+    res.status(405).json({ error: 'Méthode non autorisée.', code: 'METHOD_NOT_ALLOWED' });
+  });
 }
 
 export function createCvRouter(options: CvRouterOptions = {}) {
   const router = Router();
   const config = latexConfigFromEnv();
   const compiler = options.compiler !== undefined ? options.compiler : config ? createLatexCompiler(config) : null;
+  const importConfig = importConfigFromEnv();
+  importRoutes(router, options.importer !== undefined ? options.importer : importConfig ? createImporter(importConfig) : null);
 
   if (!compiler) {
     router.all('/compile', (_req: Request, res: Response) => {
@@ -76,12 +135,13 @@ export function createCvRouter(options: CvRouterOptions = {}) {
       if (!req.is('application/json')) throw new LatexCompileError(415, 'LATEX_INVALID_REQUEST');
       const input = parseCompileBody(req.body);
       const subject = `ip:${ipKeyGenerator(req.ip ?? '127.0.0.1')}`;
-      const pdf = await compiler.compile(subject, input, controller.signal);
+      const { pdf, warnings } = await compiler.compile(subject, input, controller.signal);
       console.log(`[LATEX] ok ${Date.now() - started} ms, ${pdf.length} octets`);
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', 'inline; filename="cv.pdf"');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      if (warnings.length) res.setHeader('X-Latex-Warnings', Buffer.from(JSON.stringify(warnings)).toString('base64'));
       res.status(200).end(pdf);
     } catch (err) {
       if (err instanceof LatexCompileError) {

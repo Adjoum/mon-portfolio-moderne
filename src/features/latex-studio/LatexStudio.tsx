@@ -5,8 +5,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { runAiFeature } from '../../lib/aiClient'
 import { stripCodeFences, type LatexCompileDetail } from '../../lib/latexCompile'
-import { useAiAvailability } from '../../hooks/useAiAvailability'
-import { TEMPLATES, buildFinalLatex } from '../../pages/CVBuilder/latexTemplates'
+import { useAiAvailability, useAiStatuses } from '../../hooks/useAiAvailability'
+import { buildFinalLatex } from '../../pages/CVBuilder/latexTemplates'
+import { renderCv, TEMPLATE_LIBRARY } from './templates/library'
+import { sampleCv } from './templates/sample'
+import { emptyCv, forServer, isEmptyCv, normalizeCv, type CvData } from './lib/cvData'
+import { rewriteCv, type RewriteResult } from './lib/importCv'
+import { targetReady } from './lib/target'
+import { useQuality } from './useQuality'
+import { QualityReport } from './components/QualityReport'
+import { TemplateGallery, type TemplateChoice } from './components/TemplateGallery'
+import { CvDataEditor } from './components/CvDataEditor'
+import { ImportPanel } from './components/ImportPanel'
+import { RewriteDialog } from './components/RewriteDialog'
 import { useCompile, downloadUrl } from './useCompile'
 import { useVersions } from './useVersions'
 import { useViewport, prefersPlainEditor } from './useViewport'
@@ -16,17 +27,22 @@ import { CodeEditor, type CodeEditorHandle, type Selection } from './components/
 import { PdfPreview } from './components/PdfPreview'
 import { ErrorPanel } from './components/ErrorPanel'
 import { FixDialog } from './components/FixDialog'
-import { AiPanel } from './components/AiPanel'
+import { AiPanel, TargetFields } from './components/AiPanel'
 import type { Target } from './lib/target'
 import { PhotoPanel } from './components/PhotoPanel'
 import { Splitter } from './components/Splitter'
 import { btn, btnGhost, btnPrimary } from './components/ui'
 
-type SideTab = 'ia' | 'modeles' | 'photo' | 'versions'
+type SideTab = 'import' | 'donnees' | 'modeles' | 'ia' | 'photo' | 'versions'
 type MobileTab = 'infos' | 'code' | 'apercu'
 
 const DRAFT_KEY = 'latex-studio:draft'
 const TARGET_KEY = 'latex-studio:target'
+const CV_KEY = 'latex-studio:cv'
+const TEMPLATE_KEY = 'latex-studio:template'
+const SESSION_KEYS = [DRAFT_KEY, TARGET_KEY, CV_KEY, TEMPLATE_KEY, 'latex-studio:versions', 'latex-studio:side', 'latex-studio:ratio']
+const DEFAULT_CHOICE: TemplateChoice = { id: TEMPLATE_LIBRARY[0].id, options: TEMPLATE_LIBRARY[0].defaults }
+const NO_WARNINGS: never[] = []
 
 function readSession<T>(key: string, fallback: T): T {
   try {
@@ -43,8 +59,10 @@ export default function LatexStudio() {
   const aiAvailable = useAiAvailability()
 
   // ── Document ──
-  const [code, setCode] = useState<string>(() => readSession(DRAFT_KEY, TEMPLATES.overleafClassic.code))
-  const [activeTemplate, setActiveTemplate] = useState('overleafClassic')
+  const [code, setCode] = useState<string>(() => readSession(DRAFT_KEY, '') || renderCv(DEFAULT_CHOICE.id, sampleCv(), DEFAULT_CHOICE.options))
+  const [choice, setChoice] = useState<TemplateChoice>(() => readSession(TEMPLATE_KEY, DEFAULT_CHOICE))
+  const [cv, setCv] = useState<CvData>(() => normalizeCv(readSession(CV_KEY, emptyCv())))
+  const aiStatuses = useAiStatuses()
   const [photo, setPhoto] = useState<string | null>(null)
   const [photoWidth, setPhotoWidth] = useState(3.2)
   const [target, setTarget] = useState<Target>(() => readSession(TARGET_KEY, { organization: '', role: '' }))
@@ -57,6 +75,7 @@ export default function LatexStudio() {
     return () => clearTimeout(timer)
   }, [code])
   useEffect(() => { try { sessionStorage.setItem(TARGET_KEY, JSON.stringify(target)) } catch { /* idem */ } }, [target])
+  useEffect(() => { try { sessionStorage.setItem(CV_KEY, JSON.stringify(cv)); sessionStorage.setItem(TEMPLATE_KEY, JSON.stringify(choice)) } catch { /* idem */ } }, [cv, choice])
 
   /** Remplacement du code par le studio : instantané, puis compilation immédiate */
   const replaceCode = useCallback((next: string, label: string) => {
@@ -76,7 +95,7 @@ export default function LatexStudio() {
     setAiLoading(true)
     setAiError('')
     try {
-      const out = stripCodeFences(await runAiFeature('latex.generate', { info: aiInfo, template: TEMPLATES[activeTemplate]?.code ?? '', existing: code, target }))
+      const out = stripCodeFences(await runAiFeature('latex.generate', { info: aiInfo, template: renderCv(choice.id, sampleCv(), choice.options), existing: code, target }))
       if (out) replaceCode(out, 'Avant génération IA')
       else setAiError('Aucun code retourné.')
     } catch (e) {
@@ -161,17 +180,42 @@ export default function LatexStudio() {
     downloadUrl(url, 'cv.tex')
     setTimeout(() => URL.revokeObjectURL(url), 10_000)
   }
-  const chooseTemplate = (id: string) => {
-    setActiveTemplate(id)
-    replaceCode(TEMPLATES[id].code, 'Avant changement de modèle')
+  /** Code généré à partir des données (ou de l'exemple si rien n'est saisi) et du modèle choisi */
+  const applyTemplate = (data = cv) => {
+    replaceCode(renderCv(choice.id, isEmptyCv(data) ? sampleCv() : data, choice.options), 'Avant génération depuis le modèle')
+    if (viewport === 'mobile') setMobileTab('apercu')
   }
+
+  // ── Réécriture professionnelle (latex.rewrite) ──
+  const [rewriting, setRewriting] = useState(false)
+  const [rewriteError, setRewriteError] = useState('')
+  const [rewrite, setRewrite] = useState<{ base: CvData; result: RewriteResult } | null>(null)
+  const askRewrite = async () => {
+    setRewriting(true)
+    setRewriteError('')
+    try {
+      const base = forServer(cv)
+      setRewrite({ base, result: await rewriteCv(base, target, choice.options.lang) })
+    } catch (e) {
+      setRewriteError((e as Error).message)
+    } finally {
+      setRewriting(false)
+    }
+  }
+
+  const clearSession = () => {
+    SESSION_KEYS.forEach(k => { try { sessionStorage.removeItem(k) } catch { /* idem */ } })
+    window.location.reload()
+  }
+
+  const quality = useQuality(compile.result?.pdf ?? null, compile.result?.warnings ?? NO_WARNINGS, cv.identity.fullName)
   const changePhoto = (url: string | null) => {
     compile.compileSoon()
     setPhoto(url)
   }
 
   // ── Mise en page ──
-  const [sideTab, setSideTab] = useState<SideTab>('ia')
+  const [sideTab, setSideTab] = useState<SideTab>('modeles')
   const [mobileTab, setMobileTab] = useState<MobileTab>('code')
   const [tabletView, setTabletView] = useState<'code' | 'apercu' | 'both'>('both')
   const [drawer, setDrawer] = useState(false)
@@ -198,23 +242,33 @@ export default function LatexStudio() {
           available={aiAvailable} loading={aiLoading} error={aiError} onGenerate={generate} onImprove={improve}
         />
       )}
-      {sideTab === 'modeles' && (
-        <ul className="space-y-2">
-          {Object.entries(TEMPLATES).map(([id, t]) => (
-            <li key={id}>
-              <button type="button" onClick={() => chooseTemplate(id)} aria-pressed={activeTemplate === id}
-                className={`${btn} w-full justify-start ${activeTemplate === id ? 'border-indigo-500 text-indigo-200' : ''}`}>
-                {t.emoji} {t.name}
-              </button>
-            </li>
-          ))}
-          <li className="text-[11px] text-gray-500">Le code actuel est remplacé ; la version précédente reste restaurable.</li>
-        </ul>
+      {sideTab === 'import' && (
+        <ImportPanel
+          ocrAvailable={aiStatuses?.['latex.import.ocr']?.available === true}
+          structureAvailable={aiStatuses?.['latex.import.structure']?.available !== false}
+          onImported={data => { setCv(data); setSideTab('donnees') }}
+        />
       )}
+      {sideTab === 'donnees' && (
+        <div className="space-y-3">
+          <TargetFields target={target} onChange={setTarget} />
+          <button type="button" className={`${btn} w-full`} onClick={askRewrite}
+            disabled={rewriting || isEmptyCv(cv) || !targetReady(target) || !aiAvailable('latex.rewrite')} aria-busy={rewriting}>
+            {rewriting ? '⏳ Réécriture en cours…' : '✨ Réécriture professionnelle (IA)'}
+          </button>
+          {!aiAvailable('latex.rewrite') && <p className="text-[11px] text-gray-500">Réécriture par l’IA momentanément indisponible.</p>}
+          {rewriteError && <p role="alert" className="text-xs text-red-300">⚠️ {rewriteError}</p>}
+          <CvDataEditor cv={cv} onChange={setCv} />
+          <button type="button" className={`${btnPrimary} w-full`} onClick={() => applyTemplate()}>Générer le CV avec le modèle « {TEMPLATE_LIBRARY.find(t => t.id === choice.id)?.name} »</button>
+          <p className="text-[11px] text-gray-500">Vos données restent dans cet onglet du navigateur ; elles ne sont pas enregistrées sur un serveur.</p>
+        </div>
+      )}
+      {sideTab === 'modeles' && <TemplateGallery choice={choice} onChange={setChoice} onApply={() => applyTemplate()} usesSample={isEmptyCv(cv)} />}
       {sideTab === 'photo' && <PhotoPanel photo={photo} width={photoWidth} setWidth={setPhotoWidth} onPhoto={changePhoto} hasMarker={code.includes('%%PHOTO%%')} />}
       {sideTab === 'versions' && (
         <div className="space-y-2 text-xs">
           <p className="text-gray-400">Versions de cette session (conservées dans cet onglet uniquement).</p>
+          <button type="button" className={`${btn} w-full`} onClick={clearSession}>🧹 Effacer toutes les données de cette session</button>
           {!versions.versions.length && <p className="text-gray-500">Aucune version précédente.</p>}
           <ol className="space-y-1.5">
             {[...versions.versions].reverse().map(v => (
@@ -258,6 +312,7 @@ export default function LatexStudio() {
         </label>
         <button type="button" className={btn} onClick={compile.compileNow} disabled={compile.rendering} title="Compiler maintenant (Ctrl+S)">▶ Compiler</button>
       </div>
+      {compile.result && !compile.error && !compile.stale && <QualityReport issues={quality} onGoToLine={goToLine} />}
       {compile.error && !compile.unavailable && (
         <ErrorPanel
           error={compile.error}
@@ -378,14 +433,20 @@ export default function LatexStudio() {
         </nav>
       </>}
 
+      {rewrite && (
+        <RewriteDialog base={rewrite.base} result={rewrite.result} onClose={() => setRewrite(null)}
+          onApply={data => { setCv(data); setRewrite(null) }} />
+      )}
       {proposal && <FixDialog proposal={proposal} attempt={fixAttempts} onAccept={acceptFix} onReject={() => setProposal(null)} />}
     </div>
   )
 }
 
 const SIDE_TABS: { id: SideTab; label: string }[] = [
-  { id: 'ia', label: '🤖 IA' },
   { id: 'modeles', label: '🎨 Modèles' },
+  { id: 'import', label: '📥 Importer' },
+  { id: 'donnees', label: '🧾 Données' },
+  { id: 'ia', label: '🤖 IA' },
   { id: 'photo', label: '📷 Photo' },
   { id: 'versions', label: '🕘 Versions' },
 ]
@@ -393,10 +454,10 @@ const SIDE_TABS: { id: SideTab; label: string }[] = [
 function SidePanel({ tab, setTab, children }: { tab: SideTab; setTab: (t: SideTab) => void; children: ReactNode }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div role="tablist" aria-label="Outils du studio" className="flex gap-1 overflow-x-auto border-b border-[#21262d] p-1.5">
+      <div role="tablist" aria-label="Outils du studio" className="grid grid-cols-3 gap-1 border-b border-[#21262d] p-1.5">
         {SIDE_TABS.map(t => (
           <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
-            className={`min-h-11 shrink-0 rounded-lg px-3 text-xs font-semibold sm:min-h-9 ${tab === t.id ? 'bg-indigo-500/20 text-indigo-200' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
+            className={`min-h-11 truncate rounded-lg px-2 text-xs font-semibold sm:min-h-9 ${tab === t.id ? 'bg-indigo-500/20 text-indigo-200' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
             {t.label}
           </button>
         ))}

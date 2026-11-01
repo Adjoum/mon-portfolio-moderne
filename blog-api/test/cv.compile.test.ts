@@ -288,7 +288,36 @@ describe('POST /api/cv/compile avec latex-runner', () => {
     expect(received[0].closedEarly).toBe(true);
     // La place est libérée : une nouvelle compilation passe
     behaviour = (_req, res) => { res.writeHead(200, { 'Content-Type': 'application/pdf' }); res.end(FAKE_PDF); };
-    await expect(compiler.compile('ip:x', { tex: VALID_TEX }, new AbortController().signal)).resolves.toBeInstanceOf(Buffer);
+    await expect(compiler.compile('ip:x', { tex: VALID_TEX }, new AbortController().signal)).resolves.toMatchObject({ pdf: expect.any(Buffer), warnings: [] });
+  });
+
+  it('avertissements de mise en page : refiltrés, puis exposés au site (CORS)', async () => {
+    const warnings = [
+      { kind: 'overfull', line: 12, message: 'Texte trop large de 4.0 pt dans /work/job-x/main.tex' },
+      { kind: 'missing-char', message: 'Caractère absent de la police, non imprimé : ✓' },
+      { kind: 'shell', message: 'commande' },
+      { kind: 'overfull', line: 'dix', message: '\u0007'.repeat(3) },
+    ];
+    behaviour = (_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/pdf', 'X-Latex-Warnings': Buffer.from(JSON.stringify(warnings)).toString('base64') });
+      res.end(FAKE_PDF);
+    };
+    const res = await compile(appWith(), { code: VALID_TEX }).set('Origin', 'http://localhost:5173');
+    expect(res.status).toBe(200);
+    expect(res.headers['access-control-expose-headers']).toMatch(/X-Latex-Warnings/);
+    expect(res.headers['access-control-expose-headers']).toMatch(/Retry-After/);
+    const relayed = JSON.parse(Buffer.from(res.headers['x-latex-warnings'], 'base64').toString('utf8'));
+    expect(relayed).toEqual([
+      { kind: 'overfull', line: 12, message: 'Texte trop large de 4.0 pt dans main.tex' },
+      { kind: 'missing-char', message: 'Caractère absent de la police, non imprimé : ✓' },
+    ]);
+  });
+
+  it('en-tête d’avertissements invalide : ignoré', async () => {
+    behaviour = (_req, res) => { res.writeHead(200, { 'Content-Type': 'application/pdf', 'X-Latex-Warnings': 'pas du base64 !' }); res.end(FAKE_PDF); };
+    const res = await compile(appWith(), { code: VALID_TEX });
+    expect(res.status).toBe(200);
+    expect(res.headers['x-latex-warnings']).toBeUndefined();
   });
 });
 

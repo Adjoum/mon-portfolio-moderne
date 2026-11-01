@@ -91,6 +91,8 @@ export function createApp(options: AppOptions = {}) {
       process.env.FRONTEND_URL || '',
     ].filter(Boolean),
     credentials: true,
+    // Lisibles par le site : délai avant nouvel essai, avertissements de mise en page du PDF
+    exposedHeaders: ['Retry-After', 'X-Latex-Warnings'],
   }));
 
   // Base de connaissances : corps JSON limité à 128 Ko (parsé avant le parseur global,
@@ -107,6 +109,8 @@ export function createApp(options: AppOptions = {}) {
   app.use('/api/groq', express.json({ limit: '16kb' }));
   // Compilation LaTeX : source ≤ 200 Ko + photo JPEG ≤ 2 Mo encodée en base64
   app.use('/api/cv/compile', express.json({ limit: '3mb' }));
+  // Import de CV : octets du fichier (10 Mo au plus), jamais écrits sur disque
+  app.use('/api/cv/import', express.raw({ type: 'application/octet-stream', limit: '10mb' }));
   app.use(express.json({ limit: '2mb' }));
   app.use(cookieParser());
   // Servir les images uploadées localement
