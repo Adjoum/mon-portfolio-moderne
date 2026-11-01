@@ -182,16 +182,33 @@ async function waitFor(label, url, init) {
 
 // ── Mise en place de la base : même ordre que la mise en production ─
 function applySchema(stack) {
-  step('État de départ de type production, puis les 9 migrations dans leur ordre de production');
+  step('État de départ de type production, puis les migrations dans leur ordre de production');
   psql('supabase_admin', "insert into storage.buckets (id, name, public) values ('project-images', 'project-images', true), ('avatars', 'avatars', false) on conflict do nothing;");
   psql('postgres', fs.readFileSync(path.join(ROOT, 'supabase/tests/rls/10_production_like_state.sql'), 'utf8'));
-  const migrations = path.join(ROOT, 'supabase/migrations');
-  for (const file of fs.readdirSync(migrations).filter(f => f.endsWith('.sql')).sort()) {
-    psql('postgres', `set client_min_messages = warning;\n${fs.readFileSync(path.join(migrations, file), 'utf8')}`, ['--single-transaction']);
-    console.log(`  ${file}`);
-  }
+  applyPendingMigrations()
   psql('supabase_admin', `alter role ai_backend login password '${stack.RECETTE_AI_DB_PASSWORD}';`);
   psql('supabase_admin', "notify pgrst, 'reload schema';");
+}
+
+/**
+ * Migrations appliquées une seule fois, dans l'ordre, et notées dans recette_private.migrations
+ * (schéma propre à la recette, jamais exposé par PostgREST). Une base créée avant ce suivi contient
+ * déjà les migrations du 30/10/2026 : elles sont notées sans être rejouées. Aucune donnée effacée.
+ */
+function applyPendingMigrations() {
+  psql('supabase_admin', 'create schema if not exists recette_private; revoke all on schema recette_private from public; create table if not exists recette_private.migrations (name text primary key, applied_at timestamptz not null default now());');
+  const dir = path.join(ROOT, 'supabase/migrations');
+  const files = fs.readdirSync(dir).filter(f => f.endsWith('.sql')).sort();
+  let applied = new Set(sqlValue('select name from recette_private.migrations;').split(/\r?\n/).filter(Boolean));
+  if (!applied.size && sqlValue("select to_regclass('public.ai_settings') is not null;") === 't') {
+    for (const file of files.filter(name => name < '20261031')) psql('supabase_admin', `insert into recette_private.migrations (name) values ('${file}') on conflict do nothing;`);
+    applied = new Set(sqlValue('select name from recette_private.migrations;').split(/\r?\n/).filter(Boolean));
+  }
+  for (const file of files.filter(name => !applied.has(name))) {
+    psql('postgres', `set client_min_messages = warning;\n${fs.readFileSync(path.join(dir, file), 'utf8')}`, ['--single-transaction']);
+    psql('supabase_admin', `insert into recette_private.migrations (name) values ('${file}');`);
+    console.log(`  migration appliquée : ${file}`);
+  }
 }
 
 /** Bases de recette créées avant une correction de l'état initial : colonnes ajoutées, rien d'effacé */
@@ -264,6 +281,11 @@ async function up() {
   await waitFor('Storage', `${GATEWAY}/storage/v1/status`);
   if (!started) applySchema(stack);
   alignSchema();
+  if (started) {
+    step('Migrations ajoutées depuis la création de la base');
+    applyPendingMigrations();
+    psql('supabase_admin', "notify pgrst, 'reload schema';");
+  }
   step('API, compilation LaTeX isolée et MongoDB dans Docker (images construites depuis le code courant)');
   mustCompose('up', '-d', '--build', 'mongo', 'latex-runner', 'cv-extractor', 'api');
   await waitFor('API', `${API}/api/health`);
@@ -334,6 +356,9 @@ async function verify() {
   const imported = await fetch(`${API}/api/cv/import`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-File-Type': 'text/plain', 'X-Forwarded-For': '198.18.0.2' }, body: 'Awa Konan\nData Analyst' })
     .then(r => r.json()).catch(() => null);
   check('import de CV : texte extrait par cv-extractor via l’API', imported?.text === 'Awa Konan\nData Analyst', imported?.code ?? '');
+
+  // Mes CV (P4) : bucket privé, accès restreint (contrôles complets : scripts/cv-history-recette.mjs)
+  check('Mes CV : bucket cv-private privé, 10 politiques, migration notée', sqlValue("select (select public::text from storage.buckets where id = 'cv-private') || '|' || (select count(*) from pg_policies where policyname like 'p4cv%') || '|' || (select count(*) from recette_private.migrations where name like '20261101100000%');") === 'false|10|1');
 
   // AI Lab : colonnes du schéma réel, triées comme le dashboard
   const ailabColumns = sqlValue("select count(*) from information_schema.columns where table_schema = 'public' and ((table_name = 'ailab_capabilities' and column_name in ('createdat', 'updatedat')) or (table_name = 'ailab_projects' and column_name in ('createdat', 'updatedat', 'technologies', 'color', 'imageurl', 'githuburl', 'liveurl', 'demourl', 'demoavailable', 'featured')));");

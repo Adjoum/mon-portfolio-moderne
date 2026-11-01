@@ -18,6 +18,8 @@ import { TemplateGallery, type TemplateChoice } from './components/TemplateGalle
 import { CvDataEditor } from './components/CvDataEditor'
 import { ImportPanel } from './components/ImportPanel'
 import { RewriteDialog } from './components/RewriteDialog'
+import { MyCvsDialog, SaveDialog } from './components/MyCvs'
+import { detectMode, history, restorableCode, type HistoryMode } from './lib/history'
 import { useCompile, downloadUrl } from './useCompile'
 import { useVersions } from './useVersions'
 import { useViewport, prefersPlainEditor } from './useViewport'
@@ -208,6 +210,21 @@ export default function LatexStudio() {
     window.location.reload()
   }
 
+  // ── Mes CV (P4) ──
+  const [historyMode, setHistoryMode] = useState<HistoryMode>('device')
+  const [saving, setSaving] = useState(false)
+  const [myCvs, setMyCvs] = useState(false)
+  useEffect(() => { void detectMode().then(setHistoryMode) }, [])
+  const canSave = !!compile.result && !compile.stale && !compile.error
+  const saveTitle = ['CV', cv.identity.fullName, target.organization].map(v => v.trim()).filter(Boolean).join(' — ')
+  const saveCv = async (title: string) => {
+    if (!compile.result) return
+    await history[historyMode].save({
+      title, templateId: choice.id, target,
+      pdf: compile.result.pdf, tex: buildFinalLatex(code, !!photo, photoWidth),
+    })
+  }
+
   const quality = useQuality(compile.result?.pdf ?? null, compile.result?.warnings ?? NO_WARNINGS, cv.identity.fullName)
   const changePhoto = (url: string | null) => {
     compile.compileSoon()
@@ -357,11 +374,15 @@ export default function LatexStudio() {
       </span>
       <button type="button" className={btn} onClick={() => { compile.compileSoon(); versions.undo() }} disabled={!versions.canUndo} title="Revenir à la version précédente">↶<span className="hidden sm:inline"> Précédente</span></button>
       <button type="button" className={`${btn} hidden sm:inline-flex`} onClick={downloadTex}>⬇ .tex</button>
+      <button type="button" className={`${btn} hidden md:inline-flex`} onClick={() => setSaving(true)} disabled={!canSave} title={canSave ? 'Enregistrer ce CV dans Mes CV' : 'Compilez d’abord le CV (PDF à jour)'}>💾 Enregistrer</button>
+      <button type="button" className={`${btn} hidden md:inline-flex`} onClick={() => setMyCvs(true)}>🗂 Mes CV</button>
       <button type="button" className={btnPrimary} onClick={compile.downloadPdf} disabled={compile.rendering || (compile.unavailable && !compile.result)}>⬇ PDF</button>
-      <details className="relative sm:hidden">
+      <details className="relative md:hidden">
         <summary className={`${btn} list-none`} aria-label="Plus d’actions">⋯</summary>
         <div className="absolute right-0 z-50 mt-1 flex w-48 flex-col gap-1 rounded-lg border border-[#21262d] bg-[#13161d] p-2 shadow-xl">
           <button type="button" className={`${btn} justify-start`} onClick={downloadTex}>⬇ Télécharger .tex</button>
+          <button type="button" className={`${btn} justify-start`} onClick={() => setSaving(true)} disabled={!canSave}>💾 Enregistrer</button>
+          <button type="button" className={`${btn} justify-start`} onClick={() => setMyCvs(true)}>🗂 Mes CV</button>
           <button type="button" className={`${btn} justify-start`} onClick={() => void navigator.clipboard?.writeText(code)}>📋 Copier le code</button>
           <a className={`${btn} justify-start`} href="/cv-generator">← CV Generator</a>
         </div>
@@ -436,6 +457,11 @@ export default function LatexStudio() {
       {rewrite && (
         <RewriteDialog base={rewrite.base} result={rewrite.result} onClose={() => setRewrite(null)}
           onApply={data => { setCv(data); setRewrite(null) }} />
+      )}
+      {saving && <SaveDialog mode={historyMode} defaultTitle={saveTitle} onSave={saveCv} onClose={() => setSaving(false)} />}
+      {myCvs && (
+        <MyCvsDialog mode={historyMode} onClose={() => setMyCvs(false)}
+          onRestore={tex => replaceCode(restorableCode(tex), 'Avant restauration depuis Mes CV')} />
       )}
       {proposal && <FixDialog proposal={proposal} attempt={fixAttempts} onAccept={acceptFix} onReject={() => setProposal(null)} />}
     </div>

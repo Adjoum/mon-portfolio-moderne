@@ -209,7 +209,92 @@ async function p3(browser) {
   await context.close();
 }
 
-const SCENARIOS = { p1, p2, p3 };
+// ── P4 : Mes CV ──────────────────────────────────────────────
+const STACK = Object.fromEntries(fs.readFileSync(path.join(ROOT, 'secrets/recette/stack.env'), 'utf8').split(/\r?\n/).filter(l => l.includes('=')).map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
+const GATEWAY = 'http://127.0.0.1:58521';
+const { spawnSync } = await import('node:child_process');
+const sql = q => spawnSync('docker', ['exec', 'recette-db', 'psql', '-X', '-U', 'supabase_admin', '-d', 'postgres', '-Atc', q], { encoding: 'utf8' }).stdout.trim();
+
+function totp(base32) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (const c of base32.replace(/=+$/, '').toUpperCase()) bits += alphabet.indexOf(c).toString(2).padStart(5, '0');
+  const key = Buffer.from(bits.match(/.{8}/g).map(b => parseInt(b, 2)));
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
+  const mac = crypto.createHmac('sha1', key).update(counter).digest();
+  const o = mac[mac.length - 1] & 0xf;
+  return String((mac.readUInt32BE(o) & 0x7fffffff) % 1000000).padStart(6, '0');
+}
+
+/** Administrateur TEMPORAIRE avec MFA ; renvoie sa session (jamais votre compte) */
+async function temporaryAdmin() {
+  const email = `p4-e2e-${crypto.randomUUID()}@recette.test`;
+  const password = crypto.randomBytes(16).toString('hex');
+  const adminApi = (p, init) => fetch(`${GATEWAY}/auth/v1${p}`, { ...init, headers: { apikey: STACK.RECETTE_SERVICE_KEY, Authorization: `Bearer ${STACK.RECETTE_SERVICE_KEY}`, 'Content-Type': 'application/json' } }).then(r => r.json());
+  const authApi = (p, token, body) => fetch(`${GATEWAY}/auth/v1${p}`, { method: 'POST', headers: { apikey: STACK.RECETTE_ANON_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
+  const user = await adminApi('/admin/users', { method: 'POST', body: JSON.stringify({ email, password, email_confirm: true }) });
+  sql(`insert into public.admin_users (user_id, email) values ('${user.id}', '${email}');`);
+  const aal1 = await authApi('/token?grant_type=password', STACK.RECETTE_ANON_KEY, { email, password });
+  const factor = await authApi('/factors', aal1.access_token, { factor_type: 'totp', friendly_name: 'e2e' });
+  const challenge = await authApi(`/factors/${factor.id}/challenge`, aal1.access_token, {});
+  const session = await authApi(`/factors/${factor.id}/verify`, aal1.access_token, { challenge_id: challenge.id, code: totp(factor.totp.secret) });
+  return { id: user.id, session, remove: () => adminApi(`/admin/users/${user.id}`, { method: 'DELETE', body: '{}' }) };
+}
+
+async function saveAndManage(page, label) {
+  await page.getByText('PDF prêt').waitFor({ timeout: 30_000 });
+  await page.getByRole('button', { name: '💾 Enregistrer' }).click();
+  const save = page.getByRole('dialog', { name: /Enregistrer dans Mes CV/ });
+  check(`${label} : enregistrement impossible sans accord explicite`, await save.getByRole('button', { name: 'Enregistrer' }).isDisabled());
+  await save.getByLabel('Titre').fill('CV recette P4');
+  await save.getByRole('checkbox').check();
+  await save.getByRole('button', { name: 'Enregistrer' }).click();
+  await save.waitFor({ state: 'detached', timeout: 15_000 });
+  await page.getByRole('button', { name: '🗂 Mes CV' }).click();
+  const list = page.getByRole('dialog', { name: 'Mes CV' });
+  await list.getByText('CV recette P4').waitFor({ timeout: 15_000 });
+  const mode = label === 'serveur' ? 'Espace privé : ces CV ne sont visibles que par vous.' : 'CV conservés dans ce navigateur, sur cet appareil uniquement.';
+  check(`${label} : CV retrouvé dans Mes CV, mode attendu affiché`, await list.getByText(mode).isVisible());
+  await list.getByRole('button', { name: '👁 Aperçu' }).click();
+  await page.getByRole('dialog', { name: /Aperçu — CV recette P4/ }).locator('img[alt="Page 1 du CV"]').waitFor({ timeout: 15_000 });
+  check(`${label} : aperçu du PDF enregistré`, true);
+  await page.getByRole('dialog', { name: /Aperçu — CV recette P4/ }).getByRole('button', { name: 'Fermer' }).click();
+  const [download] = await Promise.all([page.waitForEvent('download'), list.getByRole('button', { name: '⬇ PDF' }).click()]);
+  const file = path.join(OUT, `p4-${label}.pdf`);
+  await download.saveAs(file);
+  check(`${label} : PDF téléchargé (${download.suggestedFilename()})`, fs.readFileSync(file).subarray(0, 5).toString() === '%PDF-');
+  await list.getByRole('button', { name: '🗑 Supprimer' }).click();
+  await list.getByRole('button', { name: 'Confirmer la suppression' }).click();
+  await list.getByText('Aucun CV enregistré').waitFor({ timeout: 15_000 });
+  check(`${label} : CV supprimé`, true);
+  await page.screenshot({ path: path.join(OUT, `p4-${label}.png`) });
+  await list.getByRole('button', { name: 'Fermer' }).click();
+}
+
+async function p4(browser) {
+  console.log('\n▶ P4 — Mes CV : appareil (visiteur), espace privé serveur (administrateur avec MFA)');
+  const visitor = await newStudio(browser);
+  await saveAndManage(visitor.page, 'appareil');
+  check('visiteur : aucune requête vers le stockage Supabase', !(await visitor.page.evaluate(() => performance.getEntriesByType('resource').some(e => e.name.includes('/storage/v1/')))));
+  await visitor.context.close();
+
+  const admin = await temporaryAdmin();
+  try {
+    const host = 'localhost';
+    const ctx = await newStudio(browser, {});
+    await ctx.page.addInitScript(([key, value]) => localStorage.setItem(key, value), [`sb-${host}-auth-token`, JSON.stringify({ ...admin.session, expires_at: Math.floor(Date.now() / 1000) + admin.session.expires_in })]);
+    await ctx.page.reload();
+    await saveAndManage(ctx.page, 'serveur');
+    check('serveur : plus aucun fichier ni document après suppression',
+      sql(`select (select count(*) from storage.objects where bucket_id = 'cv-private' and name like '${admin.id}/%') + (select count(*) from public.cv_documents where owner_id = '${admin.id}');`) === '0');
+    await ctx.context.close();
+  } finally {
+    await admin.remove();
+  }
+}
+
+const SCENARIOS = { p1, p2, p3, p4 };
 
 const selected = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(SCENARIOS);
 const browser = await pw.chromium.launch();

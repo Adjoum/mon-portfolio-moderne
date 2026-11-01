@@ -1,2 +1,5 @@
 # Scripts shell : toujours LF (sinon bash échoue sous Windows avec autocrlf)
 *.sh text eol=lf
+# Fichiers d'essai : octets exacts (encodages, signatures, documents corrompus volontairement)
+tests/extract/fixtures/** binary
+tests/latex/fixtures/*.jpg binary
