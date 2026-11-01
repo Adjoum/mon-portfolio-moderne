@@ -859,6 +859,139 @@ async function v2p3(browser, engine = 'chromium') {
   await mobile.context.close();
 }
 
+// ── Phase avancée, P4 : synchronisation PDF ↔ code ───────────
+/** Ligne sélectionnée (ou du curseur) dans la zone de code, après la mise à jour du studio */
+const selectedLine = async page => { await page.waitForTimeout(250); return codeArea(page).evaluate(ta => ta.value.slice(0, ta.selectionStart).split('\n').length); };
+/** Curseur placé au début d'une ligne du code, comme au clavier */
+async function cursorTo(page, line) {
+  await codeArea(page).evaluate((ta, n) => {
+    const offset = ta.value.split('\n').slice(0, n - 1).reduce((s, l) => s + l.length + 1, 0);
+    ta.focus();
+    ta.setSelectionRange(offset, offset);
+  }, line);
+  await page.keyboard.press('End');
+  await page.keyboard.press('Home');
+}
+const lineOf = (code, re) => code.split('\n').findIndex(l => re.test(l)) + 1;
+/** Centre de la première zone surlignée dans l'aperçu (amenée à l'écran) */
+async function highlightBox(page) {
+  const h = page.locator('[data-sync-highlight]').first();
+  await h.waitFor({ timeout: 10_000 });
+  await h.scrollIntoViewIfNeeded();
+  return h.boundingBox();
+}
+const HANDWRITTEN = [
+  '\\documentclass[11pt]{article}', '\\usepackage[utf8]{inputenc}', '\\usepackage[T1]{fontenc}', '\\usepackage{hyperref}', '\\begin{document}',
+  '\\section*{Awa Konan}', 'Analyste de données à Abidjan.', '', '\\section*{Compétences}', 'Python, SQL et Power BI.', '',
+  '\\section*{Liens}', '\\href{javascript:window.__pdfjs_pwned=1}{Lien piégé (javascript)} et',
+  '\\href{https://example.org}{site externe}.', '\\end{document}',
+].join('\n');
+
+async function v2p4(browser, engine = 'chromium') {
+  console.log(`\n▶ Phase avancée P4 — Synchronisation PDF ↔ code (${engine}, compilation réelle)`);
+  const { context, page, calls } = await newStudio(browser, { session: { 'latex-studio:cv': IMPORTED } });
+  const ready = async () => {
+    await page.getByRole('status').filter({ hasText: 'PDF prêt' }).first().waitFor({ timeout: 45_000 });
+    await page.locator('[data-preview][aria-busy="false"]').waitFor({ timeout: 15_000 });
+    await page.getByLabel('Aller à la section').and(page.locator(':enabled')).waitFor({ timeout: 15_000 });
+  };
+  await ready();
+  const code = await codeArea(page).inputValue();
+  const headline = lineOf(code, /\\cvheadline Data Analyst/);
+  const row = lineOf(code, /\\textbf\{Data Analyst\}/);
+  const bullet = lineOf(code, /\\item Tableaux de bord/);
+
+  // 1. Code → PDF : le curseur surligne le passage ; « Voir dans le PDF » l'amène à l'écran
+  await cursorTo(page, row);
+  const rowBox = await highlightBox(page);
+  await cursorTo(page, headline);
+  const headBox = await highlightBox(page);
+  check('code → PDF : poste « Data Analyst » surligné sous le titre professionnel identique', !!rowBox && !!headBox && rowBox.y > headBox.y + 20, `${Math.round(headBox?.y)} / ${Math.round(rowBox?.y)}`);
+  await cursorTo(page, bullet);
+  await page.getByRole('button', { name: /Voir dans le PDF/ }).click();
+  const bulletBox = await highlightBox(page);
+  check('« Voir dans le PDF » : puce surlignée et visible', !!bulletBox && bulletBox.y > rowBox.y);
+  await page.screenshot({ path: path.join(OUT, `v2-p4-code-vers-pdf-${engine}.png`) });
+
+  // 2. PDF → code : un clic sur le passage sélectionne sa ligne, même pour un texte répété
+  const clickLineArea = async line => {
+    await cursorTo(page, line);
+    const box = await highlightBox(page);
+    await cursorTo(page, 1);
+    await page.mouse.click(box.x + Math.min(20, box.width / 4), box.y + box.height / 2);
+    return selectedLine(page);
+  };
+  let got = await clickLineArea(row);
+  check('PDF → code : clic sur le poste → ligne de l’expérience', got === row, `ligne ${got}, attendue ${row}`);
+  got = await clickLineArea(headline);
+  check('PDF → code : clic sur le titre professionnel → sa ligne (et non celle du poste)', got === headline, `ligne ${got}, attendue ${headline}`);
+  check('le passage cliqué reste surligné dans le PDF', (await page.locator('[data-sync-highlight]').count()) >= 1);
+
+  // 3. Navigation par section et par élément
+  await page.getByLabel('Aller à la section').selectOption({ label: 'Compétences' });
+  const skills = lineOf(code, /\\cvsection\{Compétences\}/);
+  const skillsBox = await highlightBox(page);
+  const preview = await page.locator('[data-preview]').boundingBox();
+  check('« Aller à la section » : titre sélectionné dans le code et visible dans l’aperçu',
+    (await selectedLine(page)) === skills && skillsBox.y >= preview.y && skillsBox.y + skillsBox.height <= preview.y + preview.height, `ligne ${await selectedLine(page)}`);
+  await page.getByRole('button', { name: 'Élément suivant' }).click();
+  const next = await selectedLine(page);
+  await page.getByRole('button', { name: 'Élément précédent' }).click();
+  check('éléments suivant et précédent', next > skills && (await selectedLine(page)) === skills, `${skills} → ${next} → ${await selectedLine(page)}`);
+
+  // 4. Aperçu périmé : correspondance suspendue jusqu'à la compilation suivante
+  await cursorTo(page, bullet);
+  await page.keyboard.press('End');
+  await page.keyboard.type(' (modifié)');
+  check('code modifié : surlignage et navigation suspendus', (await page.locator('[data-sync-highlight]').count()) === 0 && await page.getByLabel('Aller à la section').isDisabled());
+  await ready();
+  check('après compilation : navigation rétablie', await page.getByLabel('Aller à la section').isEnabled());
+  check('aucun appel IA', calls.length === 0);
+  await context.close();
+
+  // 5. Repli sur un code écrit à la main ; lien « javascript: » du PDF jamais exécuté
+  const hand = await newStudio(browser, { draft: HANDWRITTEN });
+  const p2 = hand.page;
+  await p2.getByRole('status').filter({ hasText: 'PDF prêt' }).first().waitFor({ timeout: 45_000 });
+  await p2.getByLabel('Aller à la section').and(p2.locator(':enabled')).waitFor({ timeout: 15_000 });
+  await p2.getByLabel('Aller à la section').selectOption({ label: 'Compétences' });
+  check('code importé : « Aller à la section » trouve le titre', (await selectedLine(p2)) === 9);
+  await cursorTo(p2, 13);
+  const trap = await highlightBox(p2);
+  const pagesBefore = hand.context.pages().length;
+  const urlBefore = p2.url();
+  await cursorTo(p2, 1);
+  await p2.mouse.click(trap.x + 8, trap.y + trap.height / 2);
+  await p2.waitForTimeout(500);
+  check('clic sur un lien « javascript: » du PDF : ligne 13 sélectionnée, aucun script exécuté, aucune navigation',
+    (await selectedLine(p2)) === 13 && (await p2.evaluate(() => window.__pdfjs_pwned)) === undefined && hand.context.pages().length === pagesBefore && p2.url() === urlBefore);
+  check('aperçu sans lien actif ni annotation (pages en images)', (await p2.locator('[data-preview] a, [data-preview] iframe, [data-preview] embed, [data-preview] object, [data-preview] .annotationLayer').count()) === 0);
+  await p2.screenshot({ path: path.join(OUT, `v2-p4-repli-${engine}.png`) });
+  await hand.context.close();
+
+  if (engine !== 'chromium') return;
+  // Smartphone : toucher un passage du PDF ouvre le code sur sa ligne
+  const mobile = await newStudio(browser, { width: 390, height: 844, mobile: true, session: { 'latex-studio:cv': IMPORTED } });
+  const m = mobile.page;
+  await m.getByRole('status').filter({ hasText: 'PDF prêt' }).first().waitFor({ timeout: 45_000 });
+  await m.getByRole('button', { name: /Aperçu/ }).click();
+  await m.getByLabel('Aller à la section').and(m.locator(':enabled')).waitFor({ timeout: 15_000 });
+  await m.getByLabel('Aller à la section').selectOption({ label: 'Formation' });
+  const box = await highlightBox(m);
+  await m.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  await m.waitForTimeout(300);
+  const mcode = await codeArea(m).inputValue();
+  check('smartphone : toucher le titre « Formation » ouvre le code sur sa ligne',
+    await codeArea(m).isVisible() && (await selectedLine(m)) === lineOf(mcode, /\\cvsection\{Formation\}/));
+  await m.screenshot({ path: path.join(OUT, 'v2-p4-mobile.png') });
+  await mobile.context.close();
+}
+
+async function v2p4webkit() {
+  const webkit = await pw.webkit.launch();
+  try { await v2p4(webkit, 'webkit'); } finally { await webkit.close(); }
+}
+
 async function v2p3webkit() {
   const webkit = await pw.webkit.launch();
   try { await v2p3(webkit, 'webkit'); } finally { await webkit.close(); }
@@ -870,7 +1003,7 @@ async function p5webkit() {
   try { await p5(webkit, 'webkit'); } finally { await webkit.close(); }
 }
 
-const SCENARIOS = { p1, p2, p3, p4, p5, p5webkit, v2p2, v2p3, v2p3webkit, v2p5, v2p6 };
+const SCENARIOS = { p1, p2, p3, p4, p5, p5webkit, v2p2, v2p3, v2p3webkit, v2p4, v2p4webkit, v2p5, v2p6 };
 
 const selected = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(SCENARIOS);
 const browser = await pw.chromium.launch();

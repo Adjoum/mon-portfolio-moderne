@@ -4,7 +4,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 
 export interface CodeEditorHandle {
-  goToLine(line: number): void
+  /** Ligne entière sélectionnée et amenée à l’écran ; focus dans l’éditeur sauf demande contraire */
+  goToLine(line: number, focus?: boolean): void
   focus(): void
 }
 
@@ -35,17 +36,19 @@ export const CodeEditor = forwardRef<CodeEditorHandle, {
   onChange: (value: string) => void
   onSelection: (selection: Selection | null) => void
   onCompile: () => void
+  /** Ligne du curseur (synchronisation avec l'aperçu PDF) */
+  onCursorLine?: (line: number) => void
   /** Zone de texte simple (écran tactile) */
   plain: boolean
-}>(function CodeEditor({ value, onChange, onSelection, onCompile, plain }, ref) {
+}>(function CodeEditor({ value, onChange, onSelection, onCompile, onCursorLine, plain }, ref) {
   const host = useRef<HTMLDivElement>(null)
   const area = useRef<HTMLTextAreaElement>(null)
   const editor = useRef<any>(null)
   const [ready, setReady] = useState(false)
-  const callbacks = useRef({ onChange, onSelection, onCompile })
+  const callbacks = useRef({ onChange, onSelection, onCompile, onCursorLine })
   const initial = useRef(value)
 
-  useEffect(() => { callbacks.current = { onChange, onSelection, onCompile } }, [onChange, onSelection, onCompile])
+  useEffect(() => { callbacks.current = { onChange, onSelection, onCompile, onCursorLine } }, [onChange, onSelection, onCompile, onCursorLine])
 
   useEffect(() => {
     if (plain) return
@@ -75,6 +78,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, {
         const start = model.getOffsetAt(sel.getStartPosition())
         callbacks.current.onSelection({ text, start, end: start + text.length })
       })
+      ed.onDidChangeCursorPosition((e: any) => callbacks.current.onCursorLine?.(e.position.lineNumber))
       ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => callbacks.current.onCompile())
       editor.current = ed
       setReady(true)
@@ -97,19 +101,21 @@ export const CodeEditor = forwardRef<CodeEditorHandle, {
   }, [value, ready])
 
   useImperativeHandle(ref, () => ({
-    goToLine(line: number) {
+    goToLine(line: number, focus = true) {
       const ed = editor.current
       if (ed) {
+        // Ligne entière sélectionnée : visible d'un coup d'œil
+        const max = ed.getModel()?.getLineMaxColumn(line) ?? 1
         ed.revealLineInCenter(line)
-        ed.setPosition({ lineNumber: line, column: 1 })
-        ed.focus()
+        ed.setSelection({ startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: max })
+        if (focus) ed.focus()
         return
       }
       const ta = area.current
       if (!ta) return
       const lines = ta.value.split('\n')
       const offset = lines.slice(0, Math.max(0, line - 1)).reduce((n, l) => n + l.length + 1, 0)
-      ta.focus()
+      if (focus) ta.focus()
       ta.setSelectionRange(offset, offset + (lines[line - 1]?.length ?? 0))
       ta.scrollTop = Math.max(0, (line - 5) * 20)
     },
@@ -130,6 +136,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, {
           onSelect={e => {
             const ta = e.currentTarget
             onSelection(ta.selectionStart === ta.selectionEnd ? null : { text: ta.value.slice(ta.selectionStart, ta.selectionEnd), start: ta.selectionStart, end: ta.selectionEnd })
+            onCursorLine?.(ta.value.slice(0, ta.selectionStart).split('\n').length)
           }}
           onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); onCompile() } }}
           spellCheck={false}

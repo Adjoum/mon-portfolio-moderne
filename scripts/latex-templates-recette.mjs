@@ -26,6 +26,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const { TEMPLATE_LIBRARY, renderCv, photoSetup } = await import('../src/features/latex-studio/templates/library.ts');
 const { sampleCv } = await import('../src/features/latex-studio/templates/sample.ts');
 const { analyzeQuality, extractPageText } = await import('../src/features/latex-studio/lib/quality.ts');
+const { buildSync, codeTexts, lineAt, outline, rectsForLine, syncedLines, norm } = await import('../src/features/latex-studio/lib/sync.ts');
 const { buildFinalLatex, TEMPLATES } = await import('../src/pages/CVBuilder/latexTemplates.ts');
 const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
@@ -146,6 +147,68 @@ for (const f of FONT_CHOICES) {
   const r = await compile(code, false, frameOf('executive-prestige', { font: f.id }));
   const fonts = r.status === 200 ? embeddedFonts(r.pdf) : [];
   check(`police « ${f.label} » réellement intégrée au PDF`, fonts.some(n => EXPECTED_FONT[f.id].test(n)) && !fonts.some(n => /^SF(RM|BX|TI)/.test(n)), fonts.slice(0, 4).join(' '));
+}
+
+console.log('\n▶ Synchronisation PDF ↔ code (P4) : huit modèles, CV long, PDF réels');
+for (const t of TEMPLATE_LIBRARY) {
+  for (const opts of [{}, ...(t.supports.photo ? [{ photo: true, photoFrames: { [t.id]: { position: 'left' } } }] : [])]) {
+    const cv = sampleCv('long');
+    const code = renderCv(t.id, cv, opts);
+    const frame = frameOf(t.id, opts);
+    const r = await compile(code, false, frame);
+    if (r.status !== 200) { check(`${t.name} : compilation`, false); continue; }
+    const task = pdfjs.getDocument({ data: new Uint8Array(r.pdf), verbosity: 0 });
+    const pages = await extractPageText(await task.promise);
+    await task.destroy();
+    const final = buildFinalLatex(code, false, frame.width, frame.height);
+    const map = buildSync(final, pages);
+    const texts = codeTexts(final);
+    // Code → PDF : chaque ligne de texte du code retrouve au moins une zone du PDF
+    const synced = syncedLines(map);
+    const missing = texts.filter(c => !synced.has(c.line));
+    // PDF → code : chaque ligne du PDF, cliquée en son centre, renvoie à une ligne du code qui contient son texte
+    const wrong = map.segments.filter(s => {
+      const line = lineAt(map, s.page, (s.x0 + s.x1) / 2, (s.top + s.bottom) / 2);
+      const target = texts.find(c => c.line === line);
+      return !target || !(target.ns.includes(s.ns) || s.ns.includes(target.ns));
+    });
+    // Zones partagées par plusieurs lignes du code : un clic au milieu de chaque portion renvoie à sa ligne
+    const wrongParts = map.parts.filter(p => {
+      const s = map.segments[p.seg];
+      const x = s.x0 + ((p.from + p.to) / 2) * (s.x1 - s.x0);
+      return lineAt(map, s.page, x, (s.top + s.bottom) / 2) !== p.line;
+    });
+    // Titres de section : chacun mène à sa zone du PDF, et cette zone ramène au titre
+    const titles = outline(final);
+    const badTitles = titles.filter(o => {
+      const zones = rectsForLine(map, o.line).map(r => ({ ...r, text: map.segments.find(x => x.page === r.page && x.top === r.top && x.x0 <= r.x0 + 0.01)?.text ?? '' }));
+      return !zones.length || norm(zones[0].text) !== norm(o.title) || lineAt(map, zones[0].page, zones[0].x0 + 1, (zones[0].top + zones[0].bottom) / 2) !== o.line;
+    });
+    const label = `${t.name}${opts.photo ? ' (photo à gauche)' : ''}`;
+    check(`${label} : ${texts.length - missing.length}/${texts.length} lignes du code retrouvées dans le PDF`, missing.length === 0, missing.slice(0, 4).map(m => `l.${m.line} « ${m.text.slice(0, 50)} »`).join(' | '));
+    check(`${label} : ${map.segments.length - wrong.length}/${map.segments.length} zones du PDF renvoient à la bonne ligne`, wrong.length === 0 && wrongParts.length === 0, [...wrong.slice(0, 4).map(w => `p.${w.page} « ${w.text.slice(0, 50)} »`), ...wrongParts.slice(0, 2).map(p => `portion l.${p.line}`)].join(' | '));
+    check(`${label} : ${titles.length - badTitles.length}/${titles.length} titres de section synchronisés dans les deux sens`, titles.length > 0 && badTitles.length === 0, badTitles.map(b => b.title).join(', '));
+  }
+}
+
+console.log('\n▶ Synchronisation, repli sur un code importé (modèles de l’ancien générateur, sans structure connue)');
+for (const [key, tpl] of Object.entries(TEMPLATES)) {
+  const final = buildFinalLatex(tpl.code, false, 3.2);
+  const r = await compile(tpl.code, false);
+  if (r.status !== 200) { check(`${key} : compilation`, false, JSON.stringify(r.error).slice(0, 120)); continue; }
+  const task = pdfjs.getDocument({ data: new Uint8Array(r.pdf), verbosity: 0 });
+  const pages = await extractPageText(await task.promise);
+  await task.destroy();
+  const map = buildSync(final, pages);
+  const texts = codeTexts(final);
+  const synced = syncedLines(map);
+  const found = texts.filter(c => synced.has(c.line)).length;
+  const right = map.segments.filter(s => {
+    const target = texts.find(c => c.line === lineAt(map, s.page, (s.x0 + s.x1) / 2, (s.top + s.bottom) / 2));
+    return target && (target.ns.includes(s.ns) || s.ns.includes(target.ns));
+  }).length;
+  check(`${key} : ${found}/${texts.length} lignes du code retrouvées, ${right}/${map.segments.length} zones du PDF renvoient à leur ligne`,
+    found >= 0.9 * texts.length && right >= 0.95 * map.segments.length);
 }
 
 console.log('\n▶ Défauts du modèle d’origine « Premium Hero » : détectés par le contrôle qualité');

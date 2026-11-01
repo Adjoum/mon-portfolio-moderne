@@ -26,6 +26,8 @@ import { RewriteDialog } from './components/RewriteDialog'
 import { MyCvsDialog, SaveDialog } from './components/MyCvs'
 import { detectMode, history, restorableCode, type HistoryMode } from './lib/history'
 import { useCompile, downloadUrl } from './useCompile'
+import { useSync } from './useSync'
+import { lineAt, outline, rectsForLine, type SyncRect } from './lib/sync'
 import { useVersions } from './useVersions'
 import { useViewport, prefersPlainEditor } from './useViewport'
 import { applyEdits, type FixProposal } from './lib/edits'
@@ -331,6 +333,46 @@ export default function LatexStudio() {
   }
 
   const quality = useQuality(compile.result?.pdf ?? null, compile.result?.warnings ?? NO_WARNINGS, cv.identity.fullName)
+
+  // ── Synchronisation PDF ↔ code (P4) : suspendue tant que l'aperçu ne correspond pas au code ──
+  const sync = useSync(compile.result)
+  const syncUsable = !!sync && !compile.stale
+  const [cursorLine, setCursorLine] = useState<number | null>(null)
+  const [reveal, setReveal] = useState<{ rect: SyncRect; nonce: number } | null>(null)
+  const [syncInfo, setSyncInfo] = useState('')
+  const highlights = useMemo(() => (syncUsable && cursorLine ? rectsForLine(sync!, cursorLine) : []), [syncUsable, sync, cursorLine])
+  const sections = useMemo(() => outline(code), [code])
+  const elementLines = useMemo(() => (sync ? [...new Set(sync.parts.map(p => p.line))].sort((a, b) => a - b) : []), [sync])
+  /** Code : ligne sélectionnée ; sur smartphone et tablette, l'éditeur est affiché si on vient du PDF */
+  const showInCode = (line: number, fromPdf: boolean) => {
+    setCursorLine(line)
+    if (fromPdf && viewport === 'mobile') setMobileTab('code')
+    if (fromPdf && viewport === 'tablet' && tabletView === 'apercu') setTabletView('both')
+    setTimeout(() => editor.current?.goToLine(line, fromPdf), 50)
+  }
+  /** PDF : zone de la ligne amenée à l'écran */
+  const showInPdf = (line: number | null, fromCode: boolean) => {
+    if (!syncUsable || !line) return
+    const rects = rectsForLine(sync!, line)
+    if (!rects.length) return
+    setCursorLine(line)
+    setReveal({ rect: rects[0], nonce: Date.now() })
+    if (fromCode && viewport === 'mobile') setMobileTab('apercu')
+    if (fromCode && viewport === 'tablet' && tabletView === 'code') setTabletView('both')
+  }
+  const onPdfClick = (page: number, x: number, y: number) => {
+    if (!syncUsable) { setSyncInfo('Aperçu en cours de mise à jour : la correspondance reprend après la compilation.'); return }
+    const line = lineAt(sync!, page, x, y)
+    if (line === null) return
+    setSyncInfo(`Ligne ${line} du code sélectionnée.`)
+    showInCode(line, true)
+  }
+  const goToSection = (line: number) => { showInCode(line, false); showInPdf(line, false) }
+  const stepElement = (direction: 1 | -1) => {
+    const from = cursorLine ?? 0
+    const next = direction > 0 ? elementLines.find(l => l > from) : [...elementLines].reverse().find(l => l < from)
+    if (next) { showInCode(next, false); showInPdf(next, false) }
+  }
   // ── Photo (P3) : le cadre est un réglage du document (code, PDF, annulation) ; le cadrage reste en mémoire ──
   const currentTemplate = TEMPLATE_LIBRARY.find(t => t.id === choice.id) ?? TEMPLATE_LIBRARY[0]
   const setPhotoSlot = (on: boolean) => {
@@ -486,11 +528,16 @@ export default function LatexStudio() {
 
   const codePanel = (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Code LaTeX">
-      <div className="flex items-center justify-between border-b border-[#21262d] bg-[#13161d] px-3 py-1.5 text-[11px] text-gray-400">
+      <div className="flex items-center justify-between gap-2 border-b border-[#21262d] bg-[#13161d] px-3 py-1 text-[11px] text-gray-400">
         <span>📝 Code LaTeX</span>
+        <button type="button" className={`${btnGhost} ml-auto min-h-8 px-2 text-[11px]`} onClick={() => showInPdf(cursorLine, true)}
+          disabled={!highlights.length} title={syncUsable ? 'Afficher dans l’aperçu le passage de la ligne du curseur' : 'Disponible quand l’aperçu est à jour'}>
+          👁 Voir dans le PDF{cursorLine ? ` (l. ${cursorLine})` : ''}
+        </button>
         <span>{code.split('\n').length} lignes</span>
       </div>
-      <CodeEditor ref={editor} value={code} onChange={setCode} onSelection={setSelection} onCompile={compile.compileNow} plain={plain || viewport === 'mobile'} />
+      <CodeEditor ref={editor} value={code} onChange={setCode} onSelection={setSelection} onCompile={compile.compileNow} onCursorLine={setCursorLine} plain={plain || viewport === 'mobile'} />
+      <p className="sr-only" role="status" aria-live="polite">{syncInfo}</p>
     </section>
   )
 
@@ -535,7 +582,20 @@ export default function LatexStudio() {
           </div>
         </div>
       ) : compile.result ? (
-        <PdfPreview pdf={compile.result.pdf} url={compile.result.url} dimmed={!!compile.error} />
+        <PdfPreview pdf={compile.result.pdf} url={compile.result.url} dimmed={!!compile.error}
+          pageSizes={syncUsable ? sync!.pageSizes : undefined} highlights={highlights} onPageClick={onPdfClick} reveal={reveal}
+          navigation={(
+            <span className="ml-1 flex shrink-0 items-center gap-0.5">
+              <select aria-label="Aller à la section" value="" disabled={!syncUsable || !sections.length}
+                onChange={e => { const line = Number(e.target.value); if (line) goToSection(line) }}
+                className="min-h-11 max-w-[9.5rem] rounded-md border border-[#30363d] bg-[#0d1117] px-1.5 text-xs text-gray-200 [color-scheme:dark] disabled:opacity-40 sm:min-h-8">
+                <option value="">Aller à…</option>
+                {sections.map(s => <option key={s.line} value={s.line}>{s.title}</option>)}
+              </select>
+              <button type="button" className={`${btnGhost} px-2`} onClick={() => stepElement(-1)} disabled={!syncUsable} aria-label="Élément précédent" title="Élément précédent">↑</button>
+              <button type="button" className={`${btnGhost} px-2`} onClick={() => stepElement(1)} disabled={!syncUsable} aria-label="Élément suivant" title="Élément suivant">↓</button>
+            </span>
+          )} />
       ) : !compile.error ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 text-sm text-gray-500">
           <div className="text-3xl" aria-hidden="true">📄</div>
