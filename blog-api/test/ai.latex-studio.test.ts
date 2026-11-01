@@ -258,7 +258,7 @@ describe('latex.rewrite', () => {
   });
 
   it('un chiffre absent du CV est écarté : texte d’origine conservé et signalé', () => {
-    const input = { cv: normalizeCvData(CV, 'strict'), target, lang: 'fr' as const };
+    const input = { cv: normalizeCvData(CV, 'strict'), target, lang: 'fr' as const, scope: 'all' as const, instructions: '' };
     const out = JSON.parse(normalizeRewriteOutput(JSON.stringify({
       summary: 'Analyste ayant réduit les coûts de 35 %.',
       experiences: [{ id: 'e1', bullets: ['Tableaux de bord pour 12 districts, 3 000 utilisateurs', 'Rapports'] }, { id: 'e2', bullets: ['Enquêtes auprès de 4 800 ménages'] }],
