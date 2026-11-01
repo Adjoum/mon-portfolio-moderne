@@ -98,7 +98,7 @@ async function p1(browser) {
   await page.locator('img[alt="Page 1 du CV"]').waitFor();
   check('aperçu PDF affiché', await page.locator('img[alt="Page 1 du CV"]').isVisible());
 
-  await page.getByRole('button', { name: /Précédente/ }).first().click();
+  await page.getByRole('button', { name: /précédente/i }).first().click();
   await alert.waitFor({ timeout: 30_000 });
   check('retour à la version précédente : code d’origine restauré', (await codeArea(page).inputValue()) === BROKEN);
   await context.close();
@@ -294,7 +294,130 @@ async function p4(browser) {
   }
 }
 
-const SCENARIOS = { p1, p2, p3, p4 };
+// ── P5 : responsive, ergonomie, accessibilité ────────────────
+const WIDTHS = [320, 375, 390, 768, 1024, 1366, 1920];
+
+/** Éléments qui dépassent du viewport horizontalement, et défilement horizontal de la page */
+const overflow = page => page.evaluate(() => {
+  const w = window.innerWidth;
+  const out = [...document.querySelectorAll('header *, nav *, [role="tablist"] *, [role="dialog"] *')]
+    .filter(el => el.offsetParent !== null && !el.closest('.overflow-auto, .overflow-x-auto, figure, details:not([open]) > :not(summary)'))
+    .map(el => ({ el, r: el.getBoundingClientRect() }))
+    .filter(({ r }) => r.width > 0 && (r.right > w + 1 || r.left < -1))
+    .map(({ el }) => `${el.tagName.toLowerCase()} « ${(el.textContent ?? '').trim().slice(0, 20)} »`);
+  return { scroll: document.documentElement.scrollWidth - w, out: [...new Set(out)].slice(0, 5) };
+});
+
+/** Boutons visibles sans nom accessible, images sans texte alternatif, cibles tactiles trop petites */
+const a11y = (page, touch) => page.evaluate(min => {
+  const visible = el => el.offsetParent !== null && el.getBoundingClientRect().width > 0;
+  const unnamed = [...document.querySelectorAll('button, a[href], [role="tab"], summary')].filter(visible)
+    .filter(el => !(el.getAttribute('aria-label') || el.textContent?.trim() || el.getAttribute('title'))).length;
+  const noAlt = [...document.querySelectorAll('img')].filter(visible).filter(i => !i.hasAttribute('alt')).length;
+  const small = min ? [...document.querySelectorAll('header button, header summary, nav button, [role="tab"]')].filter(visible)
+    .filter(el => el.getBoundingClientRect().height < min - 0.5).map(el => (el.textContent ?? el.getAttribute('aria-label') ?? '').trim().slice(0, 15)) : [];
+  return { unnamed, noAlt, small };
+}, touch ? 44 : 0);
+
+/** Barres d'outils visibles dont le contenu déborde (boutons coupés ou à faire défiler) */
+const clippedBars = page => page.evaluate(() => [...document.querySelectorAll('[role="toolbar"], header')]
+  .filter(el => el.offsetParent !== null && el.getBoundingClientRect().width > 0)
+  .map(el => ({ name: el.getAttribute('aria-label') ?? el.tagName, scroll: el.scrollWidth - el.clientWidth }))
+  .filter(b => b.scroll > 1));
+
+async function p5(browser, engine = 'chromium') {
+  console.log(`\n▶ P5 — Responsive (${engine}) : ${WIDTHS.join(', ')} px`);
+  for (const width of WIDTHS) {
+    const mobile = width < 768;
+    const { context, page } = await newStudio(browser, { width, height: mobile ? 760 : 900, mobile });
+    await page.getByText('PDF prêt').waitFor({ timeout: 45_000 });
+    const o = await overflow(page);
+    const a = await a11y(page, mobile);
+    check(`${width} px : aucun défilement ni élément coupé horizontalement`, o.scroll <= 1 && !o.out.length, o.out.join(', ') || (o.scroll > 1 ? `défilement ${o.scroll} px` : ''));
+    check(`${width} px : noms accessibles, textes alternatifs${mobile ? ', cibles tactiles ≥ 44 px' : ''}`, !a.unnamed && !a.noAlt && !a.small.length, JSON.stringify(a));
+    const bars = await clippedBars(page);
+    check(`${width} px : en-tête et barres d’outils sans débordement`, !bars.length, JSON.stringify(bars));
+    await page.screenshot({ path: path.join(OUT, `p5-${engine}-${width}.png`) });
+
+    if (mobile) {
+      const nav = page.getByRole('navigation', { name: 'Sections du studio' });
+      await nav.getByRole('button', { name: /Code/ }).click();
+      await codeArea(page).fill(`${await codeArea(page).inputValue()}\n% modification conservée`);
+      await nav.getByRole('button', { name: /Aperçu/ }).click();
+      await page.locator('img[alt="Page 1 du CV"]').waitFor({ timeout: 30_000 });
+      const previewBox = await page.locator('img[alt="Page 1 du CV"]').boundingBox();
+      await page.screenshot({ path: path.join(OUT, `p5-${engine}-${width}-apercu.png`) });
+      check(`${width} px : aperçu PDF lisible sur toute la largeur`, !!previewBox && previewBox.width >= width * 0.8, previewBox ? `${Math.round(previewBox.width)} px` : 'absent');
+      const previewBars = await clippedBars(page);
+      check(`${width} px : barre de l’aperçu sans débordement`, !previewBars.length, JSON.stringify(previewBars));
+      await nav.getByRole('button', { name: /Informations/ }).click();
+      await page.getByRole('tab', { name: /Modèles/ }).waitFor();
+      await nav.getByRole('button', { name: /Code/ }).click();
+      check(`${width} px : travail conservé en changeant d’onglet`, (await codeArea(page).inputValue()).includes('% modification conservée'));
+      await page.getByLabel('Plus d’actions').click();
+      const menuBox = await page.getByRole('button', { name: '🗂 Mes CV' }).boundingBox();
+      check(`${width} px : menu « ⋯ » entièrement visible`, !!menuBox && menuBox.x >= 0 && menuBox.x + menuBox.width <= width, menuBox ? `${Math.round(menuBox.x)} → ${Math.round(menuBox.x + menuBox.width)} px` : 'absent');
+      await page.getByRole('button', { name: '🗂 Mes CV' }).click();
+      const box = await page.getByRole('dialog', { name: 'Mes CV' }).boundingBox();
+      check(`${width} px : fenêtre « Mes CV » en plein écran`, !!box && Math.abs(box.width - width) <= 1, box ? `${Math.round(box.width)} px` : 'absente');
+      await page.keyboard.press('Escape');
+      check(`${width} px : fermeture au clavier (Échap), menu refermé`, (await page.getByRole('dialog').count()) === 0 && !(await page.locator('header details[open]').count()));
+    } else if (width < 1024) {
+      await page.getByRole('radio', { name: 'Aperçu' }).click();
+      await page.locator('img[alt="Page 1 du CV"]').waitFor({ timeout: 30_000 });
+      await page.screenshot({ path: path.join(OUT, `p5-${engine}-${width}-apercu.png`) });
+      check(`${width} px : vue « Aperçu » seule (éditeur masqué, contenu conservé)`, !(await codeArea(page).isVisible()));
+      await page.getByRole('button', { name: '☰ Outils' }).click();
+      const drawer = page.getByRole('dialog', { name: 'Outils' });
+      check(`${width} px : outils dans un tiroir`, await drawer.getByRole('tab', { name: /Données/ }).isVisible());
+      check(`${width} px : focus placé dans le tiroir`, await page.evaluate(() => !!document.activeElement?.closest('[role="dialog"]')));
+      await page.keyboard.press('Escape');
+      check(`${width} px : tiroir fermé au clavier (Échap), focus rendu au bouton`, !(await drawer.count()) && await page.evaluate(() => document.activeElement?.textContent?.includes('Outils') ?? false));
+    } else {
+      const pageImg = page.locator('img[alt="Page 1 du CV"]');
+      await pageImg.waitFor({ timeout: 30_000 });
+      const preview = await pageImg.boundingBox();
+      await page.screenshot({ path: path.join(OUT, `p5-${engine}-${width}-apercu.png`) });
+      check(`${width} px : outils, code et aperçu côte à côte`, (await page.getByRole('complementary', { name: 'Outils' }).isVisible()) && (await codeArea(page).isVisible()) && !!preview && preview.width >= 300, preview ? `aperçu ${Math.round(preview.width)} px` : 'aperçu absent');
+      const sep = page.getByRole('separator', { name: 'Partage entre code et aperçu' });
+      const before = Number(await sep.getAttribute('aria-valuenow'));
+      await sep.focus();
+      await page.keyboard.press('ArrowRight');
+      check(`${width} px : panneaux redimensionnables au clavier`, Number(await sep.getAttribute('aria-valuenow')) > before);
+      await page.getByRole('tab', { selected: true }).focus();
+      await page.keyboard.press('ArrowRight');
+      const focused = await page.evaluate(() => ({ role: document.activeElement?.getAttribute('role'), selected: document.activeElement?.getAttribute('aria-selected'), text: document.activeElement?.textContent?.trim() }));
+      await page.keyboard.press('End');
+      const last = await page.getByRole('tab', { selected: true }).textContent();
+      check(`${width} px : onglets d’outils au clavier (flèches, Fin)`, focused.role === 'tab' && focused.selected === 'true' && /Importer/.test(focused.text ?? '') && /Versions/.test(last ?? ''), JSON.stringify(focused));
+
+      if (width === 1366) {
+        // Confirmations : remplacement du code annulable, effacement de la session en deux temps
+        await page.getByRole('button', { name: '🧹 Effacer toutes les données de cette session' }).click();
+        const confirmBox = page.getByRole('group', { name: 'Confirmer l’effacement' });
+        check('effacement de la session : confirmation demandée, focus sur « Annuler »', await confirmBox.isVisible() && await page.evaluate(() => document.activeElement?.textContent === 'Annuler'));
+        await confirmBox.getByRole('button', { name: 'Annuler' }).click();
+        await codeArea(page).fill(`${await codeArea(page).inputValue()}\n% repère avant modèle`);
+        await page.getByRole('tab', { name: /Données/ }).click();
+        await page.getByRole('button', { name: /Générer le CV avec le modèle/ }).click();
+        const toast = page.getByRole('status').filter({ hasText: 'CV généré avec le modèle.' });
+        await toast.waitFor({ timeout: 5_000 });
+        check('modèle appliqué : confirmation affichée, code remplacé', !(await codeArea(page).inputValue()).includes('% repère avant modèle'));
+        await toast.getByRole('button', { name: '↶ Annuler' }).click();
+        check('« Annuler » rétablit le code précédent', (await codeArea(page).inputValue()).includes('% repère avant modèle') && !(await toast.count()));
+      }
+    }
+    await context.close();
+  }
+}
+
+async function p5webkit() {
+  // Moteur de Safari (iPhone, iPad) : mêmes contrôles
+  const webkit = await pw.webkit.launch();
+  try { await p5(webkit, 'webkit'); } finally { await webkit.close(); }
+}
+
+const SCENARIOS = { p1, p2, p3, p4, p5, p5webkit };
 
 const selected = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(SCENARIOS);
 const browser = await pw.chromium.launch();

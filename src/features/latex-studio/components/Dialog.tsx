@@ -13,6 +13,10 @@ export function Dialog({ title, onClose, children, footer, wide = false }: {
 }) {
   const titleId = useId()
   const ref = useRef<HTMLDivElement>(null)
+  // onClose change à chaque rendu du parent : lu via une référence, pour ne pas ramener le focus
+  // au premier bouton à chaque mise à jour de l'interface (compilation, statut…)
+  const close = useRef(onClose)
+  useEffect(() => { close.current = onClose })
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
@@ -21,7 +25,7 @@ export function Dialog({ title, onClose, children, footer, wide = false }: {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        onClose()
+        close.current()
       }
       if (e.key !== 'Tab' || !root) return
       const items = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)]
@@ -39,7 +43,7 @@ export function Dialog({ title, onClose, children, footer, wide = false }: {
       document.body.style.overflow = overflow
       previous?.focus?.()
     }
-  }, [onClose])
+  }, [])
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-stretch sm:items-center justify-center bg-black/75 sm:p-4" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>

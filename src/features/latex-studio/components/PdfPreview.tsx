@@ -10,7 +10,8 @@ export function PdfPreview({ pdf, url, dimmed, onDownload }: {
   pdf: Blob
   url: string
   dimmed: boolean
-  onDownload: () => void
+  /** Bouton « ⬇ PDF » dans la barre de l'aperçu (absent dans le studio : l'en-tête le propose déjà) */
+  onDownload?: () => void
 }) {
   const box = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
@@ -74,14 +75,14 @@ export function PdfPreview({ pdf, url, dimmed, onDownload }: {
   const index = ZOOMS.indexOf(zoom)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-1 border-b border-[#21262d] bg-[#13161d] px-2 py-1" aria-label="Commandes de l’aperçu">
-        <button type="button" className={btnGhost} onClick={() => setZoom(ZOOMS[Math.max(0, index - 1)])} disabled={index <= 0} aria-label="Zoom arrière">−</button>
-        <span className="min-w-12 text-center text-xs text-gray-400" aria-live="polite">{Math.round(zoom * 100)} %</span>
-        <button type="button" className={btnGhost} onClick={() => setZoom(ZOOMS[Math.min(ZOOMS.length - 1, index + 1)])} disabled={index >= ZOOMS.length - 1} aria-label="Zoom avant">+</button>
-        <button type="button" className={btnGhost} onClick={() => setZoom(1)}>Largeur</button>
-        <span className="ml-auto text-xs text-gray-500">{pages.length ? `${pages.length} page${pages.length > 1 ? 's' : ''}` : ''}</span>
-        <a className={btnGhost} href={url} target="_blank" rel="noopener noreferrer">Ouvrir</a>
-        <button type="button" className={btn} onClick={onDownload}>⬇ PDF</button>
+      <div className="flex items-center gap-0.5 overflow-x-auto border-b border-[#21262d] bg-[#13161d] px-2 py-1" role="toolbar" aria-label="Commandes de l’aperçu">
+        <button type="button" className={`${btnGhost} px-2`} onClick={() => setZoom(ZOOMS[Math.max(0, index - 1)])} disabled={index <= 0} aria-label="Zoom arrière" title="Zoom arrière">−</button>
+        <span className="min-w-11 shrink-0 text-center text-xs text-gray-400" aria-live="polite">{Math.round(zoom * 100)} %</span>
+        <button type="button" className={`${btnGhost} px-2`} onClick={() => setZoom(ZOOMS[Math.min(ZOOMS.length - 1, index + 1)])} disabled={index >= ZOOMS.length - 1} aria-label="Zoom avant" title="Zoom avant">+</button>
+        <button type="button" className={`${btnGhost} px-2`} onClick={() => setZoom(1)} disabled={zoom === 1} aria-label="Ajuster à la largeur" title="Ajuster à la largeur">↔</button>
+        <span className="ml-auto shrink-0 px-1 text-xs text-gray-500">{pages.length ? `${pages.length} p.` : ''}<span className="sr-only">{pages.length > 1 ? 'pages' : 'page'}</span></span>
+        <a className={`${btnGhost} shrink-0 px-2`} href={url} target="_blank" rel="noopener noreferrer" title="Ouvrir le PDF dans un nouvel onglet">↗ Ouvrir</a>
+        {onDownload && <button type="button" className={`${btn} shrink-0`} onClick={onDownload}>⬇ PDF</button>}
       </div>
       <div ref={box} className={`min-h-0 flex-1 overflow-auto bg-[#1c2129] p-3 transition-opacity ${dimmed ? 'opacity-50' : ''}`}>
         {failed && <p className="text-sm text-amber-300">Aperçu impossible dans ce navigateur : utilisez « Ouvrir » ou « ⬇ PDF ».</p>}

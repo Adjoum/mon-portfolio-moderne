@@ -2,7 +2,7 @@
 // Ordinateur : panneau d'outils | code | aperçu, redimensionnables.
 // Tablette   : outils dans un tiroir, choix Code / Aperçu / Les deux.
 // Smartphone : onglets Informations / Code / Aperçu ; les panneaux restent montés (rien n'est perdu).
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { runAiFeature } from '../../lib/aiClient'
 import { stripCodeFences, type LatexCompileDetail } from '../../lib/latexCompile'
 import { useAiAvailability, useAiStatuses } from '../../hooks/useAiAvailability'
@@ -33,7 +33,7 @@ import { AiPanel, TargetFields } from './components/AiPanel'
 import type { Target } from './lib/target'
 import { PhotoPanel } from './components/PhotoPanel'
 import { Splitter } from './components/Splitter'
-import { btn, btnGhost, btnPrimary } from './components/ui'
+import { btn, btnDanger, btnGhost, btnPrimary } from './components/ui'
 
 type SideTab = 'import' | 'donnees' | 'modeles' | 'ia' | 'photo' | 'versions'
 type MobileTab = 'infos' | 'code' | 'apercu'
@@ -80,9 +80,17 @@ export default function LatexStudio() {
   useEffect(() => { try { sessionStorage.setItem(CV_KEY, JSON.stringify(cv)); sessionStorage.setItem(TEMPLATE_KEY, JSON.stringify(choice)) } catch { /* idem */ } }, [cv, choice])
 
   /** Remplacement du code par le studio : instantané, puis compilation immédiate */
-  const replaceCode = useCallback((next: string, label: string) => {
+  // Confirmation après chaque remplacement du code, avec retour arrière immédiat
+  const [notice, setNotice] = useState('')
+  useEffect(() => {
+    if (!notice) return
+    const timer = setTimeout(() => setNotice(''), 8000)
+    return () => clearTimeout(timer)
+  }, [notice])
+  const replaceCode = useCallback((next: string, label: string, done: string) => {
     compile.compileSoon()
     versions.replace(next, label)
+    setNotice(done)
   }, [compile, versions])
 
   // ── Assistant IA ──
@@ -98,7 +106,7 @@ export default function LatexStudio() {
     setAiError('')
     try {
       const out = stripCodeFences(await runAiFeature('latex.generate', { info: aiInfo, template: renderCv(choice.id, sampleCv(), choice.options), existing: code, target }))
-      if (out) replaceCode(out, 'Avant génération IA')
+      if (out) replaceCode(out, 'Avant génération IA', 'CV généré par l’IA.')
       else setAiError('Aucun code retourné.')
     } catch (e) {
       setAiError((e as Error).message)
@@ -116,7 +124,7 @@ export default function LatexStudio() {
       const out = stripCodeFences(await runAiFeature('latex.improve', { selection: range.text, instruction: aiInstruction, context: code.slice(0, 3000), target }))
       if (!out) setAiError('Aucune amélioration retournée.')
       else if (code.slice(range.start, range.end) !== range.text) setAiError('Le code a changé pendant l’amélioration : sélectionnez à nouveau le passage.')
-      else replaceCode(code.slice(0, range.start) + out + code.slice(range.end), 'Avant amélioration IA')
+      else replaceCode(code.slice(0, range.start) + out + code.slice(range.end), 'Avant amélioration IA', 'Passage amélioré par l’IA.')
     } catch (e) {
       setAiError((e as Error).message)
     } finally {
@@ -164,7 +172,7 @@ export default function LatexStudio() {
       setFixMessage('Le code a été modifié depuis la demande : la proposition n’a pas été appliquée.')
     } else {
       try {
-        replaceCode(applyEdits(proposal.base, proposal.edits), 'Avant correction IA')
+        replaceCode(applyEdits(proposal.base, proposal.edits), 'Avant correction IA', 'Correction appliquée, recompilation en cours.')
       } catch (e) {
         setFixMessage((e as Error).message)
       }
@@ -184,7 +192,7 @@ export default function LatexStudio() {
   }
   /** Code généré à partir des données (ou de l'exemple si rien n'est saisi) et du modèle choisi */
   const applyTemplate = (data = cv) => {
-    replaceCode(renderCv(choice.id, isEmptyCv(data) ? sampleCv() : data, choice.options), 'Avant génération depuis le modèle')
+    replaceCode(renderCv(choice.id, isEmptyCv(data) ? sampleCv() : data, choice.options), 'Avant génération depuis le modèle', 'CV généré avec le modèle.')
     if (viewport === 'mobile') setMobileTab('apercu')
   }
 
@@ -205,6 +213,7 @@ export default function LatexStudio() {
     }
   }
 
+  const [confirmClear, setConfirmClear] = useState(false)
   const clearSession = () => {
     SESSION_KEYS.forEach(k => { try { sessionStorage.removeItem(k) } catch { /* idem */ } })
     window.location.reload()
@@ -240,6 +249,24 @@ export default function LatexStudio() {
   const [sideWidth, setSideWidth] = useState(() => readSession('latex-studio:side', 320))
   const [codeRatio, setCodeRatio] = useState(() => readSession('latex-studio:ratio', 0.5))
   const main = useRef<HTMLDivElement>(null)
+  // Tiroir d'outils (tablette) : focus à l'ouverture, Échap pour fermer, focus rendu au bouton
+  const drawerRef = useRef<HTMLDivElement>(null)
+  const drawerButton = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!drawer) return
+    drawerRef.current?.querySelector<HTMLElement>('button')?.focus()
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawer(false) }
+    document.addEventListener('keydown', onKey)
+    const opener = drawerButton.current
+    return () => { document.removeEventListener('keydown', onKey); opener?.focus() }
+  }, [drawer])
+  // Menu « ⋯ » : se referme après un choix, sur Échap ou en touchant ailleurs
+  const menu = useRef<HTMLDetailsElement>(null)
+  useEffect(() => {
+    const close = (e: PointerEvent) => { const m = menu.current; if (m?.open && !m.contains(e.target as Node)) m.open = false }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [])
   useEffect(() => { try { sessionStorage.setItem('latex-studio:side', JSON.stringify(sideWidth)); sessionStorage.setItem('latex-studio:ratio', JSON.stringify(codeRatio)) } catch { /* idem */ } }, [sideWidth, codeRatio])
 
   const status = compile.rendering ? { text: 'Compilation…', tone: 'bg-amber-400' }
@@ -285,7 +312,15 @@ export default function LatexStudio() {
       {sideTab === 'versions' && (
         <div className="space-y-2 text-xs">
           <p className="text-gray-400">Versions de cette session (conservées dans cet onglet uniquement).</p>
-          <button type="button" className={`${btn} w-full`} onClick={clearSession}>🧹 Effacer toutes les données de cette session</button>
+          {confirmClear ? (
+            <div className="space-y-2 rounded-lg border border-red-900 bg-red-500/10 p-2" role="group" aria-label="Confirmer l’effacement">
+              <p className="text-red-200">Le code, les données saisies, la photo et les versions de cette session seront effacés. Les CV enregistrés dans « Mes CV » sont conservés.</p>
+              <div className="flex gap-2">
+                <button type="button" className={btn} onClick={() => setConfirmClear(false)} autoFocus>Annuler</button>
+                <button type="button" className={btnDanger} onClick={clearSession}>Confirmer l’effacement</button>
+              </div>
+            </div>
+          ) : <button type="button" className={`${btn} w-full`} onClick={() => setConfirmClear(true)}>🧹 Effacer toutes les données de cette session</button>}
           {!versions.versions.length && <p className="text-gray-500">Aucune version précédente.</p>}
           <ol className="space-y-1.5">
             {[...versions.versions].reverse().map(v => (
@@ -321,13 +356,13 @@ export default function LatexStudio() {
 
   const previewPanel = (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Aperçu PDF">
-      <div className="flex flex-wrap items-center gap-2 border-b border-[#21262d] bg-[#13161d] px-3 py-1.5 text-[11px] text-gray-400">
-        <span>👁 Aperçu PDF</span>
-        {compile.rendering && <span className="text-amber-300">⏳ Compilation…</span>}
-        <label className="ml-auto flex cursor-pointer items-center gap-1.5" title="Compiler 3 s après la dernière modification">
+      <div className="flex items-center gap-2 border-b border-[#21262d] bg-[#13161d] px-3 py-1.5 text-[11px] text-gray-400">
+        <span className="truncate">👁 Aperçu PDF</span>
+        {compile.rendering && <span className="shrink-0 text-amber-300" aria-hidden="true">⏳</span>}
+        <label className="ml-auto flex shrink-0 cursor-pointer items-center gap-1.5" title="Compiler 3 s après la dernière modification">
           <input type="checkbox" checked={compile.autoCompile} onChange={e => compile.setAutoCompile(e.target.checked)} /> Auto
         </label>
-        <button type="button" className={btn} onClick={compile.compileNow} disabled={compile.rendering} title="Compiler maintenant (Ctrl+S)">▶ Compiler</button>
+        <button type="button" className={`${btn} shrink-0`} onClick={compile.compileNow} disabled={compile.rendering} title="Compiler maintenant (Ctrl+S)">▶ Compiler</button>
       </div>
       {compile.result && !compile.error && !compile.stale && <QualityReport issues={quality} onGoToLine={goToLine} />}
       {compile.error && !compile.unavailable && (
@@ -351,7 +386,7 @@ export default function LatexStudio() {
           </div>
         </div>
       ) : compile.result ? (
-        <PdfPreview pdf={compile.result.pdf} url={compile.result.url} dimmed={!!compile.error} onDownload={compile.downloadPdf} />
+        <PdfPreview pdf={compile.result.pdf} url={compile.result.url} dimmed={!!compile.error} />
       ) : !compile.error ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 text-sm text-gray-500">
           <div className="text-3xl" aria-hidden="true">📄</div>
@@ -362,24 +397,27 @@ export default function LatexStudio() {
   )
 
   const toolbar = (
-    <header className="flex flex-wrap items-center gap-2 border-b border-[#21262d] bg-[#13161d] px-3 py-2">
-      {viewport === 'tablet' && <button type="button" className={btn} onClick={() => setDrawer(true)} aria-expanded={drawer}>☰ Outils</button>}
+    <header className="flex items-center gap-2 border-b border-[#21262d] bg-[#13161d] px-3 py-2">
+      {viewport === 'tablet' && <button ref={drawerButton} type="button" className={btn} onClick={() => setDrawer(true)} aria-expanded={drawer}>☰ Outils</button>}
       {viewport === 'desktop' && <button type="button" className={btnGhost} onClick={() => setSideOpen(o => !o)} aria-expanded={sideOpen} aria-label={sideOpen ? 'Masquer le panneau d’outils' : 'Afficher le panneau d’outils'}>☰</button>}
       <div className="mr-auto min-w-0">
         <h1 className="truncate text-sm font-extrabold text-white">📘 Studio CV LaTeX</h1>
-        <p className="hidden text-[10px] text-gray-500 sm:block">PDF compilé en environnement isolé</p>
+        <p className="flex min-w-0 items-center gap-1.5 text-[11px]">
+          <span className="flex shrink-0 items-center gap-1.5 text-gray-300" role="status" aria-live="polite">
+            <span className={`h-2 w-2 rounded-full ${status.tone}`} aria-hidden="true" />{status.text}
+          </span>
+          <span className="hidden truncate text-gray-500 xl:inline">· PDF compilé en environnement isolé</span>
+        </p>
       </div>
-      <span className="flex items-center gap-1.5 text-[11px] text-gray-300" role="status" aria-live="polite">
-        <span className={`h-2 w-2 rounded-full ${status.tone}`} aria-hidden="true" />{status.text}
-      </span>
-      <button type="button" className={btn} onClick={() => { compile.compileSoon(); versions.undo() }} disabled={!versions.canUndo} title="Revenir à la version précédente">↶<span className="hidden sm:inline"> Précédente</span></button>
-      <button type="button" className={`${btn} hidden sm:inline-flex`} onClick={downloadTex}>⬇ .tex</button>
-      <button type="button" className={`${btn} hidden md:inline-flex`} onClick={() => setSaving(true)} disabled={!canSave} title={canSave ? 'Enregistrer ce CV dans Mes CV' : 'Compilez d’abord le CV (PDF à jour)'}>💾 Enregistrer</button>
-      <button type="button" className={`${btn} hidden md:inline-flex`} onClick={() => setMyCvs(true)}>🗂 Mes CV</button>
+      <button type="button" className={btn} onClick={() => { compile.compileSoon(); versions.undo() }} disabled={!versions.canUndo} title="Revenir à la version précédente" aria-label="Revenir à la version précédente">↶<span className="hidden sm:inline"> Précédente</span></button>
+      <button type="button" className={`${btn} hidden lg:inline-flex`} onClick={downloadTex}>⬇ .tex</button>
+      <button type="button" className={`${btn} hidden lg:inline-flex`} onClick={() => setSaving(true)} disabled={!canSave} title={canSave ? 'Enregistrer ce CV dans Mes CV' : 'Compilez d’abord le CV (PDF à jour)'}>💾 Enregistrer</button>
+      <button type="button" className={`${btn} hidden lg:inline-flex`} onClick={() => setMyCvs(true)}>🗂 Mes CV</button>
       <button type="button" className={btnPrimary} onClick={compile.downloadPdf} disabled={compile.rendering || (compile.unavailable && !compile.result)}>⬇ PDF</button>
-      <details className="relative md:hidden">
+      <details ref={menu} className="relative shrink-0 lg:hidden" onKeyDown={e => { if (e.key === 'Escape' && menu.current?.open) { menu.current.open = false; menu.current.querySelector('summary')?.focus() } }}>
         <summary className={`${btn} list-none`} aria-label="Plus d’actions">⋯</summary>
-        <div className="absolute right-0 z-50 mt-1 flex w-48 flex-col gap-1 rounded-lg border border-[#21262d] bg-[#13161d] p-2 shadow-xl">
+        <div className="absolute right-0 z-50 mt-1 flex w-56 max-w-[calc(100vw-1.5rem)] flex-col gap-1 rounded-lg border border-[#21262d] bg-[#13161d] p-2 shadow-xl"
+          onClick={e => { if ((e.target as HTMLElement).closest('button, a') && menu.current) menu.current.open = false }}>
           <button type="button" className={`${btn} justify-start`} onClick={downloadTex}>⬇ Télécharger .tex</button>
           <button type="button" className={`${btn} justify-start`} onClick={() => setSaving(true)} disabled={!canSave}>💾 Enregistrer</button>
           <button type="button" className={`${btn} justify-start`} onClick={() => setMyCvs(true)}>🗂 Mes CV</button>
@@ -387,7 +425,7 @@ export default function LatexStudio() {
           <a className={`${btn} justify-start`} href="/cv-generator">← CV Generator</a>
         </div>
       </details>
-      <a className={`${btnGhost} hidden sm:inline-flex`} href="/cv-generator">← CV Generator</a>
+      <a className={`${btnGhost} hidden lg:inline-flex`} href="/cv-generator">← CV Generator</a>
     </header>
   )
 
@@ -401,13 +439,13 @@ export default function LatexStudio() {
             <aside className="flex min-h-0 shrink-0 flex-col border-r border-[#21262d] bg-[#13161d]" style={{ width: sideWidth }} aria-label="Outils">{sidePanel}</aside>
             <Splitter label="Largeur du panneau d’outils" value={sideWidth} min={260} max={520} onChange={setSideWidth} toValue={x => x - (main.current?.getBoundingClientRect().left ?? 0)} />
           </>}
-          <div className="flex min-w-0 flex-col" style={{ flexBasis: `${codeRatio * 100}%`, flexGrow: 0, flexShrink: 1 }}>{codePanel}</div>
+          <div className="flex min-w-0 flex-col" style={{ flexBasis: `calc((100% - ${(sideOpen ? sideWidth + 6 : 0) + 6}px) * ${codeRatio})`, flexGrow: 0, flexShrink: 1 }}>{codePanel}</div>
           <Splitter label="Partage entre code et aperçu" value={codeRatio * 100} min={25} max={75}
             onChange={v => setCodeRatio(v / 100)}
             toValue={x => {
               const r = main.current!.getBoundingClientRect()
               const left = r.left + (sideOpen ? sideWidth + 6 : 0)
-              return ((x - left) / (r.right - left)) * 100
+              return ((x - left) / (r.right - left - 6)) * 100
             }} />
           <div className="flex min-w-0 flex-1 flex-col">{previewPanel}</div>
         </div>
@@ -427,7 +465,7 @@ export default function LatexStudio() {
           <div className={`min-w-0 flex-col ${tabletView === 'code' ? 'hidden' : 'flex'} flex-1`}>{previewPanel}</div>
         </div>
         {drawer && (
-          <div className="fixed inset-0 z-[900] flex" role="dialog" aria-modal="true" aria-label="Outils">
+          <div ref={drawerRef} className="fixed inset-0 z-[900] flex" role="dialog" aria-modal="true" aria-label="Outils">
             <aside className="flex w-[min(380px,85vw)] flex-col bg-[#13161d] shadow-2xl">
               <div className="flex justify-end border-b border-[#21262d] p-1"><button type="button" className={btnGhost} onClick={() => setDrawer(false)} aria-label="Fermer les outils">✕</button></div>
               {sidePanel}
@@ -454,6 +492,14 @@ export default function LatexStudio() {
         </nav>
       </>}
 
+      {notice && (
+        <div className={`fixed inset-x-3 z-[800] mx-auto flex max-w-md items-center gap-2 rounded-lg border border-[#2a313c] bg-[#1b2029] p-2 pl-3 text-xs text-gray-200 shadow-2xl ${viewport === 'mobile' ? 'bottom-20' : 'bottom-4'}`}
+          role="status" aria-live="polite">
+          <span className="flex-1">✓ {notice}</span>
+          {versions.canUndo && <button type="button" className={btn} onClick={() => { compile.compileSoon(); versions.undo(); setNotice('') }}>↶ Annuler</button>}
+          <button type="button" className={btnGhost} onClick={() => setNotice('')} aria-label="Fermer le message">✕</button>
+        </div>
+      )}
       {rewrite && (
         <RewriteDialog base={rewrite.base} result={rewrite.result} onClose={() => setRewrite(null)}
           onApply={data => { setCv(data); setRewrite(null) }} />
@@ -461,7 +507,7 @@ export default function LatexStudio() {
       {saving && <SaveDialog mode={historyMode} defaultTitle={saveTitle} onSave={saveCv} onClose={() => setSaving(false)} />}
       {myCvs && (
         <MyCvsDialog mode={historyMode} onClose={() => setMyCvs(false)}
-          onRestore={tex => replaceCode(restorableCode(tex), 'Avant restauration depuis Mes CV')} />
+          onRestore={tex => replaceCode(restorableCode(tex), 'Avant restauration depuis Mes CV', 'CV restauré depuis Mes CV.')} />
       )}
       {proposal && <FixDialog proposal={proposal} attempt={fixAttempts} onAccept={acceptFix} onReject={() => setProposal(null)} />}
     </div>
@@ -477,18 +523,31 @@ const SIDE_TABS: { id: SideTab; label: string }[] = [
   { id: 'versions', label: '🕘 Versions' },
 ]
 
+// Onglets au clavier (motif WAI-ARIA) : un seul arrêt de tabulation, flèches, Début et Fin
 function SidePanel({ tab, setTab, children }: { tab: SideTab; setTab: (t: SideTab) => void; children: ReactNode }) {
+  const id = useId()
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const i = SIDE_TABS.findIndex(t => t.id === tab)
+    const next = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? (i + 1) % SIDE_TABS.length
+      : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? (i - 1 + SIDE_TABS.length) % SIDE_TABS.length
+      : e.key === 'Home' ? 0 : e.key === 'End' ? SIDE_TABS.length - 1 : -1
+    if (next < 0) return
+    e.preventDefault()
+    setTab(SIDE_TABS[next].id)
+    document.getElementById(`${id}-tab-${SIDE_TABS[next].id}`)?.focus()
+  }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div role="tablist" aria-label="Outils du studio" className="grid grid-cols-3 gap-1 border-b border-[#21262d] p-1.5">
+      <div role="tablist" aria-label="Outils du studio" className="grid grid-cols-3 gap-1 border-b border-[#21262d] p-1.5" onKeyDown={onKeyDown}>
         {SIDE_TABS.map(t => (
-          <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
-            className={`min-h-11 truncate rounded-lg px-2 text-xs font-semibold sm:min-h-9 ${tab === t.id ? 'bg-indigo-500/20 text-indigo-200' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
+          <button key={t.id} id={`${id}-tab-${t.id}`} type="button" role="tab" aria-selected={tab === t.id} aria-controls={`${id}-panel`}
+            tabIndex={tab === t.id ? 0 : -1} onClick={() => setTab(t.id)}
+            className={`min-h-11 truncate rounded-lg px-2 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-400 sm:min-h-9 ${tab === t.id ? 'bg-indigo-500/20 text-indigo-200' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
             {t.label}
           </button>
         ))}
       </div>
-      <div role="tabpanel" className="min-h-0 flex-1 overflow-auto p-3">{children}</div>
+      <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-tab-${tab}`} tabIndex={0} className="min-h-0 flex-1 overflow-auto p-3 focus-visible:outline-none">{children}</div>
     </div>
   )
 }
