@@ -1,7 +1,9 @@
 // src/features/latex-studio/templates/types.ts
 import type { CvData } from '../lib/cvData'
+import { FONT_CHOICES, type FontId, type TemplateDesign, type ThemeOverrides } from './theme'
+import type { SectionLayout, StandardSection } from '../lib/layout'
 
-export type FontId = 'lmodern' | 'helvet' | 'charter' | 'times'
+export type { FontId }
 export type MarginId = 'compact' | 'normal' | 'large'
 
 export interface TemplateOptions {
@@ -17,6 +19,10 @@ export interface TemplateOptions {
   /** Deux colonnes (modèles qui le proposent) */
   twoColumns: boolean
   lang: 'fr' | 'en'
+  /** Réglages du panneau Design (P5) : valeurs absentes = style du modèle */
+  theme?: ThemeOverrides
+  /** Organisation des sections (P6) : ordre, masquage, titres, sections personnalisées */
+  layout?: SectionLayout
 }
 
 export interface CvTemplate {
@@ -27,6 +33,10 @@ export interface CvTemplate {
   /** Réglages d'origine du modèle */
   defaults: TemplateOptions
   supports: { photo: boolean; twoColumns: boolean }
+  /** Ordre des sections propre au modèle (P6) : celui affiché tant que l'utilisateur ne le change pas */
+  sections: readonly StandardSection[]
+  /** Style d'origine (P5) : valeurs affichées et rétablies par « Réinitialiser » */
+  design: Partial<TemplateDesign>
   render(cv: CvData, options: TemplateOptions): string
 }
 
@@ -43,9 +53,4 @@ export const ACCENTS: { id: string; label: string }[] = [
   { id: '111827', label: 'Graphite' },
 ]
 
-export const FONTS: { id: FontId; label: string }[] = [
-  { id: 'lmodern', label: 'Latin Modern (classique)' },
-  { id: 'helvet', label: 'Helvetica (sans empattement)' },
-  { id: 'charter', label: 'Charter (élégante)' },
-  { id: 'times', label: 'Times (sobre)' },
-]
+export const FONTS: { id: FontId; label: string }[] = FONT_CHOICES.map(({ id, label }) => ({ id, label }))

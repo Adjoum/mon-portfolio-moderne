@@ -36,7 +36,7 @@ export const BROKEN = ['\\documentclass{article}', '\\usepackage[utf8]{inputenc}
 /** Toutes les fonctionnalités IA annoncées disponibles (la disponibilité réelle dépend de vos affectations) */
 const FEATURES = ['latex.generate', 'latex.improve', 'latex.fix', 'latex.import.structure', 'latex.import.ocr', 'latex.rewrite'];
 
-export async function newStudio(browser, { width = 1366, height = 900, draft, ai = {}, mobile = false } = {}) {
+export async function newStudio(browser, { width = 1366, height = 900, draft, ai = {}, mobile = false, session = {} } = {}) {
   const context = await browser.newContext({
     viewport: { width, height },
     isMobile: mobile,
@@ -58,12 +58,13 @@ export async function newStudio(browser, { width = 1366, height = 900, draft, ai
     const content = await handler(body.input, calls.filter(c => c.feature === feature).length);
     return route.fulfill({ json: { content: typeof content === 'string' ? content : JSON.stringify(content), requestId: 'e2e' } });
   });
-  await page.addInitScript(([d]) => {
+  await page.addInitScript(([d, extra]) => {
     if (sessionStorage.getItem('e2e-init')) return;
     sessionStorage.clear();
     sessionStorage.setItem('e2e-init', '1');
     if (d !== null) sessionStorage.setItem('latex-studio:draft', JSON.stringify(d));
-  }, [draft ?? null]);
+    for (const [key, value] of Object.entries(extra)) sessionStorage.setItem(key, JSON.stringify(value));
+  }, [draft ?? null, session]);
   await page.goto(`${WEB}/latex-cv-editor`);
   return { context, page, calls };
 }
@@ -389,7 +390,7 @@ async function p5(browser, engine = 'chromium') {
       const focused = await page.evaluate(() => ({ role: document.activeElement?.getAttribute('role'), selected: document.activeElement?.getAttribute('aria-selected'), text: document.activeElement?.textContent?.trim() }));
       await page.keyboard.press('End');
       const last = await page.getByRole('tab', { selected: true }).textContent();
-      check(`${width} px : onglets d’outils au clavier (flèches, Fin)`, focused.role === 'tab' && focused.selected === 'true' && /Importer/.test(focused.text ?? '') && /Versions/.test(last ?? ''), JSON.stringify(focused));
+      check(`${width} px : onglets d’outils au clavier (flèches, Fin)`, focused.role === 'tab' && focused.selected === 'true' && /Design/.test(focused.text ?? '') && /Versions/.test(last ?? ''), JSON.stringify(focused));
 
       if (width === 1366) {
         // Confirmations : remplacement du code annulable, effacement de la session en deux temps
@@ -411,13 +412,296 @@ async function p5(browser, engine = 'chromium') {
   }
 }
 
+// ── Phase avancée, P2 : changement de modèle dynamique ───────
+/** Signature de chaque modèle dans le code (macro de section) */
+const SIGNATURES = {
+  'Silicon Valley Engineer': 'textls[60]', 'Executive Prestige': 'textls[110]', 'AI & Data Scientist': 'rule[-0.5pt]{7pt}{7pt}',
+  'Software Architect': 'textls[50]', 'Healthcare & Research': '\\setlength{\\cvrulewidth}{0.8pt}', 'Minimal ATS Pro': '\\colorlet{cvrule}{black}',
+  'Modern Creative': 'rule[-1.5pt]{3pt}{12pt}', 'Academic Research': 'textls[40]',
+};
+
+async function v2p2(browser) {
+  console.log('\n▶ Phase avancée P2 — Changement de modèle : code et PDF régénérés depuis les données (compilation réelle)');
+  const { context, page, calls } = await newStudio(browser, { session: { 'latex-studio:cv': IMPORTED } });
+  const compiles = [];
+  page.on('request', r => { if (r.url().includes('/api/cv/compile') && r.method() === 'POST') compiles.push(r.postData() ?? ''); });
+  const pdfImage = page.locator('img[alt="Page 1 du CV"]');
+  const ready = async () => {
+    await page.getByRole('status').filter({ hasText: 'PDF prêt' }).first().waitFor({ timeout: 45_000 });
+    await pdfImage.waitFor({ timeout: 15_000 });
+  };
+  await page.getByRole('tab', { name: /Modèles/ }).click();
+  const gallery = page.getByRole('list', { name: 'Modèles de CV' });
+  const status = page.getByTestId('template-status');
+  await ready();
+
+  // 1. Sélection : code régénéré à partir des données, PDF recompilé, sans IA
+  const beforeSrc = await pdfImage.getAttribute('src');
+  const compilesBefore = compiles.length;
+  await gallery.getByRole('button', { name: /Executive Prestige/ }).click();
+  const afterClick = await codeArea(page).inputValue();
+  check('sélection : code régénéré immédiatement avec le nouveau modèle', afterClick.includes(SIGNATURES['Executive Prestige']) && !afterClick.includes(SIGNATURES['Silicon Valley Engineer']));
+  check('données du CV conservées dans le nouveau code', ['Awa Konan', 'Institut fictif de santé', 'Master Big Data', 'Power BI', 'Tableaux de bord Power BI pour 12 districts sanitaires'].every(t => afterClick.includes(t)));
+  await page.getByRole('status').filter({ hasText: /Modèle « Executive Prestige » appliqué/ }).waitFor({ timeout: 5_000 });
+  await ready();
+  // Les pages sont rendues en images après réception du PDF
+  const renewed = await page.waitForFunction(old => document.querySelector('img[alt="Page 1 du CV"]')?.getAttribute('src') !== old, beforeSrc, { timeout: 15_000 }).then(() => true, () => false);
+  check('compilation sécurisée lancée automatiquement, PDF affiché et renouvelé', compiles.length > compilesBefore && renewed);
+  check('dernière compilation = code du modèle choisi', compiles.at(-1).includes(SIGNATURES['Executive Prestige']));
+  check('aucune génération IA pour un simple changement de modèle', calls.length === 0);
+  check('statut : code et aperçu à jour avec ce modèle', /à jour avec ce modèle/.test(await status.innerText()));
+  await page.getByRole('tab', { name: /Design/ }).click();
+  check('réglages du thème actualisés (police du modèle)', (await page.getByLabel('Police').inputValue()) === 'charter');
+  await page.getByRole('tab', { name: /Modèles/ }).click();
+  await page.screenshot({ path: path.join(OUT, 'v2-p2-modele.png') });
+
+  // 2. Changements rapides : seule la dernière version compte
+  const rapidStart = compiles.length;
+  for (const name of ['AI & Data Scientist', 'Software Architect', 'Modern Creative']) await gallery.getByRole('button', { name: new RegExp(name) }).click();
+  await page.waitForTimeout(300);
+  await ready();
+  await page.waitForTimeout(1500);
+  await ready();
+  const finalCode = await codeArea(page).inputValue();
+  check('changements rapides : code final = dernier modèle choisi', finalCode.includes(SIGNATURES['Modern Creative']));
+  check('changements rapides : dernière compilation = dernier modèle, PDF à jour', compiles.at(-1).includes(SIGNATURES['Modern Creative']) && !(await page.getByRole('status').filter({ hasText: 'Modifié' }).count()),
+    `${compiles.length - rapidStart} compilation(s) pour 3 changements`);
+
+  // 3. Retour au modèle précédent
+  await page.getByRole('button', { name: /Revenir au modèle précédent \(« Software Architect »\)/ }).click();
+  check('retour au modèle précédent : code et modèle rétablis', (await codeArea(page).inputValue()).includes(SIGNATURES['Software Architect'])
+    && (await gallery.getByRole('button', { name: /Software Architect/ }).getAttribute('aria-pressed')) === 'true');
+  await ready();
+
+  // 4. Modifications manuelles : confirmation avant d'écraser
+  await codeArea(page).fill(`${await codeArea(page).inputValue()}\n% retouche manuelle e2e`);
+  await status.getByText(/modifié à la main/).waitFor({ timeout: 5_000 });
+  check('code modifié à la main signalé dans la galerie', true);
+  await gallery.getByRole('button', { name: /Minimal ATS Pro/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Remplacer le code actuel ?' });
+  await dialog.waitFor({ timeout: 5_000 });
+  check('changement de modèle après édition manuelle : confirmation demandée', /modifié à la main/.test(await dialog.innerText()));
+  await page.screenshot({ path: path.join(OUT, 'v2-p2-confirmation.png') });
+  await dialog.getByRole('button', { name: 'Garder mon code' }).click();
+  check('« Garder mon code » : code et modèle inchangés', (await codeArea(page).inputValue()).includes('% retouche manuelle e2e')
+    && (await gallery.getByRole('button', { name: /Software Architect/ }).getAttribute('aria-pressed')) === 'true');
+  await gallery.getByRole('button', { name: /Minimal ATS Pro/ }).click();
+  await dialog.getByRole('button', { name: /Appliquer « Minimal ATS Pro »/ }).click();
+  check('confirmation acceptée : code régénéré, retouche remplacée', (await codeArea(page).inputValue()).includes(SIGNATURES['Minimal ATS Pro']) && !(await codeArea(page).inputValue()).includes('% retouche manuelle e2e'));
+  await page.getByRole('status').filter({ hasText: /Modèle « Minimal ATS Pro » appliqué/ }).getByRole('button', { name: '↶ Annuler' }).click();
+  check('annulation : la retouche manuelle revient', (await codeArea(page).inputValue()).includes('% retouche manuelle e2e'));
+
+  // 5. Réglage du thème : code mis à jour, compilation après temporisation
+  await gallery.getByRole('button', { name: /Silicon Valley Engineer/ }).click();
+  const confirm = page.getByRole('dialog', { name: 'Remplacer le code actuel ?' });
+  if (await confirm.isVisible().catch(() => false)) await confirm.getByRole('button', { name: /Appliquer/ }).click();
+  await ready();
+  const beforeColor = compiles.length;
+  await page.getByRole('tab', { name: /Design/ }).click();
+  await page.getByRole('radio', { name: 'Bordeaux' }).click();
+  check('couleur choisie : code mis à jour immédiatement', (await codeArea(page).inputValue()).includes('\\definecolor{accent}{HTML}{7A1E2C}'));
+  await page.waitForTimeout(2_000);
+  await ready();
+  check('couleur : recompilation automatique après temporisation', compiles.length > beforeColor && compiles.at(-1).includes('7A1E2C'));
+  check('toujours aucun appel IA', calls.length === 0);
+  await page.screenshot({ path: path.join(OUT, 'v2-p2-couleur.png') });
+  await context.close();
+}
+
+// ── Phase avancée, P5 : panneau Design ───────────────────────
+async function v2p5(browser) {
+  console.log('\n▶ Phase avancée P5 — Design : typographie, mise en page, couleurs (compilation réelle)');
+  const { context, page, calls } = await newStudio(browser, { session: { 'latex-studio:cv': IMPORTED } });
+  const compiles = [];
+  page.on('request', r => { if (r.url().includes('/api/cv/compile') && r.method() === 'POST') compiles.push(r.postData() ?? ''); });
+  const ready = () => page.getByRole('status').filter({ hasText: 'PDF prêt' }).first().waitFor({ timeout: 45_000 });
+  const code = () => codeArea(page).inputValue();
+  await ready();
+  const initial = await code();
+  await page.getByRole('tab', { name: /Design/ }).click();
+
+  // Typographie
+  await page.getByLabel('Police').selectOption('palatino');
+  check('police Palatino : variable de police dans le code', (await code()).includes('\\renewcommand{\\rmdefault}{ppl}'));
+  await page.waitForTimeout(1_200);
+  await ready();
+  check('police : PDF recompilé après temporisation', compiles.at(-1).includes('{ppl}'));
+
+  const before = compiles.length;
+  const slider = page.getByLabel('Taille du nom');
+  await slider.focus();
+  for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowRight');
+  check('taille du nom au clavier : 24 → 30 pt dans le code', (await code()).includes('\\newcommand{\\cvnamefont}{\\fontsize{30}{35}\\selectfont}'));
+  await page.waitForTimeout(1_500);
+  await ready();
+  check('six réglages rapprochés : une seule compilation', compiles.length - before === 1, `${compiles.length - before} compilation(s)`);
+  await page.getByRole('button', { name: 'Annuler le dernier réglage' }).first().click();
+  check('« Annuler le dernier réglage » : toute la rafale annulée en un clic', (await code()).includes('\\fontsize{24}{28}') && (await code()).includes('{ppl}'));
+
+  await page.getByLabel('Titres de section en gras').uncheck();
+  await page.getByLabel('Titre professionnel en italique').check();
+  check('graisse et italique : variables mises à jour', (await code()).includes('\\newcommand{\\cvsectionfont}{\\normalsize\\mdseries}') && (await code()).includes('\\large\\itshape}'));
+
+  // Couleurs
+  const heading = page.getByLabel('Couleur des titres (hexadécimal)');
+  await heading.fill('#0F766E');
+  await heading.press('Enter');
+  check('couleur des titres en hexadécimal', (await code()).includes('\\definecolor{heading}{HTML}{0F766E}'));
+  await heading.fill('#zzz');
+  await heading.press('Enter');
+  check('valeur hexadécimale invalide ignorée', (await code()).includes('\\definecolor{heading}{HTML}{0F766E}') && !(await code()).includes('zzz'));
+  await page.getByRole('button', { name: 'Palette Bordeaux' }).click();
+  const palette = await code();
+  check('palette prédéfinie : principale, secondaire, titres, texte, filets', ['{accent}{HTML}{7A1E2C}', '{accent2}{HTML}{B45309}', '{heading}{HTML}{7A1E2C}', '{bodytext}{HTML}{292524}', '{cvrule}{HTML}{D6C7C2}'].every(c => palette.includes(c)));
+
+  // Mise en page
+  await page.getByLabel('Format', { exact: true }).selectOption('letter');
+  await page.getByLabel('Densité').selectOption('airy');
+  await page.getByLabel('Alignement des titres').selectOption('center');
+  await page.getByLabel('Séparateurs').selectOption('none');
+  const layout = await code();
+  const sectionMacro = /\\newcommand\{\\cvsection\}.*$/m.exec(layout)?.[0] ?? '';
+  check('format Letter, densité aérée, titres centrés, sans séparateur', layout.includes('letterpaper') && layout.includes('itemsep=3pt') && sectionMacro.includes('\\centering') && !sectionMacro.includes('\\hrule'));
+  const imageBefore = await page.locator('img[alt="Page 1 du CV"]').getAttribute('src');
+  await page.getByLabel('Ne pas couper une expérience ou une formation entre deux pages').uncheck();
+  check('saut de page : entrées libres', !(await code()).includes('\\needspace{3\\baselineskip}'));
+  await page.waitForTimeout(1_500);
+  await ready();
+  await page.waitForFunction(old => document.querySelector('img[alt="Page 1 du CV"]')?.getAttribute('src') !== old, imageBefore, { timeout: 15_000 });
+  // Pages rendues : l'aperçu n'est plus « en cours de mise à jour »
+  await page.locator('[data-preview][aria-busy="false"]').waitFor({ timeout: 15_000 });
+  check('mise en page complète : compilation réussie', compiles.at(-1).includes('letterpaper') && !(await page.getByRole('alert').filter({ hasText: /Erreur/ }).count()));
+  await page.screenshot({ path: path.join(OUT, 'v2-p5-design.png') });
+  check('données du CV intactes après tous les réglages', ['Awa Konan', 'Institut fictif de santé', 'Master Big Data'].every(t => layout.includes(t)));
+
+  await page.getByRole('button', { name: 'Réinitialiser au style du modèle' }).click();
+  check('réinitialisation : code identique au style d’origine du modèle', (await code()) === initial);
+  check('aucun appel IA pendant le design', calls.length === 0);
+  await context.close();
+
+  // Smartphone : panneau utilisable sans défilement horizontal
+  const mobile = await newStudio(browser, { width: 390, height: 844, mobile: true, session: { 'latex-studio:cv': IMPORTED } });
+  await mobile.page.getByRole('button', { name: /Informations/ }).click();
+  await mobile.page.getByRole('tab', { name: /Design/ }).click();
+  await mobile.page.getByLabel('Taille du nom').waitFor();
+  const overflow = await mobile.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  await mobile.page.getByLabel('Densité').selectOption('compact');
+  check('smartphone 390 px : panneau Design sans débordement, réglage appliqué', overflow <= 1 && (await codeArea(mobile.page).inputValue()).includes('itemsep=0pt'), `${overflow} px`);
+  await mobile.page.screenshot({ path: path.join(OUT, 'v2-p5-mobile.png') });
+  await mobile.context.close();
+}
+
+// ── Phase avancée, P6 : réorganisation des sections ──────────
+async function v2p6(browser) {
+  console.log('\n▶ Phase avancée P6 — Sections : ordre, masquage, titres, sections personnalisées (compilation réelle)');
+  const { context, page, calls } = await newStudio(browser, { session: { 'latex-studio:cv': IMPORTED } });
+  const compiles = [];
+  page.on('request', r => { if (r.url().includes('/api/cv/compile') && r.method() === 'POST') compiles.push(r.postData() ?? ''); });
+  const ready = async () => {
+    await page.getByRole('status').filter({ hasText: 'PDF prêt' }).first().waitFor({ timeout: 45_000 });
+    await page.locator('[data-preview][aria-busy="false"]').waitFor({ timeout: 15_000 });
+  };
+  const code = () => codeArea(page).inputValue();
+  const sections = async () => [...(await code()).matchAll(/\\cvsection\{([^}]*)\}/g)].map(m => m[1]);
+  await ready();
+  await page.getByRole('tab', { name: /Données/ }).click();
+  const list = page.getByRole('list', { name: 'Ordre des sections du CV' });
+  await list.waitFor();
+  const shown = await list.locator('li').evaluateAll(items => items.map(li => li.getAttribute('data-section')));
+  check('ordre affiché = ordre du modèle (Silicon Valley)', shown.slice(0, 5).join() === 'summary,experience,projects,skills,education', shown.join());
+
+  // 1. Compétences avant Expériences, aux boutons (clavier et mobile)
+  await page.getByRole('button', { name: 'Monter Compétences' }).click();
+  await page.getByRole('button', { name: 'Monter Compétences' }).click();
+  const after = await sections();
+  check('« Monter » deux fois : Compétences avant Expériences dans le code', after.indexOf('Compétences') < after.indexOf('Expérience professionnelle'), after.join(' › '));
+  await page.waitForTimeout(1_500);
+  await ready();
+  const last = compiles.at(-1);
+  check('recompilation : le PDF suit le nouvel ordre', last.indexOf('\\cvsection{Compétences}') < last.indexOf('\\cvsection{Expérience professionnelle}'));
+  await page.screenshot({ path: path.join(OUT, 'v2-p6-ordre.png') });
+
+  // 2. Glisser-déposer : Formation en tête
+  await list.locator('li[data-section="education"]').dragTo(list.locator('li[data-section="summary"]'));
+  check('glisser-déposer : Formation en première position', (await sections())[0] === 'Formation', (await sections()).join(' › '));
+
+  // 3. Masquer, renommer (espaces conservés pendant la frappe)
+  await page.getByLabel('Afficher Langues').uncheck();
+  check('section masquée : absente du code', !(await sections()).includes('Langues'));
+  const rename = page.getByLabel('Titre de la section Compétences');
+  await rename.click();
+  await rename.pressSequentially('Savoir faire clés', { delay: 20 });
+  check('section renommée, espaces conservés', (await sections()).includes('Savoir faire clés'));
+
+  // 4. Section personnalisée, puis suppression confirmée et annulable
+  await page.getByLabel('Titre de la nouvelle section').fill('Bénévolat');
+  await page.getByRole('button', { name: '+ Ajouter', exact: true }).click();
+  await page.getByLabel('Contenu de « Bénévolat » (une ligne par élément)').fill('Mentor, association fictive\nTrésorier, club fictif');
+  const custom = await code();
+  check('section personnalisée : titre et liste dans le code', custom.includes('\\cvsection{Bénévolat}') && custom.includes('\\item Trésorier, club fictif'));
+  await page.waitForTimeout(1_500);
+  await ready();
+  check('section personnalisée compilée', compiles.at(-1).includes('\\cvsection{Bénévolat}'));
+  await list.locator('li[data-section="x1"]').getByRole('button', { name: 'Supprimer…' }).click();
+  const confirmGroup = page.getByRole('group', { name: /Confirmer la suppression de Bénévolat/ });
+  check('suppression : confirmation demandée', await confirmGroup.isVisible());
+  await confirmGroup.getByRole('button', { name: 'Supprimer définitivement' }).click();
+  check('section supprimée du code', !(await code()).includes('Bénévolat'));
+  await page.getByRole('button', { name: /Annuler le dernier réglage/ }).first().click();
+  check('annulation : la section supprimée revient', (await code()).includes('\\cvsection{Bénévolat}'));
+
+  // 5. Nouvelle page avant une section
+  await page.getByLabel('Nouvelle page avant Formation').check();
+  check('saut de page avant Formation', /\\clearpage\n\\cvsection\{Formation\}/.test(await code()));
+
+  // 6. Éléments d'une section : la saisie suit dans le code, ordre des expériences
+  await page.locator('details > summary').filter({ hasText: /^Expériences/ }).click();
+  await page.getByRole('button', { name: '+ Ajouter une expérience' }).click();
+  const roles = page.getByLabel('Poste');
+  await roles.last().fill('Stagiaire en statistique');
+  check('édition simple : la nouvelle expérience apparaît dans le code', (await code()).includes('Stagiaire en statistique'));
+  const before = await code();
+  const role = name => `\\textbf{${name}}`;
+  check('nouvelle expérience ajoutée en fin de section', before.indexOf(role('Data Analyst')) >= 0 && before.indexOf(role('Data Analyst')) < before.indexOf(role('Stagiaire en statistique')));
+  await page.getByRole('button', { name: 'Monter', exact: true }).last().click();
+  const reordered = await code();
+  check('éléments réordonnés à l’intérieur de la section (« Monter »)', reordered.indexOf(role('Stagiaire en statistique')) >= 0 && reordered.indexOf(role('Stagiaire en statistique')) < reordered.indexOf(role('Data Analyst')));
+
+  // 7. L'organisation suit le CV d'un modèle à l'autre
+  await page.getByRole('tab', { name: /Modèles/ }).click();
+  await page.getByRole('list', { name: 'Modèles de CV' }).getByRole('button', { name: /Healthcare & Research/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Remplacer le code actuel ?' });
+  if (await dialog.isVisible().catch(() => false)) await dialog.getByRole('button', { name: /Appliquer/ }).click();
+  const healthcare = await sections();
+  check('changement de modèle : ordre, masquage, titres et section personnalisée conservés',
+    healthcare[0] === 'Formation' && healthcare.includes('Savoir faire clés') && healthcare.includes('Bénévolat') && !healthcare.includes('Langues'), healthcare.join(' › '));
+  await page.waitForTimeout(1_500);
+  await ready();
+  await page.screenshot({ path: path.join(OUT, 'v2-p6-modele.png') });
+  check('aucun appel IA', calls.length === 0);
+  await context.close();
+
+  // Smartphone : boutons Monter/Descendre utilisables, pas de débordement
+  const mobile = await newStudio(browser, { width: 390, height: 844, mobile: true, session: { 'latex-studio:cv': IMPORTED } });
+  await mobile.page.getByRole('button', { name: /Informations/ }).click();
+  await mobile.page.getByRole('tab', { name: /Données/ }).click();
+  await mobile.page.getByRole('button', { name: 'Descendre Profil' }).click();
+  const overflow = await mobile.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  const box = await mobile.page.getByRole('button', { name: 'Descendre Expériences professionnelles' }).boundingBox().catch(() => null)
+    ?? await mobile.page.getByRole('button', { name: /^Descendre Expérience/ }).first().boundingBox();
+  const mobileSections = [...(await codeArea(mobile.page).inputValue()).matchAll(/\\cvsection\{([^}]*)\}/g)].map(m => m[1]);
+  check('smartphone 390 px : réordonné au toucher, sans débordement, cibles ≥ 44 px', overflow <= 1 && mobileSections[0] !== 'Profil' && box && box.height >= 43, `${overflow} px, cible ${box ? Math.round(box.height) : '?'} px`);
+  await mobile.page.screenshot({ path: path.join(OUT, 'v2-p6-mobile.png') });
+  await mobile.context.close();
+}
+
 async function p5webkit() {
   // Moteur de Safari (iPhone, iPad) : mêmes contrôles
   const webkit = await pw.webkit.launch();
   try { await p5(webkit, 'webkit'); } finally { await webkit.close(); }
 }
 
-const SCENARIOS = { p1, p2, p3, p4, p5, p5webkit };
+const SCENARIOS = { p1, p2, p3, p4, p5, p5webkit, v2p2, v2p5, v2p6 };
 
 const selected = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(SCENARIOS);
 const browser = await pw.chromium.launch();

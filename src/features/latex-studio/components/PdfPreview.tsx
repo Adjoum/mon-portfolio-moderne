@@ -18,6 +18,8 @@ export function PdfPreview({ pdf, url, dimmed, onDownload }: {
   const [zoom, setZoom] = useState(1)
   const [pages, setPages] = useState<string[]>([])
   const [failed, setFailed] = useState(false)
+  // Pages en cours de rendu : l'image affichée est encore celle du PDF précédent
+  const [painting, setPainting] = useState(false)
 
   useEffect(() => {
     const el = box.current
@@ -36,6 +38,7 @@ export function PdfPreview({ pdf, url, dimmed, onDownload }: {
     if (!width) return
     let cancelled = false
     const created: string[] = []
+    setPainting(true)
     ;(async () => {
       const task = await openPdf(pdf)
       try {
@@ -62,6 +65,7 @@ export function PdfPreview({ pdf, url, dimmed, onDownload }: {
       } catch {
         if (!cancelled) setFailed(true)
       } finally {
+        if (!cancelled) setPainting(false)
         await task.destroy().catch(() => {})
       }
     })()
@@ -84,7 +88,10 @@ export function PdfPreview({ pdf, url, dimmed, onDownload }: {
         <a className={`${btnGhost} shrink-0 px-2`} href={url} target="_blank" rel="noopener noreferrer" title="Ouvrir le PDF dans un nouvel onglet">↗ Ouvrir</a>
         {onDownload && <button type="button" className={`${btn} shrink-0`} onClick={onDownload}>⬇ PDF</button>}
       </div>
-      <div ref={box} className={`min-h-0 flex-1 overflow-auto bg-[#1c2129] p-3 transition-opacity ${dimmed ? 'opacity-50' : ''}`}>
+      <div ref={box} data-preview aria-busy={painting} className={`relative min-h-0 flex-1 overflow-auto bg-[#1c2129] p-3 transition-opacity ${dimmed ? 'opacity-50' : ''}`}>
+        {painting && pages.length > 0 && (
+          <span className="sticky top-0 z-10 float-right rounded bg-[#13161d]/90 px-2 py-1 text-[11px] text-amber-300" role="status">⏳ Mise à jour de l’aperçu…</span>
+        )}
         {failed && <p className="text-sm text-amber-300">Aperçu impossible dans ce navigateur : utilisez « Ouvrir » ou « ⬇ PDF ».</p>}
         <div className="mx-auto flex flex-col items-center gap-3" style={{ width: `${zoom * 100}%` }}>
           {pages.map((src, i) => (

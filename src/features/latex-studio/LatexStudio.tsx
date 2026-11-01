@@ -14,7 +14,12 @@ import { rewriteCv, type RewriteResult } from './lib/importCv'
 import { targetReady } from './lib/target'
 import { useQuality } from './useQuality'
 import { QualityReport } from './components/QualityReport'
-import { TemplateGallery, type TemplateChoice } from './components/TemplateGallery'
+import { TemplateGallery } from './components/TemplateGallery'
+import { DesignPanel } from './components/DesignPanel'
+import { SectionOrganizer } from './components/SectionOrganizer'
+import type { SectionLayout } from './lib/layout'
+import { initialGenerated, planSwitch, pushStep, renderChoice, type TemplateChoice, type TemplateStep } from './lib/templateSwitch'
+import { Dialog } from './components/Dialog'
 import { CvDataEditor } from './components/CvDataEditor'
 import { ImportPanel } from './components/ImportPanel'
 import { RewriteDialog } from './components/RewriteDialog'
@@ -35,16 +40,30 @@ import { PhotoPanel } from './components/PhotoPanel'
 import { Splitter } from './components/Splitter'
 import { btn, btnDanger, btnGhost, btnPrimary } from './components/ui'
 
-type SideTab = 'import' | 'donnees' | 'modeles' | 'ia' | 'photo' | 'versions'
+type SideTab = 'import' | 'donnees' | 'modeles' | 'design' | 'ia' | 'photo' | 'versions'
 type MobileTab = 'infos' | 'code' | 'apercu'
 
 const DRAFT_KEY = 'latex-studio:draft'
 const TARGET_KEY = 'latex-studio:target'
 const CV_KEY = 'latex-studio:cv'
 const TEMPLATE_KEY = 'latex-studio:template'
-const SESSION_KEYS = [DRAFT_KEY, TARGET_KEY, CV_KEY, TEMPLATE_KEY, 'latex-studio:versions', 'latex-studio:side', 'latex-studio:ratio']
+const GENERATED_KEY = 'latex-studio:generated'
+const STEPS_KEY = 'latex-studio:template-steps'
+const SESSION_KEYS = [DRAFT_KEY, TARGET_KEY, CV_KEY, TEMPLATE_KEY, GENERATED_KEY, STEPS_KEY, 'latex-studio:versions', 'latex-studio:side', 'latex-studio:ratio']
 const DEFAULT_CHOICE: TemplateChoice = { id: TEMPLATE_LIBRARY[0].id, options: TEMPLATE_LIBRARY[0].defaults }
 const NO_WARNINGS: never[] = []
+
+/** Réglages modifiés entre deux choix (options du modèle et variables de thème) */
+function changedSettings(a: TemplateChoice, b: TemplateChoice): string {
+  const flat = (c: TemplateChoice) => ({
+    ...c.options, theme: undefined, layout: undefined,
+    ...Object.fromEntries(Object.entries(c.options.theme ?? {}).map(([k, v]) => [`theme.${k}`, v])),
+    ...Object.fromEntries(Object.entries(c.options.layout ?? {}).map(([k, v]) => [`layout.${k}`, JSON.stringify(v)])),
+  }) as Record<string, unknown>
+  const x = flat(a)
+  const y = flat(b)
+  return [...new Set([...Object.keys(x), ...Object.keys(y)])].filter(k => x[k] !== y[k]).sort().join(',')
+}
 
 function readSession<T>(key: string, fallback: T): T {
   try {
@@ -61,9 +80,14 @@ export default function LatexStudio() {
   const aiAvailable = useAiAvailability()
 
   // ── Document ──
-  const [code, setCode] = useState<string>(() => readSession(DRAFT_KEY, '') || renderCv(DEFAULT_CHOICE.id, sampleCv(), DEFAULT_CHOICE.options))
   const [choice, setChoice] = useState<TemplateChoice>(() => readSession(TEMPLATE_KEY, DEFAULT_CHOICE))
   const [cv, setCv] = useState<CvData>(() => normalizeCv(readSession(CV_KEY, emptyCv())))
+  // Sans brouillon : code du modèle choisi, rempli avec les données (ou l'exemple si rien n'est saisi)
+  const [code, setCode] = useState<string>(() => readSession(DRAFT_KEY, '') || renderChoice(choice, cv))
+  // Dernier code généré par le studio à partir des données (P2) : sert à détecter les modifications manuelles
+  const [generated, setGenerated] = useState<string | null>(() => initialGenerated(readSession<string | null>(GENERATED_KEY, null), code, choice, cv))
+  const [steps, setSteps] = useState<TemplateStep[]>(() => readSession(STEPS_KEY, []))
+  const [pendingSwitch, setPendingSwitch] = useState<{ choice: TemplateChoice; code: string; reason: 'manual' | 'foreign' } | null>(null)
   const aiStatuses = useAiStatuses()
   const [photo, setPhoto] = useState<string | null>(null)
   const [photoWidth, setPhotoWidth] = useState(3.2)
@@ -78,6 +102,7 @@ export default function LatexStudio() {
   }, [code])
   useEffect(() => { try { sessionStorage.setItem(TARGET_KEY, JSON.stringify(target)) } catch { /* idem */ } }, [target])
   useEffect(() => { try { sessionStorage.setItem(CV_KEY, JSON.stringify(cv)); sessionStorage.setItem(TEMPLATE_KEY, JSON.stringify(choice)) } catch { /* idem */ } }, [cv, choice])
+  useEffect(() => { try { sessionStorage.setItem(GENERATED_KEY, JSON.stringify(generated)); sessionStorage.setItem(STEPS_KEY, JSON.stringify(steps)) } catch { /* idem */ } }, [generated, steps])
 
   /** Remplacement du code par le studio : instantané, puis compilation immédiate */
   // Confirmation après chaque remplacement du code, avec retour arrière immédiat
@@ -192,9 +217,63 @@ export default function LatexStudio() {
   }
   /** Code généré à partir des données (ou de l'exemple si rien n'est saisi) et du modèle choisi */
   const applyTemplate = (data = cv) => {
-    replaceCode(renderCv(choice.id, isEmptyCv(data) ? sampleCv() : data, choice.options), 'Avant génération depuis le modèle', 'CV généré avec le modèle.')
+    const next = renderChoice(choice, data)
+    replaceCode(next, 'Avant génération depuis le modèle', 'CV généré avec le modèle.')
+    setGenerated(next)
     if (viewport === 'mobile') setMobileTab('apercu')
   }
+
+  // ── Changement de modèle ou de réglages (P2) : rendu local et déterministe, aucune IA ──
+  const templateName = (id: string) => TEMPLATE_LIBRARY.find(t => t.id === id)?.name ?? id
+  // Rafale sur un même réglage (curseur, flèches du clavier) : une seule étape d'annulation
+  const lastSetting = useRef({ at: 0, keys: '' })
+  const commitChoice = (next: TemplateChoice, nextCode: string, kind: 'template' | 'options') => {
+    const keys = kind === 'options' ? changedSettings(choice, next) : ''
+    const burst = kind === 'options' && keys === lastSetting.current.keys && Date.now() - lastSetting.current.at < 1500
+    lastSetting.current = { at: kind === 'options' ? Date.now() : 0, keys }
+    if (!burst) setSteps(list => pushStep(list, { choice, code, generated }))
+    setChoice(next)
+    setGenerated(nextCode)
+    if (kind === 'template') {
+      replaceCode(nextCode, `Avant le modèle « ${templateName(next.id)} »`, `Modèle « ${templateName(next.id)} » appliqué : code et aperçu régénérés depuis vos données.`)
+    } else if (nextCode !== code) {
+      // Réglage : compilation après une courte temporisation (plusieurs réglages rapprochés = une compilation)
+      compile.compileAfter(800)
+      if (burst) setCode(nextCode)
+      else versions.replace(nextCode, 'Avant changement de réglage')
+    }
+  }
+  const requestChoice = (next: TemplateChoice, kind: 'template' | 'options') => {
+    const plan = planSwitch(code, generated, renderChoice(next, cv))
+    if (plan.kind === 'apply') commitChoice(next, plan.code, kind)
+    else setPendingSwitch({ choice: next, code: plan.code, reason: plan.reason })
+  }
+  const previousStep = steps.at(-1) ?? null
+  const backToPreviousTemplate = () => {
+    if (!previousStep) return
+    setSteps(list => list.slice(0, -1))
+    setChoice(previousStep.choice)
+    setGenerated(previousStep.generated)
+    replaceCode(previousStep.code, 'Avant retour à l’étape précédente',
+      previousStep.choice.id === choice.id ? 'Réglage précédent rétabli.' : `Retour au modèle « ${templateName(previousStep.choice.id)} ».`)
+  }
+  const previousLabel = !previousStep ? null : previousStep.choice.id === choice.id ? 'Annuler le dernier réglage' : `Revenir au modèle précédent (« ${templateName(previousStep.choice.id)} »)`
+  /** Données modifiées : si le code vient du studio, il suit la saisie (une pause = une compilation) */
+  const lastData = useRef(0)
+  const updateCv = (next: CvData) => {
+    setCv(next)
+    if (generated === null || code !== generated) return
+    const nextCode = renderChoice(choice, next)
+    if (nextCode === code) return
+    const burst = Date.now() - lastData.current < 2000
+    lastData.current = Date.now()
+    compile.compileAfter(1200)
+    setGenerated(nextCode)
+    if (burst) setCode(nextCode)
+    else versions.replace(nextCode, 'Avant modification des données')
+  }
+  const setLayout = (layout: SectionLayout) => requestChoice({ ...choice, options: { ...choice.options, layout } }, 'options')
+  const codeSource: 'template' | 'manual' | 'foreign' = generated !== null && code === generated ? 'template' : generated === null ? 'foreign' : 'manual'
 
   // ── Réécriture professionnelle (latex.rewrite) ──
   const [rewriting, setRewriting] = useState(false)
@@ -290,7 +369,7 @@ export default function LatexStudio() {
         <ImportPanel
           ocrAvailable={aiStatuses?.['latex.import.ocr']?.available === true}
           structureAvailable={aiStatuses?.['latex.import.structure']?.available !== false}
-          onImported={data => { setCv(data); setSideTab('donnees') }}
+          onImported={data => { updateCv(data); setSideTab('donnees') }}
         />
       )}
       {sideTab === 'donnees' && (
@@ -302,12 +381,32 @@ export default function LatexStudio() {
           </button>
           {!aiAvailable('latex.rewrite') && <p className="text-[11px] text-gray-500">Réécriture par l’IA momentanément indisponible.</p>}
           {rewriteError && <p role="alert" className="text-xs text-red-300">⚠️ {rewriteError}</p>}
-          <CvDataEditor cv={cv} onChange={setCv} />
+          <details open className="group rounded-lg border border-[#21262d] bg-[#0f1318]">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-3 text-xs font-bold text-gray-200 sm:min-h-9">
+              Ordre et affichage des sections<span aria-hidden="true" className="text-gray-500 transition-transform group-open:rotate-90">›</span>
+            </summary>
+            <div className="border-t border-[#21262d] p-3">
+              <SectionOrganizer layout={choice.options.layout} templateSections={TEMPLATE_LIBRARY.find(t => t.id === choice.id)?.sections ?? TEMPLATE_LIBRARY[0].sections}
+                lang={choice.options.lang} cv={cv} usesSample={isEmptyCv(cv)} twoColumns={choice.options.twoColumns && !!TEMPLATE_LIBRARY.find(t => t.id === choice.id)?.supports.twoColumns}
+                onChange={setLayout} previous={previousLabel} onPrevious={backToPreviousTemplate} />
+            </div>
+          </details>
+          {codeSource !== 'template' && (
+            <p className="rounded-lg border border-sky-900 bg-sky-500/10 p-2 text-[11px] text-sky-200">
+              Le code a été modifié à la main ou vient d’une autre source : vos données ne le remplacent pas automatiquement. Utilisez « Générer le CV » ci-dessous (version actuelle restaurable).
+            </p>
+          )}
+          <CvDataEditor cv={cv} onChange={updateCv} />
           <button type="button" className={`${btnPrimary} w-full`} onClick={() => applyTemplate()}>Générer le CV avec le modèle « {TEMPLATE_LIBRARY.find(t => t.id === choice.id)?.name} »</button>
           <p className="text-[11px] text-gray-500">Vos données restent dans cet onglet du navigateur ; elles ne sont pas enregistrées sur un serveur.</p>
         </div>
       )}
-      {sideTab === 'modeles' && <TemplateGallery choice={choice} onChange={setChoice} onApply={() => applyTemplate()} usesSample={isEmptyCv(cv)} />}
+      {sideTab === 'modeles' && (
+        <TemplateGallery choice={choice} onChange={requestChoice} onApply={() => applyTemplate()} usesSample={isEmptyCv(cv)}
+          codeSource={codeSource} compiling={compile.rendering}
+          previous={previousLabel} onPrevious={backToPreviousTemplate} onDesign={() => setSideTab('design')} />
+      )}
+      {sideTab === 'design' && <DesignPanel choice={choice} onChange={requestChoice} previous={previousLabel} onPrevious={backToPreviousTemplate} />}
       {sideTab === 'photo' && <PhotoPanel photo={photo} width={photoWidth} setWidth={setPhotoWidth} onPhoto={changePhoto} hasMarker={code.includes('%%PHOTO%%')} />}
       {sideTab === 'versions' && (
         <div className="space-y-2 text-xs">
@@ -502,7 +601,7 @@ export default function LatexStudio() {
       )}
       {rewrite && (
         <RewriteDialog base={rewrite.base} result={rewrite.result} onClose={() => setRewrite(null)}
-          onApply={data => { setCv(data); setRewrite(null) }} />
+          onApply={data => { updateCv(data); setRewrite(null) }} />
       )}
       {saving && <SaveDialog mode={historyMode} defaultTitle={saveTitle} onSave={saveCv} onClose={() => setSaving(false)} />}
       {myCvs && (
@@ -510,12 +609,30 @@ export default function LatexStudio() {
           onRestore={tex => replaceCode(restorableCode(tex), 'Avant restauration depuis Mes CV', 'CV restauré depuis Mes CV.')} />
       )}
       {proposal && <FixDialog proposal={proposal} attempt={fixAttempts} onAccept={acceptFix} onReject={() => setProposal(null)} />}
+      {pendingSwitch && (
+        <Dialog title="Remplacer le code actuel ?" onClose={() => setPendingSwitch(null)}
+          footer={<>
+            <button type="button" className={btn} onClick={() => setPendingSwitch(null)}>Garder mon code</button>
+            <button type="button" className={btnPrimary} onClick={() => { commitChoice(pendingSwitch.choice, pendingSwitch.code, 'template'); setPendingSwitch(null) }}>
+              Appliquer « {templateName(pendingSwitch.choice.id)} »
+            </button>
+          </>}>
+          <p className="text-sm text-gray-300">
+            {pendingSwitch.reason === 'manual'
+              ? 'Le code a été modifié à la main depuis sa dernière génération.'
+              : 'Le code actuel ne provient pas des données du CV (génération ou correction par l’IA, import, restauration).'}
+            {' '}Le modèle « {templateName(pendingSwitch.choice.id)} » va régénérer le code à partir {isEmptyCv(cv) ? 'de l’exemple (aucune donnée saisie dans l’onglet « Données »)' : 'des données de l’onglet « Données »'} : ces modifications seront remplacées.
+          </p>
+          <p className="mt-2 text-xs text-gray-400">La version actuelle reste restaurable : « ↶ Annuler », « Modèle précédent » ou l’onglet « Versions ».</p>
+        </Dialog>
+      )}
     </div>
   )
 }
 
 const SIDE_TABS: { id: SideTab; label: string }[] = [
   { id: 'modeles', label: '🎨 Modèles' },
+  { id: 'design', label: '🖌 Design' },
   { id: 'import', label: '📥 Importer' },
   { id: 'donnees', label: '🧾 Données' },
   { id: 'ia', label: '🤖 IA' },

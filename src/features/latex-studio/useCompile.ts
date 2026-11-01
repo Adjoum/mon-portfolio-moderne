@@ -2,6 +2,8 @@
 // Compilation de l'aperçu via blog-api → latex-runner (src/lib/latexCompile.ts) :
 //   - automatique 3 s après la dernière frappe, immédiate sur demande (compileSoon) ;
 //   - une seule requête à la fois par onglet, jamais deux fois le même source ;
+//   - changements rapides (modèles, réglages) : le résultat d'une compilation devenue obsolète
+//     n'est jamais affiché, seule la dernière version est compilée ensuite (P2) ;
 //   - pause sur quota, nouvel essai si le service est occupé, repli sur le .tex s'il est coupé.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -27,6 +29,9 @@ export function useCompile(code: string, photo: string | null, photoWidth: numbe
   const latest = useRef(input)
   const state = useRef({ running: false, pending: false, lastKey: '', pausedUntil: 0, downloadWhenReady: false })
   const immediate = useRef(true)   // première compilation dès l'ouverture
+  const nextDelay = useRef<number | null>(null)
+  /** Compilations terminées alors qu'une version plus récente attendait : résultat ignoré */
+  const [obsoleteSkipped, setObsoleteSkipped] = useState(0)
   const urlRef = useRef('')
   const runRef = useRef<(force: boolean) => Promise<void>>(async () => {})
 
@@ -44,8 +49,15 @@ export function useCompile(code: string, photo: string | null, photoWidth: numbe
 
     s.running = true
     setRendering(true)
+    let skipped = false
     try {
       const compiled = await compileLatexPdf(buildFinalLatex(current.code, !!current.photo, current.photoWidth), current.photo)
+      // Une version plus récente attend : ce PDF ne correspond plus à rien de ce qui est affiché
+      if (s.pending && compileKey(latest.current) !== key) {
+        skipped = true
+        setObsoleteSkipped(n => n + 1)
+        return
+      }
       const url = URL.createObjectURL(compiled.pdf)
       if (urlRef.current) URL.revokeObjectURL(urlRef.current)
       urlRef.current = url
@@ -56,6 +68,12 @@ export function useCompile(code: string, photo: string | null, photoWidth: numbe
       if (s.downloadWhenReady) downloadUrl(url, 'cv.pdf')
     } catch (e) {
       const err = e instanceof LatexCompileError ? e : new LatexCompileError('LATEX_NETWORK', 0, 'Service de compilation injoignable.')
+      // Erreur d'une version déjà remplacée : la suivante sera compilée, rien à afficher
+      if (s.pending && compileKey(latest.current) !== key && !err.throttled && !err.unavailable) {
+        skipped = true
+        setObsoleteSkipped(n => n + 1)
+        return
+      }
       setError(err)
       if (err.unavailable) setUnavailable(true)
       if (err.code === 'LATEX_BUSY') {
@@ -68,7 +86,8 @@ export function useCompile(code: string, photo: string | null, photoWidth: numbe
       }
     } finally {
       s.running = false
-      s.downloadWhenReady = false
+      // Téléchargement demandé : conservé pour la version suivante si celle-ci a été ignorée
+      if (!skipped) s.downloadWhenReady = false
       setRendering(false)
       if (s.pending) {
         s.pending = false
@@ -81,9 +100,9 @@ export function useCompile(code: string, photo: string | null, photoWidth: numbe
 
   useEffect(() => {
     if (!autoCompile || unavailable) return
-    const delay = immediate.current ? 0 : AUTO_COMPILE_DELAY_MS
+    const delay = immediate.current ? 0 : nextDelay.current ?? AUTO_COMPILE_DELAY_MS
     // Drapeau levé au déclenchement, pas avant : un effet monté deux fois (React StrictMode) reste immédiat
-    const timer = setTimeout(() => { immediate.current = false; void run(false) }, delay)
+    const timer = setTimeout(() => { immediate.current = false; nextDelay.current = null; void run(false) }, delay)
     return () => clearTimeout(timer)
   }, [input, autoCompile, unavailable, run])
 
@@ -91,6 +110,8 @@ export function useCompile(code: string, photo: string | null, photoWidth: numbe
 
   /** Compilation immédiate au prochain changement (template, IA, photo, import) */
   const compileSoon = useCallback(() => { immediate.current = true }, [])
+  /** Compilation après une courte temporisation (réglages graphiques successifs) */
+  const compileAfter = useCallback((ms: number) => { nextDelay.current = ms }, [])
 
   const compileNow = useCallback(() => {
     setUnavailable(false)
@@ -107,7 +128,7 @@ export function useCompile(code: string, photo: string | null, photoWidth: numbe
     compileNow()
   }, [result, compileNow])
 
-  return { result, error, unavailable, rendering, autoCompile, setAutoCompile, compileNow, compileSoon, downloadPdf, stale, runRef }
+  return { result, error, unavailable, rendering, autoCompile, setAutoCompile, compileNow, compileSoon, compileAfter, downloadPdf, stale, runRef, obsoleteSkipped }
 }
 
 export function downloadUrl(url: string, filename: string) {

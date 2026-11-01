@@ -88,6 +88,58 @@ for (const t of TEMPLATE_LIBRARY) {
   }
 }
 
+// ── Design (phase avancée, P5) : thèmes extrêmes et polices réellement intégrées au PDF ──
+console.log('\n▶ Design : thèmes personnalisés sur les huit modèles, polices vérifiées dans le PDF');
+const { FONT_CHOICES } = await import('../src/features/latex-studio/templates/theme.ts');
+const zlib = await import('node:zlib');
+/** Noms des polices intégrées (dictionnaires /BaseFont, flux compressés compris) */
+function embeddedFonts(pdf) {
+  let text = pdf.toString('latin1');
+  for (let at = pdf.indexOf('stream'); at >= 0; at = pdf.indexOf('stream', at + 6)) {
+    let start = at + 6; if (pdf[start] === 13) start++; if (pdf[start] === 10) start++;
+    const end = pdf.indexOf('endstream', start);
+    if (end < 0) break;
+    try { text += zlib.inflateSync(pdf.subarray(start, end)).toString('latin1'); } catch { /* flux non compressé */ }
+  }
+  return [...new Set([...text.matchAll(/\/BaseFont\s*\/([A-Za-z0-9+_-]+)/g)].map(m => m[1].replace(/^[A-Z]{6}\+/, '')))];
+}
+const THEMES = [
+  { key: 'theme-ample', label: 'Palatino, Letter, aéré, titres centrés, filet épais, couleurs personnalisées', opts: {
+    font: 'palatino', size: 11, theme: {
+      paper: 'letter', density: 'airy', marginX: 2.6, marginY: 2.2, nameSize: 32, headlineSize: 'Large', headlineItalic: true,
+      sectionSize: 'Large', sectionBold: false, sectionUpper: false, tracking: 0, sectionAlign: 'center', separator: 'thick',
+      lineSpread: 1.2, paragraphSkip: 6, entryGap: 12, detailSize: 'normalsize', keepEntries: false, columnRatio: 0.38,
+      secondary: '7A1E2C', heading: '0F766E', text: '1F2937', rule: 'B45309',
+    } } },
+  { key: 'theme-dense', label: 'Avant Garde, compact, marges minimales, sans filet, grand espacement des lettres', opts: {
+    font: 'avant', size: 10, compact: true, theme: {
+      density: 'compact', marginX: 1, marginY: 1, nameSize: 16, sectionSize: 'small', tracking: 150, separator: 'none',
+      lineSpread: 0.9, paragraphSkip: 0, entryGap: 0, sectionBefore: 0, sectionAfter: 0, detailSize: 'footnotesize', columnRatio: 0.22,
+    } } },
+];
+for (const t of TEMPLATE_LIBRARY) {
+  for (const v of THEMES) {
+    const cv = sampleCv('long');
+    const code = renderCv(t.id, cv, v.opts);
+    const r = await compile(code, false);
+    if (r.status !== 200) { check(`${t.name} — ${v.label}`, false, JSON.stringify(r.error).slice(0, 300)); continue; }
+    fs.writeFileSync(path.join(OUT, `${t.id}-${v.key}.pdf`), r.pdf);
+    const q = await analyze(r.pdf, r.warnings, cv.identity.fullName);
+    const blocking = q.issues.filter(i => i.code !== 'placeholder' && i.severity !== 'info');
+    check(`${t.name} — ${v.label} : ${q.pages} page(s)`, !blocking.length, blocking.map(i => `${i.code}: ${i.message}`).join(' | '));
+  }
+}
+const EXPECTED_FONT = {
+  lmodern: /^LMRoman/, charter: /^CharterBT/, times: /^NimbusRomNo9L/, palatino: /^URWPalladioL/, utopia: /^Utopia-/, bookman: /^URWBookmanL/,
+  century: /^CenturySchL/, helvet: /^NimbusSanL/, avant: /^URWGothicL/, lmsans: /^LMSans/,
+};
+for (const f of FONT_CHOICES) {
+  const code = renderCv('executive-prestige', sampleCv('short'), { font: f.id })
+  const r = await compile(code, false);
+  const fonts = r.status === 200 ? embeddedFonts(r.pdf) : [];
+  check(`police « ${f.label} » réellement intégrée au PDF`, fonts.some(n => EXPECTED_FONT[f.id].test(n)) && !fonts.some(n => /^SF(RM|BX|TI)/.test(n)), fonts.slice(0, 4).join(' '));
+}
+
 console.log('\n▶ Défauts du modèle d’origine « Premium Hero » : détectés par le contrôle qualité');
 const legacy = await compile(TEMPLATES.overleafClassic.code, false);
 const legacyQ = await analyze(legacy.pdf, legacy.warnings, '');

@@ -5,6 +5,7 @@
 import type { CvData, CvExperience, CvEducation } from '../lib/cvData'
 import type { TemplateOptions } from './types'
 import { email, link, period, tex } from './escape'
+import { DEFAULT_DESIGN, DENSITY, FONT_LINES, resolveTheme, sanitizeTheme, type ResolvedTheme, type TemplateDesign } from './theme'
 
 export const LABELS = {
   fr: {
@@ -28,42 +29,89 @@ export const labels = (o: TemplateOptions): Labels => LABELS[o.lang]
 
 const MARGINS = { compact: '1.4cm', normal: '1.9cm', large: '2.4cm' } as const
 
-const FONT_LINES: Record<TemplateOptions['font'], string> = {
-  lmodern: '\\usepackage{lmodern}',
-  helvet: '\\usepackage[scaled=0.92]{helvet}\n\\renewcommand{\\familydefault}{\\sfdefault}',
-  charter: '\\usepackage{charter}',
-  times: '\\usepackage{mathptmx}',
+/** Thème effectif d'un document : style du modèle, densité, réglages de l'utilisateur */
+export const themeOf = (o: TemplateOptions, design: Partial<TemplateDesign> = {}): ResolvedTheme =>
+  resolveTheme({ ...DEFAULT_DESIGN, ...design }, o.compact, o.theme)
+
+/** Espace entre deux entrées d'une section */
+export function gap(o: TemplateOptions): string {
+  const t = sanitizeTheme(o.theme)
+  return `${t.entryGap ?? DENSITY[t.density ?? (o.compact ? 'compact' : 'standard')].gap}pt`
 }
 
-/** Préambule commun ; `extra` : paquets et macros propres au modèle */
-export function preamble(cv: CvData, o: TemplateOptions, extra: { packages?: string[]; macros?: string } = {}): string {
-  const margin = MARGINS[o.margins]
+/**
+ * Entrées gardées d'un seul tenant sur une page (réglable). Sans cette option, l'entrée commence
+ * tout de même un nouveau paragraphe, comme \needspace : elle ne s'accole jamais à la précédente.
+ */
+export const keep = (o: TemplateOptions, lines: number) => (sanitizeTheme(o.theme).keepEntries === false ? '\\par' : `\\needspace{${lines}\\baselineskip}`)
+
+const hex = (value: string | null | undefined, fallback: string) => (value && /^[0-9A-Fa-f]{6}$/.test(value) ? value.toUpperCase() : fallback)
+const pt = (n: number) => `${Math.round(n * 100) / 100}pt`
+
+/**
+ * Variables de thème, en macros et longueurs LaTeX : les modèles n'emploient que ces noms.
+ *   couleurs   accent, accent2 (secondaire), heading (titres), bodytext, muted, rulegray, cvrule (filets)
+ *   polices    \cvnamefont, \cvheadline, \cvsectionfont, \cvtitletext{…}, \cvdetailfont
+ *   espaces    \cvsectionbefore, \cvsectionafter, \cvrulewidth
+ */
+function themeMacros(o: TemplateOptions, r: ResolvedTheme): string[] {
+  const d = r.design
+  const c = r.colors
+  const size = d.nameSize
+  const titleText = d.sectionUpper
+    ? d.tracking > 0 ? `\\textls[${d.tracking}]{\\MakeUppercase{#1}}` : '\\MakeUppercase{#1}'
+    : d.tracking > 0 ? `\\textls[${d.tracking}]{#1}` : '#1'
+  return [
+    `\\definecolor{accent}{HTML}{${hex(o.accent, '0B57D0')}}`,
+    c.secondary ? `\\definecolor{accent2}{HTML}{${c.secondary}}` : '\\colorlet{accent2}{accent}',
+    `\\definecolor{bodytext}{HTML}{${hex(c.text, '000000')}}`,
+    '\\definecolor{muted}{HTML}{5B6573}',
+    '\\definecolor{rulegray}{HTML}{C9CFD8}',
+    c.heading ? `\\definecolor{heading}{HTML}{${c.heading}}` : `\\colorlet{heading}{${d.sectionColor === 'text' ? 'bodytext' : 'accent'}}`,
+    c.rule ? `\\definecolor{cvrule}{HTML}{${c.rule}}` : `\\colorlet{cvrule}{${d.ruleColor === 'accent' ? 'accent' : d.ruleColor === 'black' ? 'black' : 'rulegray'}}`,
+    `\\newcommand{\\cvnamefont}{\\fontsize{${size}}{${Math.round(size * 1.17)}}\\selectfont}`,
+    `\\newcommand{\\cvheadline}{${d.headlineColor === 'accent' ? '\\color{accent2}' : ''}\\${d.headlineSize}${d.headlineItalic ? '\\itshape' : ''}${d.headlineBold ? '\\bfseries' : ''}}`,
+    `\\newcommand{\\cvsectionfont}{\\${d.sectionSize}${d.sectionBold ? '\\bfseries' : '\\mdseries'}}`,
+    `\\newcommand{\\cvtitletext}[1]{${titleText}}`,
+    `\\newcommand{\\cvdetailfont}{\\${r.detailSize}}`,
+    `\\newlength{\\cvsectionbefore}\\setlength{\\cvsectionbefore}{${pt(r.sectionBefore)}}`,
+    `\\newlength{\\cvsectionafter}\\setlength{\\cvsectionafter}{${pt(r.sectionAfter)}}`,
+    `\\newlength{\\cvrulewidth}\\setlength{\\cvrulewidth}{${pt(d.ruleWidth)}}`,
+  ]
+}
+
+/** Préambule commun ; `extra` : paquets, macros et style d'origine propres au modèle */
+export function preamble(cv: CvData, o: TemplateOptions, extra: { packages?: string[]; macros?: string; design?: Partial<TemplateDesign> } = {}): string {
+  const r = themeOf(o, extra.design)
+  const paper = r.paper === 'letter' ? 'letterpaper' : 'a4paper'
+  const mx = r.marginX ?? MARGINS[o.margins]
+  const my = r.marginY ?? MARGINS[o.margins]
   const packages = ['microtype', 'xcolor', 'graphicx', 'enumitem', 'tabularx', 'array', 'needspace', 'csquotes', ...(extra.packages ?? [])]
   return [
-    `\\documentclass[${o.size}pt,a4paper]{article}`,
+    `\\documentclass[${o.size}pt,${paper}]{article}`,
     '\\usepackage[utf8]{inputenc}',
     '\\usepackage[T1]{fontenc}',
     `\\usepackage[${o.lang === 'en' ? 'english' : 'french'}]{babel}`,
-    FONT_LINES[o.font],
-    `\\usepackage[a4paper,top=${margin},bottom=${margin},left=${margin},right=${margin}]{geometry}`,
+    FONT_LINES[o.font] ?? FONT_LINES.lmodern,
+    `\\usepackage[${paper},top=${my},bottom=${my},left=${mx},right=${mx}]{geometry}`,
     ...[...new Set(packages)].map(p => `\\usepackage{${p}}`),
     '\\usepackage{hyperref}',
-    `\\definecolor{accent}{HTML}{${/^[0-9A-Fa-f]{6}$/.test(o.accent) ? o.accent : '0B57D0'}}`,
-    '\\definecolor{muted}{HTML}{5B6573}',
-    '\\definecolor{rulegray}{HTML}{C9CFD8}',
+    ...themeMacros(o, r),
     `\\hypersetup{colorlinks=true,urlcolor=accent,linkcolor=accent,pdftitle={${tex(cv.identity.fullName) || 'CV'}},pdfauthor={${tex(cv.identity.fullName)}}}`,
     '\\pagestyle{empty}',
     '\\setlength{\\parindent}{0pt}',
-    `\\setlength{\\parskip}{${o.compact ? '2pt' : '4pt'}}`,
+    `\\setlength{\\parskip}{${pt(r.parskip)}}`,
+    r.lineSpread !== 1 ? `\\linespread{${r.lineSpread}}` : '',
     // Lignes jamais trop pleines : de l'espace est ajouté plutôt que de déborder dans la marge
     '\\setlength{\\emergencystretch}{3em}',
     '\\setlength{\\tabcolsep}{0pt}',
-    `\\setlist[itemize]{leftmargin=1.1em,label=\\textbullet,itemsep=${o.compact ? '0pt' : '1.5pt'},topsep=${o.compact ? '1pt' : '2pt'},parsep=0pt}`,
+    `\\setlist[itemize]{leftmargin=1.1em,label=\\textbullet,itemsep=${pt(r.itemsep)},topsep=${pt(r.topsep)},parsep=0pt}`,
     // Nom réduit si nécessaire pour tenir sur une ligne, jamais coupé
     '\\newcommand{\\cvname}[1]{\\resizebox{\\ifdim\\width>\\linewidth\\linewidth\\else\\width\\fi}{!}{#1}}',
     extra.macros ?? '',
     '',
     '\\begin{document}',
+    r.colors.text ? '\\color{bodytext}' : '',
   ].filter(line => line !== '').join('\n')
 }
 
@@ -110,7 +158,7 @@ export function experienceEntry(e: CvExperience, o: TemplateOptions, style: { ti
   const second = titleFirst ? tex(e.organization) : tex(e.role)
   const meta = [second, tex(e.location)].filter(Boolean).join(', ')
   return [
-    '\\needspace{3\\baselineskip}',
+    keep(o, 3),
     entryRow(`\\textbf{${main || second}}`, `\\textcolor{muted}{${period(e.start, e.end, o.lang)}}`),
     main && meta ? `\\\\[-1pt]{\\color{muted}${meta}}` : '',
     bullets(e.bullets),
@@ -120,7 +168,7 @@ export function experienceEntry(e: CvExperience, o: TemplateOptions, style: { ti
 export function educationEntry(d: CvEducation, o: TemplateOptions): string {
   const meta = [tex(d.institution), tex(d.location)].filter(Boolean).join(', ')
   return [
-    '\\needspace{2\\baselineskip}',
+    keep(o, 2),
     entryRow(`\\textbf{${tex(d.degree) || tex(d.institution)}}`, `\\textcolor{muted}{${period(d.start, d.end, o.lang)}}`),
     d.degree && meta ? `\\\\[-1pt]{\\color{muted}${meta}}` : '',
     d.details ? `\\\\[1pt]${tex(d.details)}` : '',
@@ -136,10 +184,10 @@ export function skillsList(cv: CvData, o: TemplateOptions, labelWidth = '3.4cm')
   return `\\begin{description}[leftmargin=${labelWidth},labelwidth=\\dimexpr${labelWidth}-0.6em\\relax,labelsep=0.6em,font=\\bfseries\\color{accent},itemsep=${o.compact ? '0pt' : '1pt'},topsep=1pt,parsep=0pt]\n${rows.join('\n')}\n\\end{description}`
 }
 
-export function projectEntry(p: CvData['projects'][number]): string {
+export function projectEntry(p: CvData['projects'][number], o: TemplateOptions): string {
   const title = p.link ? link(p.name || p.link, p.link) : tex(p.name)
   const tech = p.technologies.length ? ` \\textcolor{muted}{\\small(${p.technologies.map(tex).join(', ')})}` : ''
-  return `\\needspace{2\\baselineskip}\\textbf{${title}}${tech}${p.description ? `\\\\\n${tex(p.description)}` : ''}\\par`
+  return `${keep(o, 2)}\\textbf{${title}}${tech}${p.description ? `\\\\\n${tex(p.description)}` : ''}\\par`
 }
 
 export function languagesLine(cv: CvData, sep = ' \\textbullet{} '): string {
@@ -160,14 +208,16 @@ export function publicationsList(cv: CvData): string {
 export const interestsLine = (cv: CvData) => cv.interests.map(tex).join(', ')
 
 /**
- * Macro \cvsection : titre puis filet vertical (\hrule), qui n'occupe pas une ligne entière ;
- * \needspace garde le titre avec au moins trois lignes de contenu.
+ * Macro \cvsection : titre (variables de thème) puis filet (\hrule), qui n'occupe pas une ligne
+ * entière ; \needspace garde le titre avec au moins trois lignes de contenu.
+ * `prefix` : ornement propre au modèle avant le titre (carré, barre…).
  */
-export function sectionMacro(o: TemplateOptions, title: string, rule: string | null, space: { before?: number; after?: number } = {}): string {
-  const before = space.before ?? (o.compact ? 5 : 8)
-  const after = space.after ?? (o.compact ? 3 : 5)
-  const ruleTex = rule ? `\\par\\nointerlineskip\\vspace{2.5pt}${rule}\\vspace{${after}pt}` : `\\par\\vspace{${after}pt}`
-  return `\\newcommand{\\cvsection}[1]{\\par\\needspace{4\\baselineskip}\\vspace{${before}pt}${title}${ruleTex}}`
+export function sectionMacro(o: TemplateOptions, design: Partial<TemplateDesign>, prefix = ''): string {
+  const r = themeOf(o, design)
+  const title = `${prefix}{\\color{heading}\\cvsectionfont\\cvtitletext{#1}}`
+  const aligned = r.sectionAlign === 'center' ? `{\\centering ${title}\\par}` : `${title}\\par`
+  const rule = r.design.ruleWidth > 0 ? '\\nointerlineskip\\vspace{2.5pt}{\\color{cvrule}\\hrule height \\cvrulewidth}' : ''
+  return `\\newcommand{\\cvsection}[1]{\\par\\needspace{4\\baselineskip}\\vspace{\\cvsectionbefore}${aligned}${rule}\\vspace{\\cvsectionafter}}`
 }
 
 /** Section non vide seulement ; `heading` produit le titre */
