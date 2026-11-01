@@ -8,7 +8,7 @@ import { createApp } from '../src/app';
 import { FEATURES } from '../src/ai/features/registry';
 import { PROVIDERS } from '../src/ai/providers/registry';
 import { CV_REVIEW_SYSTEM } from '../src/ai/features/prompts/cv.v1';
-import { LATEX_IMPROVE_SYSTEM } from '../src/ai/features/prompts/latex.v2';
+import { LATEX_IMPROVE_SYSTEM } from '../src/ai/features/prompts/latex.v3';
 import { startFakeOpenAI, type FakeOpenAI } from './helpers/fakeOpenAI';
 import { findLeakedSecret, SECRET_CANARIES } from './helpers/canaries';
 import { allConsoleOutput } from './helpers/audit';

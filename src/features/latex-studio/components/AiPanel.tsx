@@ -4,6 +4,7 @@
 import { useId } from 'react'
 import { btnPrimary, field, label } from './ui'
 import { targetReady, type Target } from '../lib/target'
+import { AiInstructions } from './AiInstructions'
 
 export function TargetFields({ target, onChange }: { target: Target; onChange: (t: Target) => void }) {
   const id = useId()
@@ -42,6 +43,9 @@ export function AiPanel(props: {
   setInfo: (v: string) => void
   instruction: string
   setInstruction: (v: string) => void
+  /** Instructions supplémentaires pour l'IA (P7), communes au studio */
+  extra: string
+  setExtra: (v: string) => void
   selectionLines: number
   available: (feature: 'latex.generate' | 'latex.improve') => boolean
   loading: boolean
@@ -82,7 +86,8 @@ export function AiPanel(props: {
             onChange={e => props.setInfo(e.target.value)}
             placeholder={'Nom : …\nPoste actuel : …\nExpériences :\n- …\nFormation :\n- …\nCompétences : …'}
           />
-          <p className="mt-1 text-[11px] text-gray-500">Le code actuel est remplacé ; la version précédente reste restaurable.</p>
+          <p className="mt-1 text-[11px] text-gray-500">Le code proposé vous est montré avant de remplacer le code actuel, qui reste restaurable.</p>
+          <div className="mt-2"><AiInstructions value={props.extra} onChange={props.setExtra} examples={'Ex. : CV sobre en une page, mettre en avant la santé publique.'} /></div>
         </div>
       ) : (
         <div>

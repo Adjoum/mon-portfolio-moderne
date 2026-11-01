@@ -147,6 +147,7 @@ async function p2(browser) {
 
   // DOCX : extraction par cv-extractor via l'API, puis structuration (simulée)
   await input.setInputFiles(path.join(FIXTURES, 'cv.docx'));
+  await page.getByRole('dialog', { name: 'Vérifier les informations extraites' }).getByRole('button', { name: 'Utiliser ces données' }).click({ timeout: 30_000 });
   await page.getByRole('tab', { name: /Données/, selected: true }).waitFor({ timeout: 30_000 });
   const structure = calls.find(c => c.feature === 'latex.import.structure')?.input;
   check('DOCX extrait dans l’environnement isolé, texte transmis à la structuration', /Awa Konan/.test(structure?.text ?? '') && /12 districts/.test(structure?.text ?? ''));
@@ -182,6 +183,7 @@ async function p2(browser) {
   await page.getByRole('alert').filter({ hasText: 'macros' }).waitFor({ timeout: 30_000 });
   check('DOCX à macros refusé avec un message clair', true);
   await input.setInputFiles(path.join(FIXTURES, 'cv-image.jpg'));
+  await page.getByRole('dialog', { name: 'Vérifier les informations extraites' }).getByRole('button', { name: 'Utiliser ces données' }).click({ timeout: 30_000 });
   await page.getByRole('tab', { name: /Données/, selected: true }).waitFor({ timeout: 30_000 });
   const ocr = calls.filter(c => c.feature === 'latex.import.ocr');
   check('image réencodée en JPEG puis lue par l’IA', ocr.length === 1 && /^data:image\/jpeg;base64,/.test(ocr[0].input.image));
@@ -871,6 +873,8 @@ async function cursorTo(page, line) {
   }, line);
   await page.keyboard.press('End');
   await page.keyboard.press('Home');
+  // Ligne prise en compte par le studio (WebKit signale la sélection un peu plus tard)
+  await page.getByRole('button', { name: new RegExp(`Voir dans le PDF \\(l\\. ${line}\\)`) }).waitFor({ state: 'attached', timeout: 5_000 }).catch(() => {});
 }
 const lineOf = (code, re) => code.split('\n').findIndex(l => re.test(l)) + 1;
 /** Centre de la première zone surlignée dans l'aperçu (amenée à l'écran) */
@@ -895,6 +899,14 @@ async function v2p4(browser, engine = 'chromium') {
     await page.locator('[data-preview][aria-busy="false"]').waitFor({ timeout: 15_000 });
     await page.getByLabel('Aller à la section').and(page.locator(':enabled')).waitFor({ timeout: 15_000 });
   };
+  await ready();
+  // Pages immobiles pendant leur mise à jour : un clic visé reste à sa place
+  const top0 = (await page.locator('img[alt="Page 1 du CV"]').boundingBox()).y;
+  await page.getByRole('button', { name: 'Zoom avant' }).click();
+  await page.locator('[data-preview][aria-busy="true"]').waitFor({ timeout: 5_000 }).catch(() => {});
+  const shift = (await page.locator('img[alt="Page 1 du CV"]').boundingBox()).y - top0;
+  check('aperçu immobile pendant sa mise à jour (indicateur superposé)', Math.abs(shift) < 1, `${Math.round(shift)} px`);
+  await page.getByRole('button', { name: 'Ajuster à la largeur' }).click();
   await ready();
   const code = await codeArea(page).inputValue();
   const headline = lineOf(code, /\\cvheadline Data Analyst/);
@@ -979,9 +991,10 @@ async function v2p4(browser, engine = 'chromium') {
   await m.getByLabel('Aller à la section').selectOption({ label: 'Formation' });
   const box = await highlightBox(m);
   await m.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  await m.getByRole('group', { name: 'Passage sélectionné' }).getByRole('button', { name: /Voir le code/ }).tap();
   await m.waitForTimeout(300);
   const mcode = await codeArea(m).inputValue();
-  check('smartphone : toucher le titre « Formation » ouvre le code sur sa ligne',
+  check('smartphone : toucher le titre « Formation », puis « Voir le code » : code ouvert sur sa ligne',
     await codeArea(m).isVisible() && (await selectedLine(m)) === lineOf(mcode, /\\cvsection\{Formation\}/));
   await m.screenshot({ path: path.join(OUT, 'v2-p4-mobile.png') });
   await mobile.context.close();
@@ -990,6 +1003,361 @@ async function v2p4(browser, engine = 'chromium') {
 async function v2p4webkit() {
   const webkit = await pw.webkit.launch();
   try { await v2p4(webkit, 'webkit'); } finally { await webkit.close(); }
+}
+
+// ── Phase avancée, P7 : instructions pour l'IA, vérification avant application, comparaison ──
+async function v2p7(browser, engine = 'chromium') {
+  console.log(`\n▶ Phase avancée P7 — Instructions pour l’IA, vérification et comparaison (${engine}, IA simulée, compilation réelle)`);
+  const PREF = 'Ton sobre ; mettre en avant la santé publique.';
+  const withoutPhone = JSON.parse(JSON.stringify(IMPORTED));
+  withoutPhone.experiences.push({ id: 'e2', role: 'Assistante statisticienne', organization: 'Projet fictif', location: 'Bouaké', start: '', end: '', bullets: ['Enquêtes de terrain'] });
+  const { context, page, calls } = await newStudio(browser, {
+    ai: {
+      'latex.import.structure': () => withoutPhone,
+      'latex.rewrite': input => {
+        const cv = JSON.parse(JSON.stringify(input.cv));
+        cv.summary = 'Analyste des données de santé publique, orientée aide à la décision.';
+        return { cv, flags: [{ path: 'experiences.e1.bullets[0]', reason: 'unknown_term' }], suggestions: [] };
+      },
+      'latex.generate': () => ['\\documentclass{article}', '\\usepackage[utf8]{inputenc}', '\\usepackage[T1]{fontenc}', '\\begin{document}',
+        '\\section*{Awa Konan}', 'Data Analyst. Réduction des délais de 35~\\%.', '\\end{document}'].join('\n'),
+    },
+  });
+  const ready = async () => {
+    await page.getByRole('status').filter({ hasText: 'PDF prêt' }).first().waitFor({ timeout: 45_000 });
+    await page.locator('[data-preview][aria-busy="false"]').waitFor({ timeout: 15_000 });
+  };
+  await ready();
+
+  // 1. Import : instructions transmises, informations montrées et vérifiées AVANT application
+  await page.getByRole('tab', { name: /Importer/ }).click();
+  await page.locator('summary').filter({ hasText: 'Instructions supplémentaires pour l’IA' }).click();
+  await page.getByLabel('Instructions supplémentaires pour l’IA').fill('La colonne de gauche contient les compétences.');
+  await page.locator('input[type=file][accept*=".docx"]').setInputFiles(path.join(FIXTURES, 'cv.docx'));
+  const review = page.getByRole('dialog', { name: 'Vérifier les informations extraites' });
+  await review.waitFor({ timeout: 30_000 });
+  const reviewText = await review.innerText();
+  check('import : instructions transmises à la structuration', calls.find(c => c.feature === 'latex.import.structure')?.input.instructions === 'La colonne de gauche contient les compétences.');
+  check('import : données montrées avant application, points à vérifier signalés',
+    reviewText.includes('Awa Konan') && /1 expérience\(s\) sans date/.test(reviewText) && /Formations : 1/.test(reviewText));
+  check('import : rien n’est appliqué avant validation', (await codeArea(page).inputValue()).includes('Prénom NOM'));
+  await page.screenshot({ path: path.join(OUT, `v2-p7-verification-import-${engine}.png`) });
+  await review.getByRole('button', { name: 'Utiliser ces données' }).click();
+  await page.getByRole('tab', { name: /Données/, selected: true }).waitFor();
+  check('import validé : données utilisées, code régénéré', (await codeArea(page).inputValue()).includes('Assistante statisticienne'));
+
+  // 2. Réécriture d'une seule section, avec les mêmes instructions (champ commun)
+  await page.getByLabel(/Organisme ou institution/).first().fill('Organisation mondiale fictive');
+  const shared = page.getByLabel('Instructions supplémentaires pour l’IA');
+  check('instructions communes : retrouvées dans l’onglet « Données »', (await shared.inputValue()) === 'La colonne de gauche contient les compétences.');
+  await shared.fill(PREF);
+  await page.getByLabel('Partie à réécrire').selectOption({ label: 'Profil' });
+  await page.getByRole('button', { name: /Réécrire : Profil/ }).click();
+  const proposal = page.getByRole('dialog', { name: /Réécriture proposée/ });
+  await proposal.waitFor();
+  const sent = calls.find(c => c.feature === 'latex.rewrite')?.input;
+  check('réécriture : portée « Profil » et instructions transmises', sent?.scope === 'summary' && sent?.instructions === PREF);
+  check('proposition montrée avant / après ; nom ou sigle inventé écarté et signalé', /aide à la décision/.test(await proposal.innerText()) && /nom ou un sigle absent/.test(await proposal.innerText()));
+  await proposal.getByRole('button', { name: /Appliquer/ }).click();
+  check('réécriture appliquée au code', (await codeArea(page).inputValue()).includes('orientée aide à la décision'));
+
+  // 3. Original conservé : comparaison avant / après, puis rétablissement
+  await page.getByRole('button', { name: /Comparer avec une version précédente/ }).click();
+  const compare = page.getByRole('dialog', { name: 'Comparer avec une version précédente' });
+  await compare.waitFor();
+  check('comparaison : profil d’origine et profil réécrit côte à côte', /Analyste de données en santé publique\./.test(await compare.innerText()) && /orientée aide à la décision/.test(await compare.innerText()));
+  const original = await compare.locator('option').filter({ hasText: 'CV importé (original)' }).getAttribute('value');
+  await compare.getByLabel('Version comparée aux données actuelles').selectOption(original);
+  check('l’original importé reste disponible pour comparaison', /orientée aide à la décision/.test(await compare.innerText()));
+  await page.screenshot({ path: path.join(OUT, `v2-p7-comparaison-${engine}.png`) });
+  await compare.getByRole('button', { name: 'Rétablir cette version' }).click();
+  check('rétablissement : profil d’origine revenu dans le code', (await codeArea(page).inputValue()).includes('Analyste de données en santé publique.') && !(await codeArea(page).inputValue()).includes('orientée aide à la décision'));
+
+  // 4. Génération : code montré avant application, chiffre absent des informations signalé
+  await page.getByRole('tab', { name: /IA/ }).click();
+  await page.getByLabel('Vos informations').fill('Awa Konan, Data Analyst à Abidjan.');
+  await page.getByRole('button', { name: /Générer le code LaTeX/ }).click();
+  const gen = page.getByRole('dialog', { name: 'Code proposé par l’IA' });
+  await gen.waitFor();
+  const genText = await gen.innerText();
+  check('génération : instructions transmises', calls.find(c => c.feature === 'latex.generate')?.input.instructions === PREF);
+  check('génération : différences montrées avant application, chiffre « 35 » signalé', /ligne\(s\) ajoutée\(s\)/.test(genText) && /Chiffres absents de vos informations : 35/.test(genText));
+  check('génération : rien n’est appliqué avant validation', !(await codeArea(page).inputValue()).includes('35~\\%'));
+  await page.screenshot({ path: path.join(OUT, `v2-p7-generation-${engine}.png`) });
+  await gen.getByRole('button', { name: 'Appliquer ce code' }).click();
+  await ready();
+  check('code appliqué puis compilé', (await codeArea(page).inputValue()).includes('35~\\%'));
+
+  // 5. Versions : comparaison du code avec une version précédente
+  await page.getByRole('tab', { name: /Versions/ }).click();
+  await page.getByRole('button', { name: /Comparer « Avant génération IA » au code actuel/ }).click();
+  const diff = page.getByRole('dialog', { name: /Comparer « Avant génération IA »/ });
+  check('versions : différences de code affichées', /retirée\(s\)/.test(await diff.innerText()));
+  await diff.getByRole('button', { name: 'Fermer' }).last().click();
+  check('instructions gardées dans la session, jamais dans le code', !(await codeArea(page).inputValue()).includes('Ton sobre'));
+  await context.close();
+}
+
+async function v2p7webkit() {
+  const webkit = await pw.webkit.launch();
+  try { await v2p7(webkit, 'webkit'); } finally { await webkit.close(); }
+}
+
+// ── Phase avancée, P8 : édition visuelle, lisibilité ATS, offre d'emploi ──
+async function v2p8(browser, engine = 'chromium') {
+  console.log(`\n▶ Phase avancée P8 — Édition visuelle, ATS et offre d’emploi (${engine}, IA simulée, compilation réelle)`);
+  const { context, page, calls } = await newStudio(browser, {
+    session: { 'latex-studio:cv': IMPORTED },
+    ai: {
+      'latex.rewrite': input => {
+        const cv = JSON.parse(JSON.stringify(input.cv));
+        cv.summary = 'Analyste de données en santé publique : tableaux de bord Power BI, Python et SQL.';
+        return { cv, flags: [{ path: 'experiences.e1.bullets[0]', reason: 'unknown_term' }], suggestions: ['L’offre demande Azure : ajoutez-le seulement si vous le maîtrisez.'] };
+      },
+    },
+  });
+  const compiles = [];
+  page.on('request', r => { if (r.url().includes('/api/cv/compile') && r.method() === 'POST') compiles.push(JSON.parse(r.postData() ?? '{}').code ?? ''); });
+  const ready = async () => {
+    await page.getByRole('status').filter({ hasText: 'PDF prêt' }).first().waitFor({ timeout: 45_000 });
+    await page.locator('[data-preview][aria-busy="false"]').waitFor({ timeout: 15_000 });
+    await page.getByLabel('Aller à la section').and(page.locator(':enabled')).waitFor({ timeout: 15_000 });
+  };
+  await ready();
+  const code = () => codeArea(page).inputValue();
+  const bubble = page.getByRole('group', { name: 'Passage sélectionné' });
+  /** Clic au début du passage d'une ligne du code, dans le PDF */
+  const clickPassage = async re => {
+    await cursorTo(page, lineOf(await code(), re));
+    const box = await highlightBox(page);
+    await cursorTo(page, 1);
+    await page.mouse.click(box.x + Math.min(12, box.width / 4), box.y + box.height / 2);
+    await bubble.waitFor();
+  };
+
+  // 1. Édition visuelle : le poste « Data Analyst » (et non le titre identique) modifié sans LaTeX
+  await clickPassage(/\\textbf\{Data Analyst\}/);
+  await bubble.getByRole('button', { name: 'Modifier ce texte' }).click();
+  const edit = page.getByRole('dialog', { name: 'Modifier ce texte' });
+  const field = edit.getByLabel('Expérience 1 — Poste');
+  check('clic sur le poste : champ « Expérience 1 — Poste » proposé, valeur actuelle', (await field.inputValue()) === 'Data Analyst');
+  await page.screenshot({ path: path.join(OUT, `v2-p8-edition-${engine}.png`) });
+  await field.fill('Analyste de données');
+  let n = compiles.length;
+  await edit.getByRole('button', { name: 'Enregistrer' }).click();
+  check('donnée modifiée : code régénéré, titre professionnel identique inchangé', (await code()).includes('\\textbf{Analyste de données}') && (await code()).includes('\\cvheadline Data Analyst'));
+  for (let i = 0; i < 100 && compiles.length <= n; i++) await page.waitForTimeout(100);
+  await ready();
+  check('PDF recompilé avec le texte modifié', compiles.at(-1).includes('\\textbf{Analyste de données}'));
+  await page.getByRole('tab', { name: /Données/ }).click();
+  check('onglet « Données » : le champ « Poste » suit', (await page.getByLabel('Poste', { exact: true }).first().inputValue()) === 'Analyste de données');
+  // Annuler : la donnée, le code et le PDF reviennent ensemble
+  n = compiles.length;
+  await page.getByRole('status').filter({ hasText: 'modifié : code et aperçu mis à jour' }).getByRole('button', { name: /Annuler/ }).click();
+  check('« Annuler » : donnée et code rétablis ensemble', (await page.getByLabel('Poste', { exact: true }).first().inputValue()) === 'Data Analyst' && (await code()).includes('\\textbf{Data Analyst}'));
+  for (let i = 0; i < 100 && compiles.length <= n; i++) await page.waitForTimeout(100);
+  await ready();
+  check('« Annuler » : PDF recompilé avec le texte d’origine', compiles.at(-1).includes('\\textbf{Data Analyst}'));
+
+  // 2. Puce : texte sur plusieurs lignes ; titre de section : texte du modèle, guidage
+  await clickPassage(/\\item Tableaux de bord/);
+  await bubble.getByRole('button', { name: 'Modifier ce texte' }).click();
+  const bulletDialog = page.getByRole('dialog', { name: 'Modifier ce texte' });
+  await bulletDialog.waitFor();
+  const bulletLabel = await bulletDialog.locator('label').first().innerText();
+  check('clic sur une puce : zone de texte « Réalisation 1 »', bulletLabel === 'Expérience 1 — Réalisation 1' && /Tableaux de bord Power BI/.test(await bulletDialog.locator('textarea').inputValue()), bulletLabel);
+  await page.getByRole('dialog', { name: 'Modifier ce texte' }).getByRole('button', { name: 'Annuler' }).click();
+  await clickPassage(/\\cvsection\{Formation\}/);
+  check('clic sur un titre de section : texte du modèle, renvoi à l’organisation des sections', /Texte du modèle/.test(await bubble.innerText()) && !(await bubble.getByRole('button', { name: 'Modifier ce texte' }).count()));
+  await bubble.getByRole('button', { name: 'Fermer la bulle' }).click();
+
+  // 3. Lisibilité ATS : contrôles expliqués, sans note
+  await page.getByRole('tab', { name: /Offre/ }).click();
+  const ats = page.getByRole('list', { name: 'Contrôles de lisibilité' });
+  await ats.waitFor();
+  const status = async id => ats.locator(`[data-ats="${id}"]`).getAttribute('data-status');
+  check('ATS : texte lisible, une colonne, expériences datées', (await status('text')) === 'ok' && (await status('columns')) === 'ok' && (await status('dates')) === 'ok');
+  check('ATS : téléphone absent signalé', (await status('contact')) === 'warn');
+  check('ATS : aucune note ni pourcentage', !/\d+\s?%|\/\s?100|score/i.test(await page.getByRole('tabpanel').innerText()));
+
+  // 4. Offre : analyse locale (rien d'envoyé), puis adaptation par l'IA à la demande
+  const offer = 'Nous recherchons un Data Analyst. Missions : tableaux de bord Power BI, automatisation avec Python et SQL. Atouts : Azure, DHIS2.';
+  await page.getByLabel('Texte de l’offre').fill(offer);
+  await page.getByRole('button', { name: /Analyser l’offre/ }).click();
+  const present = await page.getByRole('list', { name: 'Termes présents dans le CV' }).innerText();
+  const absent = await page.getByRole('list', { name: 'Termes absents du CV' }).innerText();
+  check('offre analysée localement : Power BI, Python, SQL présents ; Azure, DHIS2 absents ; aucun appel IA',
+    /Power BI/.test(present) && /Python/.test(present) && /SQL/.test(present) && /Azure/.test(absent) && /DHIS2/.test(absent) && calls.length === 0);
+  await page.screenshot({ path: path.join(OUT, `v2-p8-offre-${engine}.png`) });
+  await page.getByLabel(/Organisme ou institution/).first().fill('Organisation mondiale fictive');
+  await page.getByRole('button', { name: /Adapter le CV à cette offre/ }).click();
+  const proposal = page.getByRole('dialog', { name: /Réécriture proposée/ });
+  await proposal.waitFor();
+  const sent = calls.find(c => c.feature === 'latex.rewrite')?.input;
+  check('adaptation : offre et candidature transmises, une seule demande', sent?.offer === offer && sent?.target?.organization === 'Organisation mondiale fictive' && calls.length === 1);
+  check('adaptation : proposition montrée, terme absent du CV écarté, suggestion affichée', /Power BI, Python et SQL/.test(await proposal.innerText()) && /nom ou un sigle absent/.test(await proposal.innerText()) && /Azure/.test(await proposal.innerText()));
+  await proposal.getByRole('button', { name: /Appliquer/ }).click();
+  check('adaptation appliquée au code', (await code()).includes('Python et SQL.'));
+  await page.getByRole('tab', { name: /Données/ }).click();
+  await page.getByRole('button', { name: /Comparer avec une version précédente/ }).click();
+  check('version d’avant l’adaptation gardée pour comparaison', /Avant adaptation à l’offre/.test(await page.getByLabel('Version comparée aux données actuelles').innerText()));
+  await context.close();
+
+  if (engine !== 'chromium') return;
+  // Smartphone : toucher un passage propose « Modifier ce texte » sans ouvrir le code
+  const mobile = await newStudio(browser, { width: 390, height: 844, mobile: true, session: { 'latex-studio:cv': IMPORTED } });
+  const m = mobile.page;
+  await m.getByRole('status').filter({ hasText: 'PDF prêt' }).first().waitFor({ timeout: 45_000 });
+  await m.getByRole('button', { name: /Aperçu/ }).click();
+  await m.getByLabel('Aller à la section').and(m.locator(':enabled')).waitFor({ timeout: 15_000 });
+  await m.getByLabel('Aller à la section').selectOption({ label: 'Profil' });
+  await m.getByRole('button', { name: 'Élément suivant' }).tap();
+  const box = await highlightBox(m);
+  await m.touchscreen.tap(box.x + 10, box.y + box.height / 2);
+  const mb = m.getByRole('group', { name: 'Passage sélectionné' });
+  await mb.waitFor();
+  check('smartphone : le toucher propose « Modifier ce texte », l’aperçu reste affiché', await mb.getByRole('button', { name: 'Modifier ce texte' }).isVisible() && !(await codeArea(m).isVisible()));
+  await mb.getByRole('button', { name: 'Modifier ce texte' }).tap();
+  const overflow = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  check('smartphone : fenêtre d’édition sans débordement', await m.getByRole('dialog', { name: 'Modifier ce texte' }).isVisible() && overflow <= 1, `${overflow} px`);
+  await m.screenshot({ path: path.join(OUT, 'v2-p8-mobile.png') });
+  await mobile.context.close();
+}
+
+async function v2p8webkit() {
+  const webkit = await pw.webkit.launch();
+  try { await v2p8(webkit, 'webkit'); } finally { await webkit.close(); }
+}
+
+// ── Répétition générale de la recette fonctionnelle du propriétaire (9 étapes), IA simulée ──
+/** Polices réellement intégrées à un PDF (flux décompressés) */
+async function embeddedFontsOf(pdf) {
+  const zlib = await import('node:zlib');
+  let text = pdf.toString('latin1');
+  for (let at = pdf.indexOf('stream'); at >= 0; at = pdf.indexOf('stream', at + 6)) {
+    let start = at + 6; if (pdf[start] === 13) start++; if (pdf[start] === 10) start++;
+    const end = pdf.indexOf('endstream', start);
+    if (end < 0) break;
+    try { text += zlib.inflateSync(pdf.subarray(start, end)).toString('latin1'); } catch { /* flux non compressé */ }
+  }
+  return [...new Set([...text.matchAll(/\/BaseFont\s*\/([A-Za-z0-9+_-]+)/g)].map(m => m[1].replace(/^[A-Z]{6}\+/, '')))];
+}
+
+async function repetition(browser, engine = 'chromium') {
+  console.log(`\n▶ Répétition générale de la recette fonctionnelle (${engine}) : 9 étapes, IA simulée, compilations réelles`);
+  const PREF = 'Ton sobre ; mettre en avant la santé publique.';
+  const { context, page, calls } = await newStudio(browser, {
+    ai: {
+      'latex.import.structure': () => IMPORTED,
+      'latex.fix': input => {
+        const lines = input.code.split('\n');
+        const n = lines.findIndex(l => l.includes('\\textbfz')) + 1;
+        return { edits: [{ start: n, end: n, replacement: lines[n - 1].replace('\\textbfz', '\\textbf') }], explanation: 'La commande \\textbfz n’existe pas : remplacée par \\textbf.' };
+      },
+    },
+  });
+  const ready = async () => {
+    await page.getByRole('status').filter({ hasText: 'PDF prêt' }).first().waitFor({ timeout: 45_000 });
+    await page.locator('[data-preview][aria-busy="false"]').waitFor({ timeout: 15_000 });
+  };
+  const code = () => codeArea(page).inputValue();
+  await ready();
+
+  // 1 à 3. Import d'un PDF, vérification des informations extraites, instructions personnalisées
+  await page.getByRole('tab', { name: /Importer/ }).click();
+  await page.locator('summary').filter({ hasText: 'Instructions supplémentaires pour l’IA' }).click();
+  await page.getByLabel('Instructions supplémentaires pour l’IA').fill(PREF);
+  await page.locator('input[type=file][accept*=".docx"]').setInputFiles(path.join(FIXTURES, 'cv-texte.pdf'));
+  const review = page.getByRole('dialog', { name: 'Vérifier les informations extraites' });
+  await review.waitFor({ timeout: 30_000 });
+  const structure = calls.find(c => c.feature === 'latex.import.structure')?.input;
+  check('1. CV PDF importé : texte extrait dans l’environnement isolé, puis structuré', /Awa Konan/.test(structure?.text ?? '') && /Côte/.test(structure?.text ?? ''));
+  check('2. informations extraites montrées pour vérification, avant toute application', (await review.innerText()).includes('Awa Konan') && !(await code()).includes('Awa Konan'));
+  await review.getByRole('button', { name: 'Utiliser ces données' }).click();
+  check('2. informations vérifiables et modifiables dans « Données »', (await page.getByLabel('Nom complet').inputValue()) === 'Awa Konan');
+  check('3. instructions personnalisées transmises à l’IA', structure?.instructions === PREF);
+
+  // 4. Modèle « Silicon Valley Engineer » (après un autre modèle)
+  await page.getByRole('tab', { name: /Modèles/ }).click();
+  const gallery = page.getByRole('list', { name: 'Modèles de CV' });
+  await gallery.getByRole('button', { name: /Executive Prestige/ }).click();
+  await gallery.getByRole('button', { name: /Silicon Valley Engineer/ }).click();
+  await ready();
+  check('4. « Silicon Valley Engineer » appliqué : code régénéré depuis les données', (await code()).includes(SIGNATURES['Silicon Valley Engineer']) && (await code()).includes('Awa Konan'));
+
+  // 5. Police, couleur et ordre des sections
+  await page.getByRole('tab', { name: /Design/ }).click();
+  await page.getByLabel('Police').selectOption('palatino');
+  await page.getByRole('button', { name: 'Palette Bordeaux' }).click();
+  await page.getByRole('tab', { name: /Données/ }).click();
+  await page.getByRole('button', { name: 'Monter Compétences' }).click();
+  await page.getByRole('button', { name: 'Monter Compétences' }).click();
+  const styled = await code();
+  const titles = [...styled.matchAll(/\\cvsection\{([^}]*)\}/g)].map(m => m[1]);
+  check('5. police Palatino, couleur Bordeaux, Compétences avant Expérience',
+    styled.includes('\\renewcommand{\\rmdefault}{ppl}') && styled.includes('{accent}{HTML}{7A1E2C}') && titles.indexOf('Compétences') < titles.indexOf('Expérience professionnelle'), titles.join(' › '));
+
+  // 6. Photo et cadrage
+  await page.getByRole('tab', { name: /Photo/ }).click();
+  await page.locator('input[type="file"][accept^="image/"]').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: await quadrantPng() });
+  const editor = page.getByRole('dialog', { name: /Cadrer la photo/ });
+  await editor.getByRole('button', { name: 'Pivoter de 90 degrés vers la droite' }).click();
+  await editor.getByLabel('Zoom').fill('150');
+  await editor.getByRole('button', { name: 'Valider le cadrage' }).click();
+  await page.getByRole('radiogroup', { name: 'Forme' }).getByRole('radio', { name: 'Cercle' }).click();
+  await page.waitForTimeout(1_500);
+  await ready();
+  check('6. photo ajoutée et recadrée (cercle) : emplacement dans le code', /% Photo : cercle/.test(await code()) && (await code()).includes('%%PHOTO%%'));
+
+  // 7. Clic sur une section du PDF : son LaTeX est retrouvé
+  await page.getByLabel('Aller à la section').and(page.locator(':enabled')).waitFor({ timeout: 15_000 });
+  const skills = lineOf(await code(), /\\cvsection\{Compétences\}/);
+  await cursorTo(page, skills);
+  const box = await highlightBox(page);
+  await cursorTo(page, 1);
+  await page.mouse.click(box.x + Math.min(12, box.width / 4), box.y + box.height / 2);
+  check('7. clic sur « COMPÉTENCES » dans le PDF : ligne \\cvsection{Compétences} sélectionnée', (await selectedLine(page)) === skills);
+  await page.keyboard.press('Escape');
+
+  // 8. Erreur volontaire, puis « Corriger avec l'IA »
+  const row = lineOf(await code(), /\\textbf\{Data Analyst\}/);
+  await cursorTo(page, row + 1);
+  await page.keyboard.press('End');
+  await page.keyboard.type(' \\textbfz{Abidjan}');
+  const alert = page.getByRole('alert').filter({ hasText: 'Undefined control sequence' });
+  await alert.waitFor({ timeout: 45_000 });
+  check('8. erreur volontaire : compilation refusée, ligne indiquée', await alert.getByRole('button', { name: `Ligne ${row + 1}` }).isVisible());
+  await alert.getByRole('button', { name: 'Corriger l’erreur avec l’IA' }).click();
+  const fix = page.getByRole('dialog', { name: /Correction proposée/ });
+  await fix.waitFor();
+  await fix.getByRole('button', { name: 'Accepter et compiler' }).click();
+  await ready();
+  check('8. « Corriger avec l’IA » : correction montrée, acceptée, PDF recompilé', !(await code()).includes('\\textbfz') && calls.some(c => c.feature === 'latex.fix'));
+
+  // 9. Export du PDF et vérification du fichier téléchargé
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: '⬇ PDF', exact: true }).click()]);
+  const pdf = fs.readFileSync(await download.path());
+  fs.writeFileSync(path.join(OUT, `repetition-${engine}.pdf`), pdf);
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(pdf), verbosity: 0 }).promise;
+  let text = '';
+  for (let i = 1; i <= doc.numPages; i++) text += (await (await doc.getPage(i)).getTextContent()).items.map(it => it.str).join(' ') + '\n';
+  const flat = text.replace(/\s+/g, ' ');
+  const fonts = await embeddedFontsOf(pdf);
+  check('9. PDF exporté : nom de fichier cv.pdf, document PDF valide', download.suggestedFilename() === 'cv.pdf' && pdf.subarray(0, 5).toString() === '%PDF-');
+  check('9. contenu : nom, poste, expérience, formation, texte corrigé ; aucun marqueur ni texte d’exemple',
+    /Awa Konan/.test(flat) && /Data Analyst/.test(flat) && /Institut fictif de santé/.test(flat) && /Master Big Data/.test(flat) && /Abidjan/.test(flat) && !/%%PHOTO%%|Prénom NOM|Photo optionnelle/.test(flat));
+  check('9. mise en page : Compétences avant Expérience, police Palatino intégrée, photo intégrée, 1 page',
+    flat.search(/COMP[ÉE]TENCES/i) < flat.search(/EXP[ÉE]RIENCE PROFESSIONNELLE/i) && fonts.some(f => /^URWPalladioL/.test(f)) && /\/Subtype\s*\/Image/.test(pdf.toString('latin1')) && doc.numPages === 1,
+    `${doc.numPages} page(s), polices ${fonts.slice(0, 3).join(' ')}`);
+  await page.screenshot({ path: path.join(OUT, `repetition-${engine}.png`) });
+  check('aucun appel IA hors structuration et correction simulées', calls.every(c => ['latex.import.structure', 'latex.fix'].includes(c.feature)));
+  await context.close();
+}
+
+async function repetitionWebkit() {
+  const webkit = await pw.webkit.launch();
+  try { await repetition(webkit, 'webkit'); } finally { await webkit.close(); }
 }
 
 async function v2p3webkit() {
@@ -1003,7 +1371,7 @@ async function p5webkit() {
   try { await p5(webkit, 'webkit'); } finally { await webkit.close(); }
 }
 
-const SCENARIOS = { p1, p2, p3, p4, p5, p5webkit, v2p2, v2p3, v2p3webkit, v2p4, v2p4webkit, v2p5, v2p6 };
+const SCENARIOS = { p1, p2, p3, p4, p5, p5webkit, v2p2, v2p3, v2p3webkit, v2p4, v2p4webkit, v2p5, v2p6, v2p7, v2p7webkit, v2p8, v2p8webkit, repetition, repetitionWebkit };
 
 const selected = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(SCENARIOS);
 const browser = await pw.chromium.launch();

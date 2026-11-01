@@ -114,16 +114,23 @@ export async function readImages(images: string[], onPage?: (n: number) => void)
   return texts.join('\n\n')
 }
 
-export async function structureText(text: string, lang: 'fr' | 'en'): Promise<CvData> {
-  const content = await runAiFeature('latex.import.structure', { text: text.slice(0, 20_000), lang })
+export async function structureText(text: string, lang: 'fr' | 'en', instructions = ''): Promise<CvData> {
+  const content = await runAiFeature('latex.import.structure', { text: text.slice(0, 20_000), lang, ...(instructions.trim() ? { instructions: instructions.trim() } : {}) })
   return normalizeCv(JSON.parse(content))
 }
 
-export interface RewriteFlag { path: string; reason: 'number' | 'unknown_skill' }
+export interface RewriteFlag { path: string; reason: 'number' | 'unknown_skill' | 'unknown_term' }
 export interface RewriteResult { cv: CvData; flags: RewriteFlag[]; suggestions: string[] }
+/** Portée de la réécriture (P7) : tout le CV, une section, une expérience ou un projet */
+export type RewriteScope = 'all' | 'headline' | 'summary' | 'experiences' | 'projects' | 'skills' | `experience:${string}` | `project:${string}`
 
-export async function rewriteCv(cv: CvData, target: Target, lang: 'fr' | 'en'): Promise<RewriteResult> {
-  const content = await runAiFeature('latex.rewrite', { cv: forServer(cv), target: { organization: target.organization.trim(), role: target.role.trim() }, lang })
+export async function rewriteCv(cv: CvData, target: Target, lang: 'fr' | 'en', options: { scope?: RewriteScope; instructions?: string; offer?: string } = {}): Promise<RewriteResult> {
+  const extra = {
+    ...(options.scope && options.scope !== 'all' ? { scope: options.scope } : {}),
+    ...(options.instructions?.trim() ? { instructions: options.instructions.trim() } : {}),
+    ...(options.offer?.trim() ? { offer: options.offer.trim() } : {}),
+  }
+  const content = await runAiFeature('latex.rewrite', { cv: forServer(cv), target: { organization: target.organization.trim(), role: target.role.trim() }, lang, ...extra })
   const parsed = JSON.parse(content) as { cv?: unknown; flags?: unknown; suggestions?: unknown }
   return {
     cv: normalizeCv(parsed.cv),
@@ -155,4 +162,16 @@ export function applyRewrite(before: CvData, after: CvData, accepted: Set<string
   cv.projects.forEach((p, i) => { if (accepted.has(`proj:${i}`) && after.projects[i]) p.description = after.projects[i].description })
   cv.skills.forEach((s, i) => { if (accepted.has(`skills:${i}`) && after.skills[i]) s.items = [...after.skills[i].items] })
   return cv
+}
+
+/** Points à vérifier, sans jugement sur le contenu */
+export function importWarnings(cv: CvData): string[] {
+  const w: string[] = []
+  if (!cv.identity.fullName.trim()) w.push('Nom non trouvé.')
+  if (!cv.identity.email.trim() && !cv.identity.phone.trim()) w.push('Aucune coordonnée (e-mail ou téléphone) trouvée.')
+  const undated = cv.experiences.filter(e => !e.start.trim() && !e.end.trim()).length
+  if (undated) w.push(`${undated} expérience(s) sans date.`)
+  if (!cv.experiences.length) w.push('Aucune expérience trouvée.')
+  if (!cv.education.length) w.push('Aucune formation trouvée.')
+  return w
 }

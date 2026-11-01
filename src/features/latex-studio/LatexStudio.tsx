@@ -10,7 +10,7 @@ import { buildFinalLatex } from '../../pages/CVBuilder/latexTemplates'
 import { photoSetup, renderCv, TEMPLATE_LIBRARY } from './templates/library'
 import { sampleCv } from './templates/sample'
 import { emptyCv, forServer, isEmptyCv, normalizeCv, type CvData } from './lib/cvData'
-import { rewriteCv, type RewriteResult } from './lib/importCv'
+import { rewriteCv, type RewriteResult, type RewriteScope } from './lib/importCv'
 import { targetReady } from './lib/target'
 import { useQuality } from './useQuality'
 import { QualityReport } from './components/QualityReport'
@@ -23,11 +23,19 @@ import { Dialog } from './components/Dialog'
 import { CvDataEditor } from './components/CvDataEditor'
 import { ImportPanel } from './components/ImportPanel'
 import { RewriteDialog } from './components/RewriteDialog'
+import { AiInstructions } from './components/AiInstructions'
+import { ImportReview } from './components/ImportReview'
+import { CodeDiffDialog, CompareDataDialog, type CvSnapshot } from './components/Compare'
+import { unsupportedNumbers } from './lib/diff'
 import { MyCvsDialog, SaveDialog } from './components/MyCvs'
 import { detectMode, history, restorableCode, type HistoryMode } from './lib/history'
 import { useCompile, downloadUrl } from './useCompile'
 import { useSync } from './useSync'
-import { lineAt, outline, rectsForLine, type SyncRect } from './lib/sync'
+import { outline, partAt, pdfText, rectsForLine, type SyncRect } from './lib/sync'
+import { fieldAt, setField, type CvField } from './lib/visualEdit'
+import { atsChecks, unusualTitles } from './lib/ats'
+import { OfferPanel } from './components/OfferPanel'
+import { EditFieldDialog } from './components/EditFieldDialog'
 import { useVersions } from './useVersions'
 import { useViewport, prefersPlainEditor } from './useViewport'
 import { applyEdits, type FixProposal } from './lib/edits'
@@ -43,7 +51,7 @@ import { IDENTITY, renderPhotoJpeg, type PhotoFrame, type PhotoSource, type Phot
 import { Splitter } from './components/Splitter'
 import { btn, btnDanger, btnGhost, btnPrimary } from './components/ui'
 
-type SideTab = 'import' | 'donnees' | 'modeles' | 'design' | 'ia' | 'photo' | 'versions'
+type SideTab = 'import' | 'donnees' | 'modeles' | 'design' | 'ia' | 'offre' | 'photo' | 'versions'
 type MobileTab = 'infos' | 'code' | 'apercu'
 
 const DRAFT_KEY = 'latex-studio:draft'
@@ -52,7 +60,12 @@ const CV_KEY = 'latex-studio:cv'
 const TEMPLATE_KEY = 'latex-studio:template'
 const GENERATED_KEY = 'latex-studio:generated'
 const STEPS_KEY = 'latex-studio:template-steps'
-const SESSION_KEYS = [DRAFT_KEY, TARGET_KEY, CV_KEY, TEMPLATE_KEY, GENERATED_KEY, STEPS_KEY, 'latex-studio:versions', 'latex-studio:side', 'latex-studio:ratio']
+const INSTRUCTIONS_KEY = 'latex-studio:ai-instructions'
+const CV_HISTORY_KEY = 'latex-studio:cv-history'
+const OFFER_KEY = 'latex-studio:offer'
+const SESSION_KEYS = [DRAFT_KEY, TARGET_KEY, CV_KEY, TEMPLATE_KEY, GENERATED_KEY, STEPS_KEY, INSTRUCTIONS_KEY, CV_HISTORY_KEY, OFFER_KEY, 'latex-studio:versions', 'latex-studio:side', 'latex-studio:ratio']
+/** Versions des données gardées pour comparaison (import d'origine, avant réécriture…) */
+const MAX_CV_HISTORY = 6
 const DEFAULT_CHOICE: TemplateChoice = { id: TEMPLATE_LIBRARY[0].id, options: TEMPLATE_LIBRARY[0].defaults }
 const NO_WARNINGS: never[] = []
 
@@ -111,6 +124,18 @@ export default function LatexStudio() {
   }, [photoSource, photoTransform, photoSet])
   const photoSize = { width: photoSet.frame.width, height: photoSet.frame.height }
   const [target, setTarget] = useState<Target>(() => readSession(TARGET_KEY, { organization: '', role: '' }))
+  // P7 : instructions supplémentaires pour l'IA (communes à l'import, à la réécriture, à la génération)
+  const [aiExtra, setAiExtra] = useState<string>(() => readSession(INSTRUCTIONS_KEY, ''))
+  // Versions précédentes des données, pour comparaison avant / après et rétablissement
+  const [cvHistory, setCvHistory] = useState<CvSnapshot[]>(() => readSession(CV_HISTORY_KEY, []))
+  useEffect(() => { try { sessionStorage.setItem(INSTRUCTIONS_KEY, JSON.stringify(aiExtra)); sessionStorage.setItem(CV_HISTORY_KEY, JSON.stringify(cvHistory)) } catch { /* stockage indisponible */ } }, [aiExtra, cvHistory])
+  const rememberCv = (label: string, data: CvData) => {
+    if (isEmptyCv(data)) return
+    setCvHistory(list => (list.length && JSON.stringify(list.at(-1)!.cv) === JSON.stringify(data) ? list
+      : [...list, { id: `${Date.now()}-${list.length}`, label, at: Date.now(), cv: data }].slice(-MAX_CV_HISTORY)))
+  }
+  const [comparing, setComparing] = useState(false)
+  const [codeCompare, setCodeCompare] = useState<{ label: string; code: string } | null>(null)
   const versions = useVersions(code, setCode)
   const compile = useCompile(code, photo, photoSize)
   const editor = useRef<CodeEditorHandle>(null)
@@ -126,14 +151,17 @@ export default function LatexStudio() {
   /** Remplacement du code par le studio : instantané, puis compilation immédiate */
   // Confirmation après chaque remplacement du code, avec retour arrière immédiat
   const [notice, setNotice] = useState('')
+  // Modification de données annulable depuis le message (édition visuelle) : données, code et PDF reviennent ensemble
+  const [dataUndo, setDataUndo] = useState<CvData | null>(null)
   useEffect(() => {
-    if (!notice) return
+    if (!notice) { setDataUndo(null); return }
     const timer = setTimeout(() => setNotice(''), 8000)
     return () => clearTimeout(timer)
   }, [notice])
   const replaceCode = useCallback((next: string, label: string, done: string) => {
     compile.compileSoon()
     versions.replace(next, label)
+    setDataUndo(null)
     setNotice(done)
   }, [compile, versions])
 
@@ -145,13 +173,19 @@ export default function LatexStudio() {
   const [aiError, setAiError] = useState('')
   const [selection, setSelection] = useState<Selection | null>(null)
 
+  const [pendingGenerate, setPendingGenerate] = useState<{ code: string; warnings: string[] } | null>(null)
   const generate = async () => {
     setAiLoading(true)
     setAiError('')
     try {
-      const out = stripCodeFences(await runAiFeature('latex.generate', { info: aiInfo, template: renderCv(choice.id, sampleCv(), choice.options), existing: code, target }))
-      if (out) replaceCode(out, 'Avant génération IA', 'CV généré par l’IA.')
-      else setAiError('Aucun code retourné.')
+      const out = stripCodeFences(await runAiFeature('latex.generate', {
+        info: aiInfo, template: renderCv(choice.id, sampleCv(), choice.options), existing: code, target,
+        ...(aiExtra.trim() ? { instructions: aiExtra.trim() } : {}),
+      }))
+      if (!out) { setAiError('Aucun code retourné.'); return }
+      // Chiffres affichés absents de vos informations : signalés avant toute application
+      const numbers = unsupportedNumbers(out, [aiInfo, code, target.organization, target.role])
+      setPendingGenerate({ code: out, warnings: numbers.length ? [`Chiffres absents de vos informations : ${numbers.slice(0, 12).join(', ')}. Vérifiez-les ou retirez-les.`] : [] })
     } catch (e) {
       setAiError((e as Error).message)
     } finally {
@@ -297,13 +331,25 @@ export default function LatexStudio() {
   // ── Réécriture professionnelle (latex.rewrite) ──
   const [rewriting, setRewriting] = useState(false)
   const [rewriteError, setRewriteError] = useState('')
-  const [rewrite, setRewrite] = useState<{ base: CvData; result: RewriteResult } | null>(null)
+  const [rewrite, setRewrite] = useState<{ base: CvData; result: RewriteResult; before?: string } | null>(null)
+  const [rewriteScope, setRewriteScope] = useState<RewriteScope>('all')
+  // Portées proposées : identifiants de la version envoyée au serveur (éléments vides écartés)
+  const serverCv = useMemo(() => forServer(cv), [cv])
+  const scopes: [RewriteScope, string][] = [
+    ['all', 'Tout le CV'], ['headline', 'Titre professionnel'], ['summary', 'Profil'],
+    ...(serverCv.experiences.length ? [['experiences', 'Toutes les expériences'] as [RewriteScope, string]] : []),
+    ...serverCv.experiences.map(e => [`experience:${e.id}`, `Expérience : ${e.role || e.organization}`] as [RewriteScope, string]),
+    ...(serverCv.projects.length ? [['projects', 'Tous les projets'] as [RewriteScope, string]] : []),
+    ...serverCv.projects.map(p => [`project:${p.id}`, `Projet : ${p.name}`] as [RewriteScope, string]),
+    ...(serverCv.skills.length ? [['skills', 'Ordre des compétences'] as [RewriteScope, string]] : []),
+  ]
+  const scope = scopes.some(([v]) => v === rewriteScope) ? rewriteScope : 'all'
   const askRewrite = async () => {
     setRewriting(true)
     setRewriteError('')
     try {
-      const base = forServer(cv)
-      setRewrite({ base, result: await rewriteCv(base, target, choice.options.lang) })
+      const base = serverCv
+      setRewrite({ base, result: await rewriteCv(base, target, choice.options.lang, { scope, instructions: aiExtra }) })
     } catch (e) {
       setRewriteError((e as Error).message)
     } finally {
@@ -311,6 +357,7 @@ export default function LatexStudio() {
     }
   }
 
+  const [pendingImport, setPendingImport] = useState<CvData | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const clearSession = () => {
     SESSION_KEYS.forEach(k => { try { sessionStorage.removeItem(k) } catch { /* idem */ } })
@@ -360,12 +407,20 @@ export default function LatexStudio() {
     if (fromCode && viewport === 'mobile') setMobileTab('apercu')
     if (fromCode && viewport === 'tablet' && tabletView === 'code') setTabletView('both')
   }
+  // Passage cliqué (P8) : bulle « Modifier ce texte » posée sur le PDF ; sur smartphone, le code n'est ouvert qu'à la demande
+  const [pdfPick, setPdfPick] = useState<{ page: number; x: number; y: number; line: number; field: CvField | null } | null>(null)
+  const [editing, setEditing] = useState<CvField | null>(null)
+  // Bulle valable tant que le code ne change pas (une recompilation du même code la conserve)
+  useEffect(() => { setPdfPick(null) }, [code])
   const onPdfClick = (page: number, x: number, y: number) => {
     if (!syncUsable) { setSyncInfo('Aperçu en cours de mise à jour : la correspondance reprend après la compilation.'); return }
-    const line = lineAt(sync!, page, x, y)
-    if (line === null) return
-    setSyncInfo(`Ligne ${line} du code sélectionnée.`)
-    showInCode(line, true)
+    const hit = partAt(sync!, page, x, y)
+    if (!hit) { setPdfPick(null); return }
+    const field = codeSource === 'template' ? fieldAt(cv, hit.text, hit.fraction, code.split('\n')[hit.line - 1] ?? '') : null
+    setPdfPick({ page, x, y, line: hit.line, field })
+    setSyncInfo(`Ligne ${hit.line} du code sélectionnée.${field ? ` Texte modifiable : ${field.label}.` : ''}`)
+    if (viewport === 'mobile') { setCursorLine(hit.line); setTimeout(() => editor.current?.goToLine(hit.line, false), 50) }
+    else showInCode(hit.line, true)
   }
   const goToSection = (line: number) => { showInCode(line, false); showInPdf(line, false) }
   const stepElement = (direction: 1 | -1) => {
@@ -398,6 +453,33 @@ export default function LatexStudio() {
     }
     requestChoice({ ...choice, options: { ...choice.options, photo: currentTemplate.supports.photo && (choice.options.photo || !!photoSource), photoFrames: frames } }, 'options')
   }
+  // ── Offre d'emploi et lisibilité ATS (P8) ──
+  const [offer, setOffer] = useState<string>(() => readSession(OFFER_KEY, ''))
+  useEffect(() => { try { sessionStorage.setItem(OFFER_KEY, JSON.stringify(offer)) } catch { /* idem */ } }, [offer])
+  const [adapting, setAdapting] = useState(false)
+  const [adaptError, setAdaptError] = useState('')
+  const adaptToOffer = async () => {
+    setAdapting(true)
+    setAdaptError('')
+    try {
+      setRewrite({ base: serverCv, result: await rewriteCv(serverCv, target, choice.options.lang, { instructions: aiExtra, offer }), before: 'Avant adaptation à l’offre' })
+    } catch (e) {
+      setAdaptError((e as Error).message)
+    } finally {
+      setAdapting(false)
+    }
+  }
+  const atsResult = useMemo(() => {
+    if (!syncUsable) return null
+    const layout = choice.options.layout
+    return atsChecks({
+      ...pdfText(sync!), cv,
+      twoColumns: choice.options.twoColumns && currentTemplate.supports.twoColumns,
+      photo: choice.options.photo && currentTemplate.supports.photo && !!photoSource,
+      customTitles: [...unusualTitles(layout?.titles ?? {}), ...(layout?.custom ?? []).map(c => c.title.trim()).filter(Boolean)],
+    })
+  }, [syncUsable, sync, cv, choice.options, currentTemplate, photoSource])
+
   const removePhoto = () => {
     compile.compileAfter(300)
     setPhotoSource(null)
@@ -446,24 +528,40 @@ export default function LatexStudio() {
       {sideTab === 'ia' && (
         <AiPanel
           mode={aiMode} setMode={setAiMode} target={target} setTarget={setTarget}
-          info={aiInfo} setInfo={setAiInfo} instruction={aiInstruction} setInstruction={setAiInstruction}
+          info={aiInfo} setInfo={setAiInfo} instruction={aiInstruction} setInstruction={setAiInstruction} extra={aiExtra} setExtra={setAiExtra}
           selectionLines={selection ? selection.text.split('\n').length : 0}
           available={aiAvailable} loading={aiLoading} error={aiError} onGenerate={generate} onImprove={improve}
         />
+      )}
+      {sideTab === 'offre' && (
+        <OfferPanel checks={atsResult} cv={cv} target={target} setTarget={setTarget} offer={offer} setOffer={setOffer}
+          adapting={adapting} adaptAvailable={aiAvailable('latex.rewrite')} error={adaptError} onAdapt={adaptToOffer} onEditData={() => setSideTab('donnees')} />
       )}
       {sideTab === 'import' && (
         <ImportPanel
           ocrAvailable={aiStatuses?.['latex.import.ocr']?.available === true}
           structureAvailable={aiStatuses?.['latex.import.structure']?.available !== false}
-          onImported={data => { updateCv(data); setSideTab('donnees') }}
+          onImported={setPendingImport} instructions={aiExtra} setInstructions={setAiExtra}
         />
       )}
       {sideTab === 'donnees' && (
         <div className="space-y-3">
           <TargetFields target={target} onChange={setTarget} />
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-gray-300" htmlFor="rewrite-scope">Partie à réécrire</label>
+            <select id="rewrite-scope" className="min-h-11 w-full rounded-lg border border-[#30363d] bg-[#0d1117] px-3 text-sm text-gray-100 [color-scheme:dark] sm:min-h-9"
+              value={scope} onChange={e => setRewriteScope(e.target.value as RewriteScope)} disabled={isEmptyCv(cv)}>
+              {scopes.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+            </select>
+          </div>
+          <AiInstructions value={aiExtra} onChange={setAiExtra} examples={'Ex. : ton plus sobre, phrases courtes, mettre en avant la gestion de projet.'} />
           <button type="button" className={`${btn} w-full`} onClick={askRewrite}
             disabled={rewriting || isEmptyCv(cv) || !targetReady(target) || !aiAvailable('latex.rewrite')} aria-busy={rewriting}>
-            {rewriting ? '⏳ Réécriture en cours…' : '✨ Réécriture professionnelle (IA)'}
+            {rewriting ? '⏳ Réécriture en cours…' : scope === 'all' ? '✨ Réécriture professionnelle (IA)' : `✨ Réécrire : ${scopes.find(([v]) => v === scope)?.[1]}`}
+          </button>
+          <button type="button" className={`${btn} w-full`} onClick={() => setComparing(true)} disabled={!cvHistory.length}
+            title={cvHistory.length ? 'Données actuelles comparées à une version précédente (CV importé d’origine, avant une réécriture…)' : 'Aucune version précédente des données'}>
+            ⇄ Comparer avec une version précédente{cvHistory.length ? ` (${cvHistory.length})` : ''}
           </button>
           {!aiAvailable('latex.rewrite') && <p className="text-[11px] text-gray-500">Réécriture par l’IA momentanément indisponible.</p>}
           {rewriteError && <p role="alert" className="text-xs text-red-300">⚠️ {rewriteError}</p>}
@@ -517,7 +615,10 @@ export default function LatexStudio() {
             {[...versions.versions].reverse().map(v => (
               <li key={v.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#21262d] p-2">
                 <span><strong className="text-gray-200">{v.label}</strong><br /><span className="text-gray-500">{new Date(v.at).toLocaleTimeString('fr-FR')}</span></span>
-                <button type="button" className={btn} onClick={() => { compile.compileSoon(); versions.restore(v.id) }} disabled={v.code === code}>Restaurer</button>
+                <span className="flex shrink-0 gap-1">
+                  <button type="button" className={btn} onClick={() => setCodeCompare({ label: v.label, code: v.code })} disabled={v.code === code} aria-label={`Comparer « ${v.label} » au code actuel`}>Comparer</button>
+                  <button type="button" className={btn} onClick={() => { compile.compileSoon(); versions.restore(v.id) }} disabled={v.code === code}>Restaurer</button>
+                </span>
               </li>
             ))}
           </ol>
@@ -584,6 +685,15 @@ export default function LatexStudio() {
       ) : compile.result ? (
         <PdfPreview pdf={compile.result.pdf} url={compile.result.url} dimmed={!!compile.error}
           pageSizes={syncUsable ? sync!.pageSizes : undefined} highlights={highlights} onPageClick={onPdfClick} reveal={reveal}
+          overlay={pdfPick && syncUsable ? { page: pdfPick.page, x: pdfPick.x, y: pdfPick.y, node: (
+            <div className="flex max-w-[18rem] items-center gap-1 rounded-lg border border-indigo-400/60 bg-[#13161d] p-1 text-xs shadow-2xl" role="group" aria-label="Passage sélectionné">
+              {pdfPick.field
+                ? <button type="button" className={btnPrimary} onClick={() => setEditing(pdfPick.field)}>✏️ Modifier ce texte</button>
+                : <span className="px-2 text-[11px] text-gray-300">{codeSource === 'template' ? 'Texte du modèle (titres : « Données › Ordre et affichage des sections »)' : 'Code modifié à la main : modifiez ce passage dans le code.'}</span>}
+              {viewport === 'mobile' && <button type="button" className={btn} onClick={() => { const line = pdfPick.line; setPdfPick(null); showInCode(line, true) }}>&lt;/&gt; Voir le code</button>}
+              <button type="button" className={btnGhost} onClick={() => setPdfPick(null)} aria-label="Fermer la bulle">✕</button>
+            </div>
+          ) } : null}
           navigation={(
             <span className="ml-1 flex shrink-0 items-center gap-0.5">
               <select aria-label="Aller à la section" value="" disabled={!syncUsable || !sections.length}
@@ -705,13 +815,15 @@ export default function LatexStudio() {
         <div className={`fixed inset-x-3 z-[800] mx-auto flex max-w-md items-center gap-2 rounded-lg border border-[#2a313c] bg-[#1b2029] p-2 pl-3 text-xs text-gray-200 shadow-2xl ${viewport === 'mobile' ? 'bottom-20' : 'bottom-4'}`}
           role="status" aria-live="polite">
           <span className="flex-1">✓ {notice}</span>
-          {versions.canUndo && <button type="button" className={btn} onClick={() => { compile.compileSoon(); versions.undo(); setNotice('') }}>↶ Annuler</button>}
+          {dataUndo
+            ? <button type="button" className={btn} onClick={() => { updateCv(dataUndo); setNotice('') }}>↶ Annuler</button>
+            : versions.canUndo && <button type="button" className={btn} onClick={() => { compile.compileSoon(); versions.undo(); setNotice('') }}>↶ Annuler</button>}
           <button type="button" className={btnGhost} onClick={() => setNotice('')} aria-label="Fermer le message">✕</button>
         </div>
       )}
       {rewrite && (
         <RewriteDialog base={rewrite.base} result={rewrite.result} onClose={() => setRewrite(null)}
-          onApply={data => { updateCv(data); setRewrite(null) }} />
+          onApply={data => { rememberCv(rewrite.before ?? 'Avant réécriture IA', cv); updateCv(data); setRewrite(null) }} />
       )}
       {saving && <SaveDialog mode={historyMode} defaultTitle={saveTitle} onSave={saveCv} onClose={() => setSaving(false)} />}
       {myCvs && (
@@ -719,6 +831,40 @@ export default function LatexStudio() {
           onRestore={tex => replaceCode(restorableCode(tex), 'Avant restauration depuis Mes CV', 'CV restauré depuis Mes CV.')} />
       )}
       {proposal && <FixDialog proposal={proposal} attempt={fixAttempts} onAccept={acceptFix} onReject={() => setProposal(null)} />}
+      {pendingImport && (
+        <ImportReview cv={pendingImport} replacing={!isEmptyCv(cv)} onClose={() => setPendingImport(null)}
+          onApply={() => {
+            rememberCv('Avant import', cv)
+            rememberCv('CV importé (original)', pendingImport)
+            updateCv(pendingImport)
+            setPendingImport(null)
+            setSideTab('donnees')
+          }} />
+      )}
+      {pendingGenerate && (
+        <CodeDiffDialog title="Code proposé par l’IA" before={code} after={pendingGenerate.code} warnings={pendingGenerate.warnings}
+          intro="Comparez avec votre code actuel avant de l’appliquer. Le code actuel reste restaurable (« ↶ Précédente », onglet « Versions »)."
+          applyLabel="Appliquer ce code" onClose={() => setPendingGenerate(null)}
+          onApply={() => { replaceCode(pendingGenerate.code, 'Avant génération IA', 'CV généré par l’IA.'); setPendingGenerate(null) }} />
+      )}
+      {comparing && (
+        <CompareDataDialog snapshots={cvHistory} current={cv} onClose={() => setComparing(false)}
+          onRestore={snap => { rememberCv('Avant rétablissement', cv); updateCv(snap.cv); setComparing(false); setNotice(`Données rétablies : « ${snap.label} ».`) }} />
+      )}
+      {editing && (
+        <EditFieldDialog target={editing} onClose={() => setEditing(null)}
+          onSave={value => {
+            const before = cv
+            updateCv(setField(cv, editing.path, value))
+            setEditing(null)
+            setPdfPick(null)
+            setNotice(`« ${editing.label} » modifié : code et aperçu mis à jour.`)
+            setDataUndo(before)
+          }} />
+      )}
+      {codeCompare && (
+        <CodeDiffDialog title={`Comparer « ${codeCompare.label} » au code actuel`} before={codeCompare.code} after={code} onClose={() => setCodeCompare(null)} />
+      )}
       {pendingSwitch && (
         <Dialog title="Remplacer le code actuel ?" onClose={() => setPendingSwitch(null)}
           footer={<>
@@ -746,6 +892,7 @@ const SIDE_TABS: { id: SideTab; label: string }[] = [
   { id: 'import', label: '📥 Importer' },
   { id: 'donnees', label: '🧾 Données' },
   { id: 'ia', label: '🤖 IA' },
+  { id: 'offre', label: '🎯 Offre/ATS' },
   { id: 'photo', label: '📷 Photo' },
   { id: 'versions', label: '🕘 Versions' },
 ]

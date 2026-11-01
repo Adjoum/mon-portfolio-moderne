@@ -10,7 +10,7 @@ import { btn, btnGhost } from './ui'
 
 const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
-export function PdfPreview({ pdf, url, dimmed, onDownload, pageSizes, highlights = [], onPageClick, reveal, navigation }: {
+export function PdfPreview({ pdf, url, dimmed, onDownload, pageSizes, highlights = [], onPageClick, reveal, navigation, overlay }: {
   pdf: Blob
   url: string
   dimmed: boolean
@@ -26,6 +26,8 @@ export function PdfPreview({ pdf, url, dimmed, onDownload, pageSizes, highlights
   reveal?: { rect: SyncRect; nonce: number } | null
   /** Commandes de navigation ajoutées à la barre de l'aperçu */
   navigation?: ReactNode
+  /** Bulle posée sur une page (passage cliqué), en points depuis le haut de la page */
+  overlay?: { page: number; x: number; y: number; node: ReactNode } | null
 }) {
   const box = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
@@ -126,8 +128,11 @@ export function PdfPreview({ pdf, url, dimmed, onDownload, pageSizes, highlights
         {onDownload && <button type="button" className={`${btn} shrink-0`} onClick={onDownload}>⬇ PDF</button>}
       </div>
       <div ref={box} data-preview aria-busy={painting} className={`relative min-h-0 flex-1 overflow-auto bg-[#1c2129] p-3 transition-opacity ${dimmed ? 'opacity-50' : ''}`}>
+        {/* Indicateur superposé, sans hauteur : les pages ne bougent pas pendant leur mise à jour (un clic reste à sa place) */}
         {painting && pages.length > 0 && (
-          <span className="sticky top-0 z-10 float-right rounded bg-[#13161d]/90 px-2 py-1 text-[11px] text-amber-300" role="status">⏳ Mise à jour de l’aperçu…</span>
+          <div className="pointer-events-none sticky top-0 z-20 flex h-0 justify-end">
+            <span className="rounded bg-[#13161d]/90 px-2 py-1 text-[11px] text-amber-300" role="status">⏳ Mise à jour de l’aperçu…</span>
+          </div>
         )}
         {failed && <p className="text-sm text-amber-300">Aperçu impossible dans ce navigateur : utilisez « Ouvrir » ou « ⬇ PDF ».</p>}
         <div className="mx-auto flex flex-col items-center gap-3" style={{ width: `${zoom * 100}%` }}>
@@ -143,6 +148,12 @@ export function PdfPreview({ pdf, url, dimmed, onDownload, pageSizes, highlights
                     top: `${(h.top / pageSizes[i].height) * 100}%`, height: `${((h.bottom - h.top) / pageSizes[i].height) * 100}%`,
                   }} />
               ))}
+              {overlay && overlay.page === i + 1 && pageSizes?.[i] && (
+                <div className="absolute z-10 -translate-x-1/2 pt-2" onClick={e => e.stopPropagation()}
+                  style={{ left: `${Math.min(80, Math.max(20, (overlay.x / pageSizes[i].width) * 100))}%`, top: `${(overlay.y / pageSizes[i].height) * 100}%` }}>
+                  {overlay.node}
+                </div>
+              )}
             </div>
           ))}
         </div>

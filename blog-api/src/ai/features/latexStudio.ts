@@ -8,7 +8,10 @@
 //     la compilation reste soumise à la politique de latex-runner ;
 //   - latex.import.structure : données normalisées (schéma fermé, longueurs bornées) ;
 //   - latex.rewrite : faits (employeurs, diplômes, dates, établissements) repris de l'entrée ;
-//     tout texte reformulé contenant un chiffre absent du CV est écarté et signalé.
+//     tout texte reformulé contenant un chiffre, un nom propre ou un sigle absent du CV est écarté
+//     et signalé ; seule la portée demandée peut changer (une section, une expérience, un projet) ;
+//   - préférences de l'utilisateur (P7) : texte borné, nettoyé, placé dans le message entre balises,
+//     jamais dans les règles ; elles ne lèvent aucune des garanties ci-dessus.
 
 import { ProviderError } from '../providers/types';
 import type { FeatureDefinition, BuiltRequest } from './registry';
@@ -19,7 +22,7 @@ import {
   LATEX_IMPORT_STRUCTURE_SYSTEM, LATEX_IMPORT_OCR_SYSTEM, LATEX_IMPORT_OCR_USER, LATEX_REWRITE_SYSTEM,
   latexGenerateUser, latexImproveUser, latexFixUser, latexImportStructureUser, latexRewriteUser,
   type LatexTarget,
-} from './prompts/latex.v2';
+} from './prompts/latex.v3';
 import { getRunnerPolicy } from '../../latex/policy';
 
 const SECTION = 'Éditeur LaTeX';
@@ -40,6 +43,31 @@ function parseObject(raw: string, feature: string): Record<string, unknown> {
     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
   } catch { /* réponse non JSON */ }
   throw new ProviderError('invalid_response', undefined, feature);
+}
+
+/** Préférences facultatives de l'utilisateur (P7) : 600 caractères, sans caractères de contrôle ni balises */
+export const MAX_INSTRUCTIONS_CHARS = 600;
+export function parseInstructions(o: Record<string, unknown>): string {
+  return text(o, 'instructions', { max: MAX_INSTRUCTIONS_CHARS })
+    // Caractères de contrôle (sauf le retour à la ligne) remplacés par une espace
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, ' ')
+    // Les balises qui encadrent les préférences ne peuvent pas être refermées ou rouvertes par le texte
+    .replace(/<\s*\/?\s*preferences\s*>/gi, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+}
+
+/** Offre d'emploi (P8) : une donnée, bornée et nettoyée ; ses termes ne deviennent jamais des mots « connus » */
+export const MAX_OFFER_CHARS = 8000;
+export function parseOffer(o: Record<string, unknown>): string {
+  return text(o, 'offer', { max: MAX_OFFER_CHARS })
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, ' ')
+    .replace(/<\s*\/?\s*(offre|preferences)\s*>/gi, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /** Organisme visé obligatoire, poste facultatif (rédaction ciblée) */
@@ -104,8 +132,59 @@ export function normalizeFixOutput(raw: string, input: FixInput): string {
 }
 
 // ── latex.rewrite ─────────────────────────────────────────────
-export interface RewriteInput { cv: CvData; target: LatexTarget; lang: 'fr' | 'en' }
-export interface RewriteFlag { path: string; reason: 'number' | 'unknown_skill' }
+export type RewriteSection = 'headline' | 'summary' | 'experiences' | 'projects' | 'skills'
+/** Portée : tout le CV, une section, ou un seul élément (« experience:e2 », « project:p1 ») */
+export type RewriteScope = 'all' | RewriteSection | `experience:${string}` | `project:${string}`
+export interface RewriteInput { cv: CvData; target: LatexTarget; lang: 'fr' | 'en'; scope: RewriteScope; instructions: string; offer?: string }
+export interface RewriteFlag { path: string; reason: 'number' | 'unknown_skill' | 'unknown_term' }
+
+const SECTIONS: RewriteSection[] = ['headline', 'summary', 'experiences', 'projects', 'skills'];
+export function parseScope(raw: unknown, cv: CvData): RewriteScope {
+  if (raw === undefined || raw === null || raw === '' || raw === 'all') return 'all';
+  if (typeof raw !== 'string') throw new InputError('scope', 'texte attendu');
+  if ((SECTIONS as string[]).includes(raw)) return raw as RewriteSection;
+  const one = /^(experience|project):([a-z]\d{1,2})$/.exec(raw);
+  const list = one?.[1] === 'experience' ? cv.experiences : one ? cv.projects : [];
+  if (one && list.some(x => x.id === one[2])) return raw as RewriteScope;
+  throw new InputError('scope', 'portée inconnue');
+}
+
+/** Portée décrite au modèle */
+export function scopeLabel(scope: RewriteScope, cv: CvData): string {
+  if (scope === 'all') return 'tout le CV';
+  const names: Record<RewriteSection, string> = { headline: 'le titre professionnel (headline) seulement', summary: 'le résumé (summary) seulement', experiences: 'les puces des expériences seulement', projects: 'les descriptions des projets seulement', skills: 'l’ordre des compétences seulement' };
+  if ((SECTIONS as string[]).includes(scope)) return names[scope as RewriteSection];
+  const [kind, id] = scope.split(':');
+  return kind === 'experience'
+    ? `les puces de l’expérience ${id} seulement (${cv.experiences.find(e => e.id === id)?.role ?? ''})`
+    : `la description du projet ${id} seulement (${cv.projects.find(p => p.id === id)?.name ?? ''})`;
+}
+
+const inScope = (scope: RewriteScope, section: RewriteSection, id?: string) =>
+  scope === 'all' || scope === section
+  || (id !== undefined && ((section === 'experiences' && scope === `experience:${id}`) || (section === 'projects' && scope === `project:${id}`)));
+
+const fold = (value: string) => value.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
+
+/**
+ * Noms propres et sigles d'un texte reformulé absents du CV d'origine (« Google », « AWS ») :
+ * un mot à majuscule hors début de phrase, ou un sigle, que le CV ne contient nulle part.
+ */
+export function unknownTerms(value: string, known: Set<string>): string[] {
+  const unknown: string[] = [];
+  const re = /[\p{L}][\p{L}\p{N}'’+#.-]*/gu;
+  for (const m of value.matchAll(re)) {
+    const word = m[0].replace(/[.'’-]+$/, '');
+    if (word.length < 2) continue;
+    const before = value.slice(0, m.index).trimEnd();
+    const sentenceStart = before === '' || /[.!?:;•–—(\n]$/.test(before);
+    const acronym = /^[\p{Lu}\d]{2,}$/u.test(word) && /\p{Lu}.*\p{Lu}/u.test(word);
+    const capitalized = /^\p{Lu}/u.test(word);
+    if (!(acronym || (capitalized && !sentenceStart))) continue;
+    if (!known.has(fold(word))) unknown.push(word);
+  }
+  return unknown;
+}
 
 /**
  * Réponse du modèle fusionnée avec le CV d'origine : seuls les champs rédactionnels peuvent
@@ -115,7 +194,10 @@ export interface RewriteFlag { path: string; reason: 'number' | 'unknown_skill' 
 export function normalizeRewriteOutput(raw: string, input: RewriteInput): string {
   const parsed = parseObject(raw, 'latex.rewrite');
   const source = input.cv;
+  const scope = input.scope ?? 'all';
   const known = new Set(numbersIn(JSON.stringify(source)));
+  // Mots connus : tout le CV d'origine, et l'intitulé du poste visé (fourni par l'utilisateur)
+  const knownWords = new Set(fold(`${JSON.stringify(source)} ${input.target?.role ?? ''}`).match(/[\p{L}\p{N}+#.-]+/gu)?.flatMap(w => [w, w.replace(/[.-]+$/, '')]) ?? []);
   const flags: RewriteFlag[] = [];
   const cv: CvData = JSON.parse(JSON.stringify(source));
 
@@ -127,11 +209,15 @@ export function normalizeRewriteOutput(raw: string, input: RewriteInput): string
       flags.push({ path, reason: 'number' });
       return null;
     }
+    if (unknownTerms(cleaned, knownWords).length) {
+      flags.push({ path, reason: 'unknown_term' });
+      return null;
+    }
     return cleaned;
   };
 
-  cv.identity.headline = accept(parsed.headline, 200, 'identity.headline') ?? cv.identity.headline;
-  cv.summary = accept(parsed.summary, 2000, 'summary') ?? cv.summary;
+  if (inScope(scope, 'headline')) cv.identity.headline = accept(parsed.headline, 200, 'identity.headline') ?? cv.identity.headline;
+  if (inScope(scope, 'summary')) cv.summary = accept(parsed.summary, 2000, 'summary') ?? cv.summary;
 
   const byId = <T extends { id?: unknown }>(value: unknown): Map<string, Record<string, unknown>> =>
     new Map((Array.isArray(value) ? value : [])
@@ -140,6 +226,7 @@ export function normalizeRewriteOutput(raw: string, input: RewriteInput): string
 
   const experiences = byId(parsed.experiences);
   for (const exp of cv.experiences) {
+    if (!inScope(scope, 'experiences', exp.id)) continue;
     const proposal = experiences.get(exp.id);
     if (!proposal || !Array.isArray(proposal.bullets)) continue;
     const bullets = proposal.bullets.slice(0, Math.max(exp.bullets.length, 1) + 1)
@@ -150,6 +237,7 @@ export function normalizeRewriteOutput(raw: string, input: RewriteInput): string
 
   const projects = byId(parsed.projects);
   for (const project of cv.projects) {
+    if (!inScope(scope, 'projects', project.id)) continue;
     const description = accept(projects.get(project.id)?.description, 600, `projects.${project.id}.description`);
     if (description) project.description = description;
   }
@@ -157,6 +245,7 @@ export function normalizeRewriteOutput(raw: string, input: RewriteInput): string
   // Compétences : réordonnées seulement, jamais ajoutées
   const skills = byId(parsed.skills);
   for (const group of cv.skills) {
+    if (!inScope(scope, 'skills')) continue;
     const proposed = skills.get(group.id)?.items;
     if (!Array.isArray(proposed)) continue;
     const original = new Map(group.items.map(item => [item.toLowerCase(), item]));
@@ -194,17 +283,18 @@ export const LATEX_FEATURES = {
     quotas: { perSubjectPerDay: 3, globalPerDay: 100, concurrency: 2 },
     rateLimitPerMinute: 6,
     parseInput(raw) {
-      const o = strictObject(raw, 'input', ['info', 'template', 'existing', 'target']);
+      const o = strictObject(raw, 'input', ['info', 'template', 'existing', 'target', 'instructions']);
       return {
-        info:     text(o, 'info', { max: 8000, required: true }),
-        template: text(o, 'template', { max: 20_000 }),
-        existing: text(o, 'existing', { max: 30_000 }),
-        target:   parseTarget(o.target),
+        info:         text(o, 'info', { max: 8000, required: true }),
+        template:     text(o, 'template', { max: 20_000 }),
+        existing:     text(o, 'existing', { max: 30_000 }),
+        target:       parseTarget(o.target),
+        instructions: parseInstructions(o),
       };
     },
-    buildRequest: ({ info, template, existing, target }: { info: string; template: string; existing: string; target: LatexTarget }) => ({
+    buildRequest: ({ info, template, existing, target, instructions }: { info: string; template: string; existing: string; target: LatexTarget; instructions: string }) => ({
       system: LATEX_GENERATE_SYSTEM,
-      messages: userText(latexGenerateUser(info, template, existing, target)),
+      messages: userText(latexGenerateUser(info, template, existing, target, instructions)),
     }),
   },
 
@@ -271,15 +361,16 @@ export const LATEX_FEATURES = {
     quotas: { perSubjectPerDay: 5, globalPerDay: 150, concurrency: 2 },
     rateLimitPerMinute: 4,
     parseInput(raw) {
-      const o = strictObject(raw, 'input', ['text', 'lang']);
+      const o = strictObject(raw, 'input', ['text', 'lang', 'instructions']);
       return {
         text: text(o, 'text', { max: 20_000, required: true }),
         lang: oneOf(o, 'lang', ['fr', 'en'] as const, 'fr'),
+        instructions: parseInstructions(o),
       };
     },
-    buildRequest: ({ text: value, lang }: { text: string; lang: 'fr' | 'en' }) => ({
+    buildRequest: ({ text: value, lang, instructions }: { text: string; lang: 'fr' | 'en'; instructions: string }) => ({
       system: LATEX_IMPORT_STRUCTURE_SYSTEM,
-      messages: userText(latexImportStructureUser(value, lang)),
+      messages: userText(latexImportStructureUser(value, lang, instructions)),
     }),
     parseOutput: (content: string) => JSON.stringify(normalizeCvData(parseObject(content, 'latex.import.structure'), 'lenient')),
   },
@@ -325,14 +416,17 @@ export const LATEX_FEATURES = {
     quotas: { perSubjectPerDay: 5, globalPerDay: 150, concurrency: 2 },
     rateLimitPerMinute: 4,
     parseInput(raw): RewriteInput {
-      const o = strictObject(raw, 'input', ['cv', 'target', 'lang']);
+      const o = strictObject(raw, 'input', ['cv', 'target', 'lang', 'scope', 'instructions', 'offer']);
       const cv = normalizeCvData(o.cv, 'strict');
       if (!cv.identity.fullName && !cv.experiences.length && !cv.summary) throw new InputError('cv', 'CV vide');
-      return { cv, target: parseTarget(o.target), lang: oneOf(o, 'lang', ['fr', 'en'] as const, 'fr') };
+      return {
+        cv, target: parseTarget(o.target), lang: oneOf(o, 'lang', ['fr', 'en'] as const, 'fr'),
+        scope: parseScope(o.scope, cv), instructions: parseInstructions(o), offer: parseOffer(o),
+      };
     },
-    buildRequest: ({ cv, target, lang }: RewriteInput) => ({
+    buildRequest: ({ cv, target, lang, scope, instructions, offer }: RewriteInput) => ({
       system: LATEX_REWRITE_SYSTEM,
-      messages: userText(latexRewriteUser(JSON.stringify(cv), target, lang)),
+      messages: userText(latexRewriteUser(JSON.stringify(cv), target, lang, scopeLabel(scope, cv), instructions, offer)),
     }),
     parseOutput: (content: string, input: RewriteInput) => normalizeRewriteOutput(content, input),
   },

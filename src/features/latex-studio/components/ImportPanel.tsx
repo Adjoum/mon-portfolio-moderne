@@ -3,15 +3,20 @@
 import { useId, useRef, useState } from 'react'
 import { ACCEPT, MAX_IMPORT_BYTES, classify, extractText, imagePages, readImages, structureText, ImportFailure } from '../lib/importCv'
 import type { CvData } from '../lib/cvData'
+import { AiInstructions } from './AiInstructions'
 import { btn, btnPrimary, field, label } from './ui'
 
 type Step = { state: 'idle' } | { state: 'busy'; message: string } | { state: 'text'; text: string; truncated: boolean } | { state: 'error'; message: string }
 
-export function ImportPanel({ ocrAvailable, structureAvailable, onImported }: {
+export function ImportPanel({ ocrAvailable, structureAvailable, onImported, instructions, setInstructions }: {
   /** latex.import.ocr disponible (modèle à capacité visuelle validé) : certitude du serveur */
   ocrAvailable: boolean
   structureAvailable: boolean
+  /** Données extraites, présentées pour vérification avant d'être utilisées */
   onImported: (cv: CvData) => void
+  /** Instructions supplémentaires pour l'IA (P7), communes au studio */
+  instructions: string
+  setInstructions: (value: string) => void
 }) {
   const id = useId()
   const [lang, setLang] = useState<'fr' | 'en'>('fr')
@@ -43,7 +48,7 @@ export function ImportPanel({ ocrAvailable, structureAvailable, onImported }: {
       if (!text.trim()) throw new ImportFailure('IMPORT_EMPTY', 'Aucun texte n’a été trouvé dans ce fichier.')
       if (!structureAvailable) return setStep({ state: 'text', text, truncated })
       setStep({ state: 'busy', message: 'Structuration des informations par l’IA…' })
-      onImported(await structureText(text, lang))
+      onImported(await structureText(text, lang, instructions))
       setStep({ state: 'idle' })
     } catch (e) {
       setStep({ state: 'error', message: (e as Error).message || 'L’import a échoué.' })
@@ -63,6 +68,7 @@ export function ImportPanel({ ocrAvailable, structureAvailable, onImported }: {
           <option value="fr">Français</option><option value="en">Anglais</option>
         </select>
       </div>
+      {structureAvailable && <AiInstructions value={instructions} onChange={setInstructions} examples={'Ex. : la colonne de gauche contient les compétences ; les dates sont au format mois/année.'} />}
       <label htmlFor={`${id}-file`} className={`${btnPrimary} w-full cursor-pointer ${busy ? 'pointer-events-none opacity-50' : ''}`}>📥 Importer un CV</label>
       <input id={`${id}-file`} ref={input} type="file" accept={ACCEPT} className="sr-only" disabled={busy}
         onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void run(f) }} />

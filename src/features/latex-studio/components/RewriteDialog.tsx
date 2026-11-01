@@ -23,6 +23,7 @@ export function RewriteDialog({ base, result, onApply, onClose }: {
   })
   const rejectedNumbers = result.flags.filter(f => f.reason === 'number').length
   const rejectedSkills = result.flags.filter(f => f.reason === 'unknown_skill').length
+  const rejectedTerms = result.flags.filter(f => f.reason === 'unknown_term').length
 
   return (
     <Dialog
@@ -38,10 +39,11 @@ export function RewriteDialog({ base, result, onApply, onClose }: {
     >
       <div className="space-y-3 text-sm">
         <p className="text-xs text-gray-400">Seuls les textes changent. Employeurs, diplômes, établissements et dates restent ceux de vos données.</p>
-        {(rejectedNumbers > 0 || rejectedSkills > 0) && (
+        {(rejectedNumbers > 0 || rejectedSkills > 0 || rejectedTerms > 0) && (
           <p role="note" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-200">
             {rejectedNumbers > 0 && `${rejectedNumbers} proposition(s) écartée(s) : elles ajoutaient un chiffre absent de votre CV. `}
-            {rejectedSkills > 0 && `${rejectedSkills} compétence(s) que vous n’aviez pas déclarée(s) n’ont pas été ajoutées.`}
+            {rejectedSkills > 0 && `${rejectedSkills} compétence(s) que vous n’aviez pas déclarée(s) n’ont pas été ajoutées. `}
+            {rejectedTerms > 0 && `${rejectedTerms} proposition(s) écartée(s) : elles citaient un nom ou un sigle absent de votre CV.`}
           </p>
         )}
         {!changes.length && <p className="text-gray-300">Aucune modification proposée.</p>}

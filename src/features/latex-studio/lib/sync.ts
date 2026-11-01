@@ -289,3 +289,24 @@ export function rectsForLine(map: SyncMap, line: number): SyncRect[] {
 
 /** Lignes du code qui produisent du texte dans le PDF */
 export const syncedLines = (map: SyncMap) => new Set(map.parts.map(p => p.line))
+
+/** Passage sous un point du PDF : ligne du code, texte de la zone et position du clic dans la zone (0 à 1) */
+export function partAt(map: SyncMap, page: number, x: number, y: number): { line: number; text: string; fraction: number } | null {
+  const line = lineAt(map, page, x, y)
+  if (line === null) return null
+  let best: { seg: Segment; d: number } | null = null
+  for (const part of map.parts) {
+    if (part.line !== line) continue
+    const s = map.segments[part.seg]
+    if (s.page !== page) continue
+    const dy = y < s.top ? s.top - y : y > s.bottom ? y - s.bottom : 0
+    const dx = x < s.x0 ? s.x0 - x : x > s.x1 ? x - s.x1 : 0
+    if (!best || dy * 3 + dx < best.d) best = { seg: s, d: dy * 3 + dx }
+  }
+  if (!best) return null
+  const { seg } = best
+  return { line, text: seg.text, fraction: seg.x1 > seg.x0 ? Math.max(0, Math.min(1, (x - seg.x0) / (seg.x1 - seg.x0))) : 0.5 }
+}
+
+/** Texte et nombre de pages lus dans le PDF (contrôles de lisibilité) */
+export const pdfText = (map: SyncMap) => ({ text: map.segments.map(s => s.text).join(' '), pageCount: map.pageSizes.length })
