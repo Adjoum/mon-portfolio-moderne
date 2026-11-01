@@ -15,6 +15,40 @@ export type KeyStatus = 'not_configured' | 'valid' | 'invalid'
 export type ModelStatus = 'available' | 'unverified' | 'incompatible' | 'deprecated' | 'disabled'
 export type ModelOrigin = 'official' | 'manual' | 'seed'
 export type Blocker = 'no_model' | 'key_missing' | 'provider_disabled' | 'model_unavailable' | 'not_validated' | 'unpriced'
+/** Issue d'une sonde : config_error ne dit rien du modèle (requête ou configuration en cause) */
+export type CompatStatus = 'compatible' | 'incompatible' | 'config_error'
+export type Capability = 'text' | 'json' | 'vision'
+
+export interface CompatDetails {
+  param?: string
+  rejectedParams?: string[]
+  adjustments?: string[]
+  matrixVersion?: string
+  vision?: { expected: string; received: string }
+}
+
+export interface Compat {
+  status: CompatStatus
+  capabilities: string[]
+  testedAt: string
+  code: string | null
+  latencyMs?: number | null
+  failedCapability?: Capability | null
+  details?: CompatDetails
+}
+
+/** Profil du modèle selon la matrice de capacités (documentation officielle) : un indice, jamais une preuve */
+export interface ModelProfile {
+  matrixVersion: string
+  rule: string | null
+  reasoning: boolean | null
+  visionDocumented: boolean | null
+  endpoint: 'chat' | 'responses' | null
+  rejectedParams: string[]
+  samplingOnlyWithoutReasoning: boolean
+  reasoningEfforts: string[] | null
+  source: string | null
+}
 
 export interface ProviderState {
   id: ProviderId
@@ -60,7 +94,7 @@ export interface FeatureState {
   version: number
   updatedAt: string
   blocker: Blocker | null
-  compat: { status: 'compatible' | 'incompatible'; capabilities: string[]; testedAt: string; code: string | null; latencyMs: number | null } | null
+  compat: Compat | null
   quotas: FeatureQuotas
   usage: { dayRequests: number; dayCostMicroUsd: number; monthCostMicroUsd: number }
 }
@@ -94,10 +128,12 @@ export interface CatalogModel {
   lastVerifiedAt: string | null
   pricing: { inputPerMTok: number; outputPerMTok: number; source: 'seed' | 'catalog' | 'admin' } | null
   usedBy: { featureId: string; enabled: boolean }[]
-  compat: { featureId: string; status: 'compatible' | 'incompatible'; testedAt: string }[]
+  compat: (Partial<Compat> & { featureId: string; status: CompatStatus; testedAt: string })[]
+  profile?: ModelProfile
 }
 
 export interface Catalog {
+  matrixVersion?: string
   models: CatalogModel[]
   excluded: { modelId: string; origin: ModelOrigin; excludedAt: string }[]
 }
@@ -126,12 +162,46 @@ export interface AuditEntry {
 }
 
 export interface ProbeResult {
-  status: 'compatible' | 'incompatible'
+  status: CompatStatus
   capabilities: string[]
   required: string[]
+  failedCapability: Capability | null
   code: string | null
+  /** Paramètre refusé par le fournisseur (nom seulement) */
+  param: string | null
+  /** Paramètres de l'affectation que ce modèle refuse */
+  rejectedParams: string[]
+  /** Corrections de forme appliquées automatiquement */
+  adjustments: string[]
+  vision: { expected: string; received: string } | null
   latencyMs: number
   estimatedCostMicroUsd: number
+  /** false : aucune requête facturée, rien d'enregistré (matrice, modèle absent du catalogue) */
+  recorded: boolean
+  message: string | null
+  matrixVersion: string
+  estimate: { requests: number; maxRequests: number; maxCostMicroUsd: number | null }
+}
+
+export interface TestEstimate {
+  requests: number
+  maxRequests: number
+  inputTokens: number
+  outputTokens: number
+  maxCostMicroUsd: number | null
+  priced: boolean
+  steps: Capability[]
+  /** null : budget invérifiable */
+  budgetOk: boolean | null
+  profile: ModelProfile
+}
+
+export interface ModelCheck {
+  status: 'available' | 'not_listed' | 'key_rejected' | 'unknown'
+  message: string
+  catalogVision?: boolean | null
+  profile: ModelProfile
+  latencyMs: number
 }
 
 /** Erreur renvoyée par le serveur : message déjà rédigé pour l'administrateur */
@@ -198,8 +268,13 @@ export const aiAdmin = {
     providerId: ProviderId; modelId: string | null; params: Record<string, number | string>
     maxOutputTokens: number; timeoutMs: number; enabled: boolean; version: number
   }) => request<{ version: number }>('PUT', `${feature(id)}/assignment`, assignment),
-  testFeature: (id: string, providerId: ProviderId, modelId: string, params: Record<string, number | string>) =>
-    request<ProbeResult>('POST', `${feature(id)}/test`, { providerId, modelId, params, confirmBilling: true }),
+  testFeature: (id: string, providerId: ProviderId, modelId: string, params: Record<string, number | string>, allowUnlisted = false) =>
+    request<ProbeResult>('POST', `${feature(id)}/test`, { providerId, modelId, params, confirmBilling: true, ...(allowUnlisted ? { allowUnlisted } : {}) }),
+  /** Gratuit : aucune génération */
+  testEstimate: (id: string, providerId: ProviderId, modelId: string) =>
+    request<TestEstimate>('GET', `${feature(id)}/test-estimate?providerId=${encodeURIComponent(providerId)}&modelId=${encodeURIComponent(modelId)}`),
+  /** Gratuit : présence du modèle dans le catalogue du compte */
+  checkModel: (id: ProviderId, modelId: string) => request<ModelCheck>('POST', `${provider(id)}/models/check`, { modelId }),
   saveQuotas: (id: string, quotas: {
     perSubjectPerDay: number; globalPerDay: number; perMinute: number; concurrency: number
     dailyBudgetUsd: number | null; monthlyBudgetUsd: number | null; version: number

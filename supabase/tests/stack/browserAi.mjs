@@ -84,7 +84,7 @@ export async function runAiDashboardScenarios(admin, ctx) {
     sqlValue("select enabled from public.ai_feature_assignments where feature_id = 'latex.improve';") === 'f');
 
   const geminiBefore = fakes.gemini.calls.length;
-  await admin.getByLabel(/Je comprends que le test envoie/).check();
+  await admin.getByLabel(/J’autorise ce test réel|Je comprends que le test envoie/).check();
   await admin.getByRole('button', { name: 'Tester la configuration' }).click();
   await seen('Test réussi');
   check('navigateur : test de compatibilité exécuté par le serveur', fakes.gemini.calls.length > geminiBefore);
@@ -95,11 +95,71 @@ export async function runAiDashboardScenarios(admin, ctx) {
 
   const run = await fetch(`${API}/api/ai/run/latex.improve`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': '198.51.100.200' },
-    body: JSON.stringify({ input: { selection: '\\section{Profil}', instruction: 'Plus concis' } }),
+    body: JSON.stringify({ input: { selection: '\\section{Profil}', instruction: 'Plus concis', target: { organization: 'Organisme fictif du banc' } } }),
   });
   check('navigateur : la requête suivante utilise la nouvelle affectation (Gemini, clé saisie)',
     run.status === 200 && fakes.gemini.calls.at(-1).url.includes('gemini-3.8-flash') && fakes.gemini.calls.at(-1).headers['x-goog-api-key'] === GEMINI_KEY,
     `HTTP ${run.status}`);
+
+  // ── P1 : sonde vision, états de capacité, jamais de succès vert pour un échec ──
+  await tab('Assistants et affectations');
+  const ocrCard = featureCard('Import de CV — lecture d’image (OCR)');
+  await ocrCard.getByRole('button', { name: 'Configurer' }).click();
+  await admin.locator('#assign-cv-import-ocr-provider').selectOption('openai');
+  await admin.locator('#assign-cv-import-ocr-model option[value="gpt-6-astra"]').waitFor({ state: 'attached', timeout: 15000 });
+  await admin.locator('#assign-cv-import-ocr-model').selectOption('gpt-6-astra');
+  const estimate = ocrCard.locator('[data-testid="probe-estimate"]');
+  await estimate.getByText(/2 requête\(s\)/).waitFor({ timeout: 15000 });
+  check('navigateur P1 : estimation gratuite affichée avant autorisation (texte, image, 2 requêtes)', /texte, image/.test(await estimate.innerText()), await estimate.innerText());
+  await ocrCard.locator('[data-profile]').waitFor({ timeout: 10000 });
+  check('navigateur P1 : indices de la matrice (vision documentée, à confirmer)', /documentation officielle — à confirmer/.test(await ocrCard.locator('[data-profile]').innerText()));
+
+  const previousBehavior = fakes.openai.behavior;
+  const notice = () => ocrCard.locator('[data-notice]').first();
+  const openaiBefore = fakes.openai.calls.length;
+  await ocrCard.getByRole('button', { name: 'Vérifier la disponibilité' }).click();
+  await ocrCard.getByText('Modèle présent dans le catalogue de ce compte').waitFor({ timeout: 15000 });
+  check('navigateur P1 : disponibilité vérifiée gratuitement, sans génération', fakes.openai.calls.length === openaiBefore && (await notice().getAttribute('data-notice')) === 'success');
+
+  const authorize = () => ocrCard.getByLabel(/J’autorise ce test réel|Je comprends que le test envoie/).check();
+  const runProbe = async expected => {
+    await authorize();
+    await ocrCard.getByRole('button', { name: 'Tester la configuration' }).click();
+    await ocrCard.locator('[data-notice]').getByText(expected).first().waitFor({ timeout: 30000 });
+    return { type: await notice().getAttribute('data-notice'), text: await notice().innerText() };
+  };
+
+  fakes.openai.behavior = { kind: 'text-only' };
+  const textOnly = await runProbe('Texte uniquement');
+  await admin.screenshot({ path: path.join(shots, 'p1-texte-uniquement.png'), fullPage: false }).catch(() => {});
+  check('navigateur P1 : modèle sans vision → « Texte uniquement », message rouge (alerte), jamais vert',
+    textOnly.type === 'error' && (await ocrCard.locator('[data-notice="success"]').count()) === 0, textOnly.text.slice(0, 120));
+  check('navigateur P1 : badge « Texte uniquement » dans l’éditeur', await ocrCard.getByText(/^Texte uniquement \(test du/).first().isVisible());
+
+  fakes.openai.queue = [{ kind: 'ok', content: 'OK' }, { kind: 'error', status: 400, body: { error: { message: 'The image data you provided does not represent a valid image.', type: 'invalid_request_error', param: null, code: 'invalid_image_format' } } }];
+  const malformed = await runProbe('Erreur de configuration');
+  await admin.screenshot({ path: path.join(shots, 'p1-erreur-configuration.png'), fullPage: false }).catch(() => {});
+  check('navigateur P1 : requête refusée (bad_request / image) → « Erreur de configuration », avertissement orange, jamais vert',
+    malformed.type === 'warning' && /Rien n’est conclu sur le modèle/.test(malformed.text), malformed.text.slice(0, 120));
+
+  fakes.openai.behavior = { kind: 'vision' };
+  const seenOk = await runProbe('Test réussi');
+  await admin.screenshot({ path: path.join(shots, 'p1-vision-confirmee.png'), fullPage: false }).catch(() => {});
+  const code = /Image lue : « ([A-Z0-9]{3}) » \(attendu ([A-Z0-9]{3})\)/.exec(seenOk.text);
+  check('navigateur P1 : modèle multimodal → image réellement lue, code identique à l’attendu', seenOk.type === 'success' && !!code && code[1] === code[2], seenOk.text.slice(0, 120));
+  check('navigateur P1 : badge « Vision confirmée » après rechargement de l’état serveur', await ocrCard.getByText(/^Vision confirmée \(test du/).first().isVisible());
+  check('navigateur P1 : résultat enregistré en base (compatible, texte + image, matrice versionnée)',
+    sqlValue("select status || '|' || array_to_string(validated_capabilities, ',') || '|' || (details ? 'matrixVersion') from public.ai_model_feature_compat where feature_id = 'cv.import.ocr' and provider_id = 'openai' and model_id = 'gpt-6-astra';") === 'compatible|text,vision|true');
+  fakes.openai.behavior = previousBehavior;
+  fakes.openai.queue = [];
+  await ocrCard.getByRole('button', { name: 'Fermer', exact: true }).click();
+
+  await tab('Catalogue des modèles');
+  await admin.getByRole('tab', { name: 'OpenAI' }).click();
+  const astra = admin.locator('[data-model="gpt-6-astra"]');
+  await astra.waitFor({ timeout: 15000 });
+  check('navigateur P1 : catalogue → « Vision confirmée » pour le modèle testé', await astra.getByText('Vision confirmée', { exact: true }).first().isVisible());
+  await astra.screenshot({ path: path.join(shots, 'p1-catalogue.png') }).catch(() => {});
 
   // ── Budget, statistiques, historique ──
   await tab('Quotas et budgets');

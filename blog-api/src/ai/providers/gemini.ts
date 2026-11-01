@@ -3,7 +3,7 @@
 // jamais par l'URL : elle apparaîtrait sinon dans les journaux. L'identifiant du modèle,
 // lui, entre dans l'URL : il est validé par isValidModelId et encodé.
 
-import { allowedParams, asNumber, asString, httpError, MAX_CATALOG_PAGES, parseDataUrl, requestJson, requireText } from './http';
+import { allowedParams, asNumber, asString, classifyError, MAX_CATALOG_PAGES, parseDataUrl, requestJson, requireText } from './http';
 import {
   ProviderError,
   type CallContext,
@@ -18,7 +18,7 @@ import {
 const SUPPORTED_PARAMS: ReadonlySet<GenerationParam> = new Set(['temperature', 'top_p', 'top_k', 'stop']);
 const FILTERED_REASONS = new Set(['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII']);
 
-interface GeminiError { status?: string; details?: { reason?: string }[] }
+interface GeminiError { status?: string; message?: string; details?: { reason?: string; fieldViolations?: { field?: string }[] }[] }
 
 interface GenerateResponse {
   candidates?: { content?: { parts?: { text?: unknown; thought?: unknown }[] }; finishReason?: string }[];
@@ -36,7 +36,9 @@ interface ModelPage {
 function toError(status: number, error: GeminiError | undefined): ProviderError {
   // Une clé invalide répond HTTP 400 chez Google
   if (error?.details?.some(detail => detail.reason === 'API_KEY_INVALID')) return new ProviderError('auth', status, 'API_KEY_INVALID');
-  return httpError(status, error?.status ?? '');
+  const field = error?.details?.flatMap(detail => detail.fieldViolations ?? []).find(v => v.field)?.field;
+  // Google répond PERMISSION_DENIED (403) pour un modèle non ouvert à ce projet, NOT_FOUND pour un modèle inconnu
+  return classifyError(status, { code: error?.status === 'NOT_FOUND' ? 'model_not_found' : error?.status, param: field, message: error?.message });
 }
 
 function toPart(part: ContentPart) {
@@ -78,7 +80,7 @@ export function createGeminiAdapter(baseUrl: string): ProviderAdapter {
             ...(top_p !== undefined ? { topP: top_p } : {}),
             ...(top_k !== undefined ? { topK: top_k } : {}),
             ...(stop ? { stopSequences: [stop] } : {}),
-            ...(req.output === 'json' ? { responseMimeType: 'application/json' } : {}),
+            ...(req.output === 'json' && !req.adapt?.omitJsonMode ? { responseMimeType: 'application/json' } : {}),
           },
         }),
       }, ctx.signal);

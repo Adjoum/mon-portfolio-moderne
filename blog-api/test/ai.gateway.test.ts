@@ -6,6 +6,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../src/app';
 import { FEATURES } from '../src/ai/features/registry';
+import { PROVIDERS } from '../src/ai/providers/registry';
 import { CV_REVIEW_SYSTEM } from '../src/ai/features/prompts/cv.v1';
 import { LATEX_IMPROVE_SYSTEM } from '../src/ai/features/prompts/latex.v2';
 import { startFakeOpenAI, type FakeOpenAI } from './helpers/fakeOpenAI';
@@ -209,10 +210,14 @@ describe('fournisseur non configuré ou fonctionnalité désactivée', () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  it('OCR affecté à un fournisseur sans entrée image : aucun appel', async () => {
+  it('OCR affecté à un adaptateur sans entrée image : aucun appel', async () => {
     store.keys.groq = 'cle-factice';
     store.setFeature('cv.import.ocr', { provider: 'groq' });
-    const res = await run('cv.import.ocr', { input: VALID_INPUTS['cv.import.ocr'] });
+    const noImages = createApp({ ai: {
+      baseUrlOverrides: { openai: fake.url, groq: fake.url }, store,
+      providers: { ...PROVIDERS, groq: { ...PROVIDERS.groq, createAdapter: url => ({ ...PROVIDERS.groq.createAdapter(url), supportsImages: false }) } },
+    } });
+    const res = await request(noImages).post('/api/ai/run/cv.import.ocr').set('X-Forwarded-For', '198.51.100.253').send({ input: VALID_INPUTS['cv.import.ocr'] });
     expect(res.status).toBe(503);
     expect(fake.calls).toHaveLength(0);
   });

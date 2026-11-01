@@ -21,9 +21,10 @@ import { auditLog, requestContext } from '../lib/audit';
 import { strictObject, InputError } from '../ai/features/validate';
 import { isProviderId, PROVIDERS } from '../ai/providers/registry';
 import { isValidModelId } from '../ai/providers/modelId';
-import { ProviderError, type ProviderId } from '../ai/providers/types';
-import { invalidParam, MAX_OUTPUT_TOKENS, MAX_TIMEOUT_MS, MIN_TIMEOUT_MS } from '../ai/services/params';
-import { ProbeInconclusive, runProbes } from '../ai/services/probes';
+import { ProviderError, type ModelInfo, type ProviderId } from '../ai/providers/types';
+import { CAPABILITY_MATRIX_VERSION, modelProfile, profileSummary } from '../ai/providers/capabilities';
+import { MAX_OUTPUT_TOKENS, MAX_TIMEOUT_MS, MIN_TIMEOUT_MS, paramRefusal, type ParamRefusal } from '../ai/services/params';
+import { ProbeInconclusive, probeMaxCost, probePlan, runProbes } from '../ai/services/probes';
 import { usageCost } from '../ai/services/cost';
 import { catalogPayload, type AiRuntimeStore, type FeaturePricing } from '../ai/services/store';
 import { hashSubject } from '../ai/services/usage';
@@ -139,6 +140,44 @@ const usdToMicro = (value: unknown, field: string) => {
 
 const optionalUsd = (value: unknown, field: string) => (value === null || value === undefined ? null : usdToMicro(value, field));
 
+const PARAM_NAMES: Record<string, string> = {
+  temperature: 'Température', top_p: 'Top p', top_k: 'Top k', stop: 'Séquence d’arrêt', presence_penalty: 'Pénalité de présence',
+  frequency_penalty: 'Pénalité de fréquence', seed: 'Graine', reasoning_effort: 'Effort de raisonnement',
+};
+
+function refusalMessage(refusal: ParamRefusal, efforts: readonly string[] | undefined): string {
+  const name = PARAM_NAMES[refusal.param] ?? refusal.param;
+  switch (refusal.reason) {
+    case 'model':     return `Ce modèle refuse le paramètre « ${name} » (documentation officielle). Retirez-le.`;
+    case 'reasoning': return `Avec ce modèle à raisonnement, « ${name} » n’est accepté qu’avec l’effort de raisonnement « none ». Choisissez « none » ou retirez ce paramètre.`;
+    case 'effort':    return `Effort de raisonnement non pris en charge par ce modèle.${efforts ? ` Valeurs acceptées : ${efforts.join(', ')}.` : ''}`;
+    default:          return `Paramètre « ${name} » non pris en charge ou hors limites.`;
+  }
+}
+
+/** Messages des sondes et vérifications, sans détail du fournisseur */
+export const PROBE_MESSAGES: Record<string, string> = {
+  auth:                  'Clé API refusée par le fournisseur : remplacez-la dans « Fournisseurs ».',
+  permission_denied:     'Clé valide, mais ce modèle n’est pas ouvert à ce compte (organisation à vérifier, offre ou région).',
+  model_not_found:       'Modèle inexistant ou invisible pour ce compte.',
+  model_not_listed:      'Modèle absent du catalogue de ce compte : identifiant inexistant ou non accessible avec cette clé.',
+  endpoint_incompatible: 'Ce modèle n’est pas servi par le point d’accès utilisé.',
+  unsupported_parameter: 'Un paramètre de la requête est refusé par ce modèle.',
+  invalid_image:         'Image de test refusée par le fournisseur (format ou décodage).',
+  bad_request:           'Requête refusée par le fournisseur (structure).',
+  output_truncated:      'Limite de sortie atteinte avant toute réponse (réflexion trop longue).',
+  payload_too_large:     'Requête trop volumineuse pour ce fournisseur.',
+  context_too_long:      'Contexte trop long pour ce modèle.',
+  vision_unsupported:    'Le modèle refuse ou ne voit pas l’image : texte uniquement.',
+  vision_misread:        'Le modèle a répondu sans lire correctement l’image de test.',
+  json_invalid:          'Le modèle ne renvoie pas de JSON valide.',
+  timeout:               'Le fournisseur n’a pas répondu à temps.',
+  unavailable:           'Fournisseur injoignable (réseau ou panne).',
+  rate_limited:          'Limite de débit du fournisseur atteinte : réessayez dans une minute.',
+  quota_exceeded:        'Crédit ou plafond de dépenses du compte fournisseur épuisé.',
+  budget_exceeded:       'Budget du centre IA atteint : test non lancé.',
+};
+
 export function createAdminAiRouter(gateway: AiGateway, store: AiRuntimeStore) {
   const router = Router();
   router.use(adminLimiter, requireSupabaseAdmin, requireAdminMfa);
@@ -182,7 +221,16 @@ export function createAdminAiRouter(gateway: AiGateway, store: AiRuntimeStore) {
     paramsByProvider: Object.fromEntries((Object.keys(PROVIDERS) as ProviderId[]).map(id => [id, [...adapterOf(id).supportedParams]])),
   })));
 
-  router.get('/providers/:id/models', route(req => rpc(req, 'ai_admin_models', { p_provider: providerParam(req) })));
+  // Chaque modèle reçoit son profil de la matrice (forme de requête, vision documentée) : un indice, jamais une preuve
+  router.get('/providers/:id/models', route(async req => {
+    const provider = providerParam(req);
+    const catalog = await rpc<{ models?: { modelId: string }[] } & Record<string, unknown>>(req, 'ai_admin_models', { p_provider: provider });
+    return {
+      ...catalog,
+      matrixVersion: CAPABILITY_MATRIX_VERSION,
+      models: (catalog.models ?? []).map(m => ({ ...m, profile: profileSummary(modelProfile(provider, m.modelId)) })),
+    };
+  }));
 
   router.get('/usage', route(req => rpc(req, 'ai_admin_usage', { p_days: Number(req.query.days) || 30 })));
 
@@ -204,7 +252,7 @@ export function createAdminAiRouter(gateway: AiGateway, store: AiRuntimeStore) {
     try {
       models = await listCatalog(provider, key);
     } catch (err) {
-      const auth = err instanceof ProviderError && err.code === 'auth';
+      const auth = err instanceof ProviderError && (err.code === 'auth' || err.code === 'permission_denied');
       audit(req, 'ai.provider.key.set', 'failure', provider);
       throw auth
         ? new AdminAiError(422, 'AI_KEY_REJECTED', 'Le fournisseur a refusé cette clé. Rien n’a été modifié.')
@@ -241,6 +289,26 @@ export function createAdminAiRouter(gateway: AiGateway, store: AiRuntimeStore) {
       await write(rpc(req, 'ai_admin_record_provider_check', { p_provider: provider, p_ok: false, p_code: code }));
       return { ok: false, code, latencyMs: Date.now() - started };
     }
+  }));
+
+  // Disponibilité (gratuite) : le modèle figure-t-il dans le catalogue de ce compte ? Aucune génération.
+  router.post('/providers/:id/models/check', aiAdminWriteLimiter, route(async req => {
+    const provider = providerParam(req);
+    const { modelId } = strictObject(req.body, 'body', ['modelId']);
+    const model = modelIdOf(modelId);
+    const key = await storedKey(provider);
+    const started = Date.now();
+    const listed = await listedIn(provider, key, model);
+    const profile = profileSummary(modelProfile(provider, model));
+    if (listed === 'auth') return { status: 'key_rejected', message: PROBE_MESSAGES.auth, profile, latencyMs: Date.now() - started };
+    if (!listed) return { status: 'unknown', message: 'Catalogue du fournisseur illisible : disponibilité non vérifiée.', profile, latencyMs: Date.now() - started };
+    return {
+      status: listed.listed ? 'available' : 'not_listed',
+      message: listed.listed ? 'Modèle présent dans le catalogue de ce compte.' : PROBE_MESSAGES.model_not_listed,
+      catalogVision: listed.info?.vision ?? null,
+      profile,
+      latencyMs: Date.now() - started,
+    };
   }));
 
   router.patch('/providers/:id', aiAdminWriteLimiter, route(async req => {
@@ -306,12 +374,32 @@ export function createAdminAiRouter(gateway: AiGateway, store: AiRuntimeStore) {
     return feature;
   };
 
-  const paramsOf = (provider: ProviderId, raw: unknown) => {
+  /** Paramètres validés pour ce fournisseur, puis pour ce modèle (matrice de capacités) */
+  const paramsOf = (provider: ProviderId, raw: unknown, model: string | null = null) => {
     const params = (raw ?? {}) as Record<string, number | string>;
     if (typeof params !== 'object' || Array.isArray(params)) throw new InputError('params', 'objet attendu');
-    const refused = invalidParam(adapterOf(provider), params);
-    if (refused) throw new InputError(`params.${refused}`, 'paramètre non pris en charge ou hors limites');
+    const refused = paramRefusal(adapterOf(provider), model, params);
+    if (refused?.reason === 'provider' || refused?.reason === 'range') throw new InputError(`params.${refused.param}`, 'paramètre non pris en charge ou hors limites');
+    if (refused) {
+      throw new AdminAiError(400, 'AI_PARAM_REJECTED', refusalMessage(refused, model ? modelProfile(provider, model).reasoningEfforts : undefined),
+        { param: refused.param, reason: refused.reason, matrixVersion: CAPABILITY_MATRIX_VERSION });
+    }
     return params;
+  };
+
+  const catalogOf = (req: Request, provider: ProviderId) =>
+    rpc<{ models?: { modelId: string; pricing: FeaturePricing | null }[] }>(req, 'ai_admin_models', { p_provider: provider }).catch(() => null);
+
+  /** Présence dans le catalogue du compte (gratuit) : null si le catalogue est illisible */
+  const listedIn = async (provider: ProviderId, key: string, model: string): Promise<{ listed: boolean; info: ModelInfo | null } | 'auth' | null> => {
+    try {
+      const models = await listCatalog(provider, key);
+      const info = models.find(m => m.id === model) ?? null;
+      return { listed: !!info, info };
+    } catch (err) {
+      if (err instanceof ProviderError && (err.code === 'auth' || err.code === 'permission_denied')) return 'auth';
+      return null;
+    }
   };
 
   router.put('/features/:id/assignment', aiAdminWriteLimiter, route(async req => {
@@ -324,7 +412,7 @@ export function createAdminAiRouter(gateway: AiGateway, store: AiRuntimeStore) {
       p_feature: feature.id,
       p_provider: providerId,
       p_model: modelId === null ? null : modelIdOf(modelId),
-      p_params: paramsOf(providerId, params),
+      p_params: paramsOf(providerId, params, modelId === null ? null : modelIdOf(modelId)),
       p_max_output_tokens: intOf(maxOutputTokens, 'maxOutputTokens', 1, MAX_OUTPUT_TOKENS),
       p_timeout_ms: intOf(timeoutMs, 'timeoutMs', MIN_TIMEOUT_MS, MAX_TIMEOUT_MS),
       p_enabled: boolOf(enabled, 'enabled'),
@@ -332,21 +420,75 @@ export function createAdminAiRouter(gateway: AiGateway, store: AiRuntimeStore) {
     }));
   }));
 
+  /** Budget restant (global et fonctionnalité) pour un coût maximal donné ; null : invérifiable */
+  const budgetAllows = async (req: Request, featureId: string, maxCost: number | null) => {
+    const overview = await rpc<{
+      budget?: { dailyLimitMicroUsd: number | null; monthlyLimitMicroUsd: number | null; dayCostMicroUsd: number; monthCostMicroUsd: number };
+      features?: { id: string; quotas: { dailyBudgetMicroUsd: number | null; monthlyBudgetMicroUsd: number | null }; usage: { dayCostMicroUsd: number; monthCostMicroUsd: number } }[];
+    }>(req, 'ai_admin_overview').catch(() => null);
+    if (!overview?.budget) return null;
+    const cost = maxCost ?? 0;
+    const b = overview.budget;
+    const f = overview.features?.find(x => x.id === featureId);
+    const over = (used: number, limit: number | null | undefined) => limit !== null && limit !== undefined && used + cost > limit;
+    return !(over(b.dayCostMicroUsd, b.dailyLimitMicroUsd) || over(b.monthCostMicroUsd, b.monthlyLimitMicroUsd)
+      || (f && (over(f.usage.dayCostMicroUsd, f.quotas.dailyBudgetMicroUsd) || over(f.usage.monthCostMicroUsd, f.quotas.monthlyBudgetMicroUsd))));
+  };
+
+  const estimateFor = async (req: Request, featureId: string, providerId: ProviderId, model: string, required: readonly ('text' | 'json' | 'vision')[]) => {
+    const pricing = (await catalogOf(req, providerId))?.models?.find(m => m.modelId === model)?.pricing ?? null;
+    return { ...probeMaxCost(adapterOf(providerId), model, required, pricing), priced: !!pricing, steps: probePlan(required), pricing };
+  };
+
+  // Estimation (gratuite) avant d'autoriser la sonde : nombre de requêtes, tokens et coût maximal
+  router.get('/features/:id/test-estimate', route(async req => {
+    const feature = featureOf(req);
+    const providerId = String(req.query.providerId ?? '');
+    if (!isProviderId(providerId)) throw new AdminAiError(404, 'AI_PROVIDER_UNKNOWN', 'Fournisseur inconnu.');
+    const model = modelIdOf(req.query.modelId);
+    const estimate = await estimateFor(req, feature.id, providerId, model, feature.requiredCapabilities);
+    return { ...estimate, pricing: undefined, budgetOk: await budgetAllows(req, feature.id, estimate.maxCostMicroUsd), profile: profileSummary(modelProfile(providerId, model)) };
+  }));
+
   // Génération réelle, potentiellement facturée : confirmation explicite obligatoire
   router.post('/features/:id/test', aiAdminWriteLimiter, route(async req => {
     const feature = featureOf(req);
-    const { providerId, modelId, params, confirmBilling } = strictObject(req.body, 'body', ['providerId', 'modelId', 'params', 'confirmBilling']);
+    const { providerId, modelId, params, confirmBilling, allowUnlisted } = strictObject(req.body, 'body', ['providerId', 'modelId', 'params', 'confirmBilling', 'allowUnlisted']);
     if (confirmBilling !== true) throw new AdminAiError(400, 'AI_BILLING_NOT_CONFIRMED', 'Confirmez d’abord que ce test peut être facturé.');
     if (typeof providerId !== 'string' || !isProviderId(providerId)) throw new AdminAiError(404, 'AI_PROVIDER_UNKNOWN', 'Fournisseur inconnu.');
     const model = modelIdOf(modelId);
     const key = await storedKey(providerId);
+    const required = feature.requiredCapabilities;
+    const estimate = await estimateFor(req, feature.id, providerId, model, required);
+    const base = { required, matrixVersion: CAPABILITY_MATRIX_VERSION, estimate: { requests: estimate.requests, maxRequests: estimate.maxRequests, maxCostMicroUsd: estimate.maxCostMicroUsd } };
+
+    // 1. Paramètres refusés par la matrice : aucune requête
+    const validParams = paramsOf(providerId, params);
+    const refused = paramRefusal(adapterOf(providerId), model, validParams);
+    if (refused) {
+      return { ...base, status: 'config_error', capabilities: [], failedCapability: null, code: 'unsupported_parameter', param: refused.param,
+        rejectedParams: [refused.param], adjustments: [], vision: null, latencyMs: 0, estimatedCostMicroUsd: 0, recorded: false,
+        message: refusalMessage(refused, modelProfile(providerId, model).reasoningEfforts) };
+    }
+
+    // 2. Disponibilité (gratuite) avant toute dépense
+    const listed = await listedIn(providerId, key, model);
+    if (listed === 'auth') throw new AdminAiError(502, 'AI_TEST_INCONCLUSIVE', PROBE_MESSAGES.auth, { reason: 'auth' });
+    if (listed && !listed.listed && allowUnlisted !== true) {
+      return { ...base, status: 'config_error', capabilities: [], failedCapability: null, code: 'model_not_listed', param: null,
+        rejectedParams: [], adjustments: [], vision: null, latencyMs: 0, estimatedCostMicroUsd: 0, recorded: false, message: PROBE_MESSAGES.model_not_listed };
+    }
+
+    // 3. Budget : le coût maximal doit tenir dans ce qui reste
+    const allowed = await budgetAllows(req, feature.id, estimate.maxCostMicroUsd);
+    if (allowed === false) throw new AdminAiError(429, 'AI_BUDGET_EXCEEDED', PROBE_MESSAGES.budget_exceeded, { reason: 'budget_exceeded' });
 
     let result;
     try {
-      result = await runProbes(adapterOf(providerId), feature, model, key, paramsOf(providerId, params));
+      result = await runProbes(adapterOf(providerId), feature, model, key, validParams);
     } catch (err) {
       if (err instanceof ProbeInconclusive) {
-        throw new AdminAiError(502, 'AI_TEST_INCONCLUSIVE', 'Le fournisseur n’a pas pu répondre : test sans conclusion, rien n’a été enregistré.', { reason: err.code });
+        throw new AdminAiError(502, 'AI_TEST_INCONCLUSIVE', `${PROBE_MESSAGES[err.code] ?? 'Le fournisseur n’a pas pu répondre.'} Test sans conclusion : rien n’a été enregistré.`, { reason: err.code });
       }
       throw err;
     }
@@ -354,13 +496,12 @@ export function createAdminAiRouter(gateway: AiGateway, store: AiRuntimeStore) {
     await write(rpc(req, 'ai_admin_record_compat', {
       p_feature: feature.id, p_provider: providerId, p_model: model, p_status: result.status,
       p_capabilities: result.capabilities, p_code: result.code, p_latency: result.latencyMs,
+      p_failed_capability: result.failedCapability,
+      p_details: { param: result.param, rejectedParams: result.rejectedParams, adjustments: result.adjustments, matrixVersion: result.matrixVersion, vision: result.vision },
     }));
 
     // Tarif du modèle TESTÉ (souvent un candidat, pas encore affecté) : la sonde compte dans le budget
-    const catalog = await rpc<{ models?: { modelId: string; pricing: FeaturePricing | null }[] }>(req, 'ai_admin_models', { p_provider: providerId })
-      .catch(() => null);
-    const pricing = catalog?.models?.find(m => m.modelId === model)?.pricing ?? null;
-    const cost = pricing ? usageCost(result.inputTokens, result.outputTokens, pricing) : 0;
+    const cost = estimate.pricing ? usageCost(result.inputTokens, result.outputTokens, estimate.pricing) : 0;
     await store.recordProbe(feature.id, cost, {
       requestId: newRequestId(), kind: 'probe', feature: feature.id, provider: providerId, model,
       subject: hashSubject(`user:${req.supabaseAdmin?.userId}`), outcome: result.status === 'compatible' ? 'ok' : 'error',
@@ -368,12 +509,19 @@ export function createAdminAiRouter(gateway: AiGateway, store: AiRuntimeStore) {
     }).catch(err => console.error('[AI_ADMIN] coût de la sonde non enregistré :', (err as Error)?.name));
 
     return {
+      ...base,
       status: result.status,
       capabilities: result.capabilities,
-      required: feature.requiredCapabilities,
+      failedCapability: result.failedCapability,
       code: result.code,
+      param: result.param,
+      rejectedParams: result.rejectedParams,
+      adjustments: result.adjustments,
+      vision: result.vision,
       latencyMs: result.latencyMs,
       estimatedCostMicroUsd: cost,
+      recorded: true,
+      message: result.code ? PROBE_MESSAGES[result.code] ?? null : null,
     };
   }));
 

@@ -8,6 +8,7 @@ import type { AddressInfo } from 'net';
 import request from 'supertest';
 import { createApp } from '../src/app';
 import { FEATURES } from '../src/ai/features/registry';
+import { PROVIDERS } from '../src/ai/providers/registry';
 import { LATEX_FIX_SYSTEM, LATEX_REWRITE_SYSTEM } from '../src/ai/features/prompts/latex.v2';
 import { normalizeFixOutput, parseFixInput, normalizeRewriteOutput } from '../src/ai/features/latexStudio';
 import { normalizeCvData } from '../src/ai/features/cvData';
@@ -199,9 +200,22 @@ describe('latex.import.ocr', () => {
     expect(res.body.content).toBe('AWA KONAN\nData Analyst');
   });
 
-  it('fournisseur sans capacité visuelle : indisponible, aucun appel', async () => {
+  it('Groq : image transmise en image_url, sans champ detail (non documenté par Groq)', async () => {
     store.setFeature('latex.import.ocr', { provider: 'groq' });
+    reply('AWA KONAN');
     const res = await run('latex.import.ocr', { image: PNG });
+    expect(res.status).toBe(200);
+    const part = (fake.calls.at(-1)!.body.messages.at(-1)!.content as { type: string; image_url?: Record<string, unknown> }[]).find(p => p.type === 'image_url')!;
+    expect(part.image_url).toEqual({ url: PNG });
+  });
+
+  it('adaptateur sans entrée image : indisponible, aucun appel', async () => {
+    const noImages = createApp({ ai: {
+      baseUrlOverrides: { groq: fake.url, openai: fake.url }, store,
+      providers: { ...PROVIDERS, groq: { ...PROVIDERS.groq, createAdapter: url => ({ ...PROVIDERS.groq.createAdapter(url), supportsImages: false }) } },
+    } });
+    store.setFeature('latex.import.ocr', { provider: 'groq' });
+    const res = await request(noImages).post('/api/ai/run/latex.import.ocr').set('X-Forwarded-For', '198.51.100.254').send({ input: { image: PNG } });
     expect(res.status).toBe(503);
     expect(fake.calls).toHaveLength(0);
   });

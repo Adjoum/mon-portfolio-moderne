@@ -2,6 +2,7 @@
 // Paramètres de génération saisis dans le dashboard : uniquement ceux que l'adaptateur
 // sait transmettre, dans leurs bornes. Rien n'est ignoré en silence.
 
+import { modelProfile, rejectedByProfile } from '../providers/capabilities';
 import type { GenerationParam, ProviderAdapter } from '../providers/types';
 
 type Rule = (value: unknown) => boolean;
@@ -31,4 +32,18 @@ export function invalidParam(adapter: ProviderAdapter, params: Record<string, un
     if (!RULES[key as GenerationParam](value)) return key;
   }
   return null;
+}
+
+export type ParamRefusal = { param: string; reason: 'provider' | 'range' | 'model' | 'reasoning' | 'effort' };
+
+/**
+ * Premier paramètre refusé pour CE modèle : fournisseur, bornes, puis matrice de capacités
+ * (paramètre refusé par le modèle, échantillonnage réservé à l'effort « none », effort inconnu).
+ */
+export function paramRefusal(adapter: ProviderAdapter, model: string | null, params: Record<string, unknown>): ParamRefusal | null {
+  for (const [key, value] of Object.entries(params)) {
+    if (!adapter.supportedParams.has(key as GenerationParam)) return { param: key, reason: 'provider' };
+    if (!RULES[key as GenerationParam](value)) return { param: key, reason: 'range' };
+  }
+  return model ? rejectedByProfile(modelProfile(adapter.id, model), params) : null;
 }

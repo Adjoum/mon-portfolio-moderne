@@ -13,6 +13,8 @@ export const AI_KEYS = {
 
 const DIAGRAM = JSON.stringify({ diagramType: 'mind', nodes: { n1: { id: 'n1', label: 'Idée' } }, edges: [] });
 const MARKER = 'MARQUEUR_CONFIDENTIEL_42';
+/** Fonctionnalités du registre (blog-api/src/ai/features/registry.ts, FEATURE_IDS) */
+const FEATURE_COUNT = 13;
 
 export async function runAiScenarios(ctx) {
   const { API, check, psql, sqlValue, compose, stopApi, startApi, waitFor, sleep, rest, rpc, fakes, apiLogs, tokens } = ctx;
@@ -76,9 +78,9 @@ export async function runAiScenarios(ctx) {
   const noMfa = await api('GET', '/api/admin/ai/overview', adminAal1);
   check('IA : administrateur sans MFA → 403 MFA_REQUIRED', noMfa.status === 403 && noMfa.body?.code === 'MFA_REQUIRED');
   const first = await overview();
-  check('IA : admin MFA → vue d’ensemble (6 fournisseurs, 9 fonctionnalités)', first?.providers?.length === 6 && first?.features?.length === 9, `${first?.providers?.length} / ${first?.features?.length}`);
+  check(`IA : admin MFA → vue d’ensemble (6 fournisseurs, ${FEATURE_COUNT} fonctionnalités)`, first?.providers?.length === 6 && first?.features?.length === FEATURE_COUNT, `${first?.providers?.length} / ${first?.features?.length}`);
   check('IA : budget initial 5 USD/jour et 30 USD/mois', first.budget.dailyLimitMicroUsd === 5_000_000 && first.budget.monthlyLimitMicroUsd === 30_000_000);
-  check('IA : connexion ai_backend établie (registre synchronisé au démarrage)', first.runtime.databaseConfigured === true && Number(sqlValue('select count(*) from public.ai_features;')) === 9);
+  check('IA : connexion ai_backend établie (registre synchronisé au démarrage)', first.runtime.databaseConfigured === true && Number(sqlValue('select count(*) from public.ai_features;')) === FEATURE_COUNT);
   check('IA : aucune fonctionnalité active au départ', first.features.every(f => !f.enabled));
 
   const directTables = await Promise.all(['ai_providers', 'ai_feature_assignments', 'ai_usage_events', 'ai_config_audit'].flatMap(t => [rest(`${t}?select=*`), rest(`${t}?select=*`, adminAal2)]));
@@ -137,15 +139,29 @@ export async function runAiScenarios(ctx) {
   const early = await assign('inkspace.generate', 'openai', 'gpt-6-astra', true);
   check('IA : activation sans test refusée', early.status === 422 && early.body?.blocker === 'not_validated');
   const t1 = await probe('inkspace.generate', 'openai', 'gpt-6-astra');
-  check('IA : test InkSpace (texte + JSON) → compatible, clé stockée utilisée', t1.body?.status === 'compatible' && lastCall('openai').headers.authorization === `Bearer ${AI_KEYS.openai2}`);
+  check('IA : test InkSpace (texte + JSON) → compatible, clé stockée utilisée', t1.body?.status === 'compatible' && lastCall('openai').headers.authorization === `Bearer ${AI_KEYS.openai2}`,
+    `HTTP ${t1.status} ${t1.body?.status ?? ''} ${t1.body?.code ?? ''} ${t1.body?.error ?? ''}`);
   check('IA : InkSpace activé sur OpenAI', (await assign('inkspace.generate', 'openai', 'gpt-6-astra', true)).status === 200);
   for (const id of ['novamind.diagram', 'agent.chat']) {
     await probe(id, 'groq', 'openai/gpt-oss-120b');
     await assign(id, 'groq', 'openai/gpt-oss-120b', true);
   }
+  // Modèle sans vision : le faux Groq refuse l'image comme le vrai
+  fakes.groq.behavior = { kind: 'text-only' };
   const ocr = await probe('cv.import.ocr', 'groq', 'openai/gpt-oss-120b');
-  check('IA : OCR sur un modèle sans vision → incompatible, sans appel', ocr.body?.status === 'incompatible' && ocr.body?.code === 'vision_unsupported');
+  fakes.groq.behavior = { kind: 'ok', content: DIAGRAM };
+  check('IA : OCR sur un modèle sans vision → incompatible confirmé, texte uniquement', ocr.body?.status === 'incompatible' && ocr.body?.code === 'vision_unsupported'
+    && ocr.body?.failedCapability === 'vision' && ocr.body?.capabilities?.join() === 'text');
   check('IA : modèle incompatible jamais activable pour l’OCR', (await assign('cv.import.ocr', 'groq', 'openai/gpt-oss-120b', true)).status === 422);
+  check('IA : détail de la sonde enregistré en base (capacité en échec, version de la matrice)',
+    sqlValue("select failed_capability || '|' || (details ? 'matrixVersion') from public.ai_model_feature_compat where feature_id = 'cv.import.ocr' and model_id = 'openai/gpt-oss-120b';") === 'vision|true');
+
+  // Modèle multimodal : l'image synthétique est réellement décodée et lue par le faux fournisseur
+  fakes.openai.behavior = { kind: 'vision' };
+  const seen = await probe('latex.import.ocr', 'openai', 'gpt-6-astra');
+  fakes.openai.behavior = { kind: 'ok', content: DIAGRAM };
+  check('IA : sonde vision réussie seulement si le code de l’image est lu', seen.body?.status === 'compatible' && seen.body?.capabilities?.join() === 'text,vision'
+    && seen.body?.vision?.received === seen.body?.vision?.expected);
 
   const available = Object.fromEntries((await api('GET', '/api/ai/features', null)).body.features.map(f => [f.id, f.available]));
   check('IA : disponibilité publique à jour, sans fournisseur ni modèle', available['inkspace.generate'] && available['novamind.diagram'] && available['agent.chat'] && !available['cv.generate']);

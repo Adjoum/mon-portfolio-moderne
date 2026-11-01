@@ -2,7 +2,7 @@
 // Éléments communs du centre IA, dans le style du dashboard (glass-effect, dégradé primary/secondary)
 
 import type { ReactNode } from 'react'
-import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react'
+import { AlertCircle, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react'
 
 import type { Notice } from './useServerAction'
 type Tone = 'green' | 'red' | 'amber' | 'gray' | 'indigo' | 'sky'
@@ -27,13 +27,12 @@ export function Badge({ tone = 'gray', children, title }: { tone?: Tone; childre
 export function NoticeBanner({ notice, onClose }: { notice: Notice | null; onClose?: () => void }) {
   if (!notice) return null
   const ok = notice.type === 'success'
+  const tone = ok ? 'bg-green-500/10 text-green-300' : notice.type === 'warning' ? 'bg-amber-500/10 text-amber-200' : 'bg-red-500/10 text-red-300'
+  const Icon = ok ? CheckCircle : notice.type === 'warning' ? AlertTriangle : AlertCircle
   return (
-    <div
-      role={ok ? 'status' : 'alert'}
-      className={`flex items-start gap-3 p-4 rounded-xl ${ok ? 'bg-green-500/10 text-green-300' : 'bg-red-500/10 text-red-300'}`}
-    >
-      {ok ? <CheckCircle size={20} className="shrink-0 mt-0.5" /> : <AlertCircle size={20} className="shrink-0 mt-0.5" />}
-      <span className="flex-1">{notice.text}</span>
+    <div role={ok ? 'status' : 'alert'} data-notice={notice.type} className={`flex items-start gap-3 p-4 rounded-xl ${tone}`}>
+      <Icon size={20} className="shrink-0 mt-0.5" aria-hidden="true" />
+      <span className="flex-1 whitespace-pre-line">{notice.text}</span>
       {onClose && <button type="button" onClick={onClose} className="text-sm opacity-70 hover:opacity-100" aria-label="Fermer le message">✕</button>}
     </div>
   )

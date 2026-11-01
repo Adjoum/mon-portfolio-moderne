@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, RefreshCw, RotateCcw, X } from 'lucide-react'
 import { aiAdmin, PROVIDER_IDS, type Catalog, type CatalogModel, type Overview, type ProviderId } from '../api'
-import { MODEL_ORIGIN, MODEL_STATUS, featureLabel, formatDate, formatTokens, perMTok } from '../format'
+import { CAPABILITY_STATES, MODEL_ORIGIN, MODEL_STATUS, compatState, featureLabel, formatDate, formatTokens, modelStates, perMTok, probeCode } from '../format'
 import { Badge, Button, Card, Field, NoticeBanner } from '../ui'
 import { inputClass } from '../styles'
 import { useServerAction } from '../useServerAction'
@@ -52,9 +52,19 @@ function ModelRow({ provider, model, busy, run }: {
           <div className="flex flex-wrap gap-1.5">
             <Badge tone={STATUS_TONE[model.status]}>{MODEL_STATUS[model.status]}</Badge>
             <Badge tone={model.origin === 'manual' ? 'sky' : 'gray'}>{MODEL_ORIGIN[model.origin]}</Badge>
-            {model.vision === true && <Badge tone="indigo">Image</Badge>}
-            {model.vision === false && <Badge>Sans image</Badge>}
+            {/* Métadonnées du catalogue ou de la documentation : des indices, pas une validation */}
+            {model.vision === true && <Badge tone="indigo" title="Annoncé par le catalogue du fournisseur : à confirmer par une sonde">Image annoncée</Badge>}
+            {model.vision === false && <Badge>Sans image (catalogue)</Badge>}
+            {model.vision === null && model.profile?.visionDocumented === true && (
+              <Badge tone="indigo" title="Page officielle relue : à confirmer par une sonde">Image documentée</Badge>
+            )}
             {model.shutdownDate && <Badge tone="amber">Retrait {model.shutdownDate}</Badge>}
+          </div>
+          <div className="flex flex-wrap gap-1.5" aria-label={`Capacités démontrées de ${key}`}>
+            {/* « Disponible » figure déjà dans le statut du modèle */}
+            {modelStates(model).filter(state => state !== 'available' || model.status !== 'available').map(state => (
+              <Badge key={state} tone={CAPABILITY_STATES[state].tone} title={CAPABILITY_STATES[state].hint}>{CAPABILITY_STATES[state].label}</Badge>
+            ))}
           </div>
           <p className="text-xs text-gray-400">
             Contexte {formatTokens(model.contextWindow)} · sortie max {formatTokens(model.maxOutputTokens)} ·{' '}
@@ -64,8 +74,28 @@ function ModelRow({ provider, model, busy, run }: {
           {model.usedBy.length > 0 && (
             <p className="text-xs text-gray-400">Affecté à : {model.usedBy.map(u => `${featureLabel(u.featureId)}${u.enabled ? '' : ' (inactive)'}`).join(', ')}</p>
           )}
+          {model.compat.length > 0 && (
+            <ul className="text-xs text-gray-400 space-y-0.5">
+              {model.compat.map(c => {
+                const state = CAPABILITY_STATES[compatState({ status: c.status, capabilities: c.capabilities ?? [], failedCapability: c.failedCapability ?? null })]
+                return (
+                  <li key={c.featureId}>
+                    {featureLabel(c.featureId)} : <span className={state.tone === 'green' ? 'text-green-300' : state.tone === 'amber' ? 'text-amber-200' : state.tone === 'red' ? 'text-red-300' : ''}>{state.label}</span>
+                    {c.code ? ` (${probeCode(c.code)})` : ''} · {formatDate(c.testedAt)}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </div>
         <div className="flex items-center gap-2">
+          <Button busy={busy === `check:${key}`} disabled={!!busy} title="Gratuit : présence dans le catalogue du compte, aucune génération"
+            onClick={() => run(`check:${key}`, () => aiAdmin.checkModel(provider, key), r => ({
+              type: r.status === 'available' ? 'success' : r.status === 'unknown' ? 'warning' : 'error',
+              text: `« ${key} » : ${r.message}`,
+            }))}>
+            Disponibilité
+          </Button>
           <Button onClick={() => setEditPrice(v => !v)} aria-expanded={editPrice}>Tarif</Button>
           <Button busy={busy === `toggle:${key}`} disabled={!!busy}
             onClick={() => run(`toggle:${key}`, () => aiAdmin.setModelDisabled(provider, key, model.status !== 'disabled'),

@@ -17,6 +17,18 @@ export type ContentPart =
 
 export type OutputFormat = 'text' | 'json';
 
+/**
+ * Corrections de forme appliquées après un refus du fournisseur (adaptive.ts) : champ de limite
+ * de sortie, point d'accès, paramètres retirés. Jamais de contenu, jamais de modèle différent.
+ */
+export interface RequestAdaptation {
+  outputLimitField?: 'max_completion_tokens' | 'max_tokens';
+  endpoint?: 'chat' | 'responses';
+  omitImageDetail?: boolean;
+  /** Mode JSON du fournisseur refusé : la sortie reste validée côté serveur */
+  omitJsonMode?: boolean;
+}
+
 export interface NormalizedRequest {
   /** Message système : défini exclusivement côté serveur par le registre des fonctionnalités */
   system: string;
@@ -26,16 +38,34 @@ export interface NormalizedRequest {
   params: Partial<Record<GenerationParam, number | string>>;
   /** Mode JSON du fournisseur quand il existe ; la sortie reste contrôlée côté serveur */
   output?: OutputFormat;
+  adapt?: RequestAdaptation;
 }
 
 export interface NormalizedResponse {
   content: string;
   usage?: { inputTokens?: number; outputTokens?: number };
   finishReason?: string;
+  /** Corrections appliquées pour obtenir cette réponse (adaptive.ts) */
+  adjustments?: string[];
 }
 
+/**
+ * Causes distinguées (P1) :
+ *   auth                  clé invalide ou révoquée
+ *   permission_denied     clé valide, modèle ou point d'accès refusé à ce compte (organisation non vérifiée…)
+ *   model_not_found       modèle inexistant ou invisible pour ce compte
+ *   endpoint_incompatible le modèle existe mais pas sur ce point d'accès (ex. Responses uniquement)
+ *   vision_unsupported    le modèle refuse l'entrée image
+ *   unsupported_parameter un paramètre ou sa valeur est refusé (param indique lequel)
+ *   invalid_image         image refusée (format, décodage, taille) : requête mal construite
+ *   bad_request           autre requête mal construite
+ *   context_too_long / payload_too_large / output_truncated : limites de tokens ou de taille
+ *   timeout / unavailable : délai ou réseau ; rate_limited / quota_exceeded : limites du fournisseur
+ */
 export type NormalizedErrorCode =
-  | 'auth' | 'model_not_found' | 'model_deprecated' | 'rate_limited' | 'quota_exceeded'
+  | 'auth' | 'permission_denied' | 'model_not_found' | 'model_deprecated' | 'endpoint_incompatible'
+  | 'vision_unsupported' | 'unsupported_parameter' | 'invalid_image' | 'payload_too_large' | 'output_truncated'
+  | 'rate_limited' | 'quota_exceeded'
   | 'context_too_long' | 'content_filtered' | 'timeout' | 'unavailable' | 'bad_request'
   | 'invalid_response' | 'aborted' | 'unknown';
 
@@ -46,9 +76,14 @@ export class ProviderError extends Error {
     public providerStatus?: number,
     /** Détail technique expurgé, destiné aux journaux serveur uniquement */
     public detail?: string,
+    /** Nom du champ refusé (unsupported_parameter) : un nom de paramètre, jamais une valeur */
+    public param?: string,
   ) {
     super(code);
   }
+
+  /** Corrections déjà tentées avant cet échec (adaptive.ts) */
+  adjustments?: string[];
 }
 
 export interface CallContext {
@@ -77,6 +112,8 @@ export interface ProviderAdapter {
   supportedParams: ReadonlySet<GenerationParam>;
   /** Entrée image acceptée par l'adaptateur (le modèle doit aussi la supporter) */
   supportsImages: boolean;
+  /** Point d'accès de repli quand le modèle n'existe que sur l'API Responses */
+  supportsResponsesEndpoint?: boolean;
   generate(req: NormalizedRequest, ctx: CallContext): Promise<NormalizedResponse>;
   /** Catalogue officiel, métadonnées uniquement : aucune facturation */
   listModels(ctx: Pick<CallContext, 'apiKey' | 'signal'>): Promise<ModelInfo[]>;

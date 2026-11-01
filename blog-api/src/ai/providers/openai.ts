@@ -1,6 +1,7 @@
 // blog-api/src/ai/providers/openai.ts
 // Adaptateur OpenAI. Vision déclarée : le modèle affecté doit aussi la supporter
 // (vérifiée par fonctionnalité avant validation de l'affectation).
+// Chat Completions par défaut ; API Responses pour les modèles qui n'existent que là (pro, codex).
 
 import { createChatCompletionsAdapter } from './openaiCompatible';
 import { asString } from './http';
@@ -15,6 +16,7 @@ export function createOpenAIAdapter(baseUrl: string): ProviderAdapter {
     id: 'openai',
     supportsImages: true,
     supportedParams: SUPPORTED_PARAMS,
+    responsesEndpoint: true,
     // Le catalogue d'OpenAI n'indique que le retrait : capacités, limites et tarifs restent inconnus
     mapModel: raw => ({ shutdownDate: asString(raw.shutdown_date) }),
   });

@@ -366,27 +366,187 @@ describe('test de compatibilité', () => {
     expect(fnCalled('ai_admin_record_compat')[0].args).toMatchObject({ p_feature: 'cv.generate', p_status: 'compatible', p_capabilities: ['text', 'json'] });
   });
 
-  it('OCR : sonde vision avec une image', async () => {
+  it('OCR : sonde vision avec une image PNG synthétique valide, détail bas', async () => {
+    fakes.openai.behavior = { kind: 'vision' };
     await call('post', '/features/cv.import.ocr/test').send(TEST);
-    expect(JSON.stringify(fakes.openai.calls.at(-1)?.body)).toContain('image_url');
+    const part = fakes.openai.calls.at(-1)!.body.messages.at(-1).content.find((p: { type: string }) => p.type === 'image_url');
+    expect(part.image_url.url).toMatch(/^data:image\/png;base64,/);
+    expect(part.image_url.detail).toBe('low');
+    // Le code à lire n'est jamais écrit dans le texte de la requête
+    const text = JSON.stringify(fakes.openai.calls.at(-1)!.body.messages.map((m: { content: unknown }) => m.content)).replace(/data:image[^"]+/g, '');
+    expect(text).not.toMatch(/\b[ACEHKLPRTX3479]{3}\b/);
   });
 
-  it('modèle qui refuse l’image : incompatible, capacités partielles enregistrées', async () => {
-    // Première sonde (texte) acceptée, seconde (image) refusée
-    fakes.openai.queue = [{ kind: 'ok', content: 'OK' }, { kind: 'error', status: 400, body: { error: { message: 'image non prise en charge' } } }];
+  it.each(['cv.import.ocr', 'latex.import.ocr'])('%s : modèle réellement multimodal → vision confirmée, image vraiment lue', async featureId => {
+    fakes.openai.behavior = { kind: 'vision' };
+    const res = await call('post', `/features/${featureId}/test`).send(TEST);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: 'compatible', capabilities: ['text', 'vision'], failedCapability: null, code: null, recorded: true });
+    expect(res.body.vision.received).toBe(res.body.vision.expected);
+    expect(fnCalled('ai_admin_record_compat')[0].args).toMatchObject({
+      p_feature: featureId, p_status: 'compatible', p_capabilities: ['text', 'vision'], p_failed_capability: null,
+      p_details: { matrixVersion: expect.any(String), vision: { expected: res.body.vision.expected } },
+    });
+  });
+
+  it('chaque sonde tire un nouveau code : une réponse mémorisée échoue', async () => {
+    fakes.openai.behavior = { kind: 'vision' };
+    const first = (await call('post', '/features/cv.import.ocr/test').send(TEST)).body.vision.expected;
+    fakes.openai.queue = [{ kind: 'ok', content: 'OK' }, { kind: 'ok', content: first }];
+    let replayed;
+    // Tirage identique possible (1 sur 2 184) : on recommence jusqu'à obtenir un autre code
+    for (let i = 0; i < 5; i++) {
+      replayed = (await call('post', '/features/cv.import.ocr/test').send(TEST)).body;
+      if (replayed.vision.expected !== first) break;
+      fakes.openai.queue = [{ kind: 'ok', content: 'OK' }, { kind: 'ok', content: first }];
+    }
+    expect(replayed).toMatchObject({ status: 'incompatible', failedCapability: 'vision', code: 'vision_misread' });
+  });
+
+  it('modèle sans vision : refus réel du fournisseur → incompatible confirmé, « texte uniquement »', async () => {
+    fakes.openai.behavior = { kind: 'text-only' };
     const res = await call('post', '/features/cv.import.ocr/test').send(TEST);
     expect(fakes.openai.calls).toHaveLength(2);
-    expect(res.body.status).toBe('incompatible');
-    expect(fnCalled('ai_admin_record_compat')[0].args).toMatchObject({ p_status: 'incompatible', p_capabilities: ['text'] });
+    expect(res.body).toMatchObject({ status: 'incompatible', capabilities: ['text'], failedCapability: 'vision', code: 'vision_unsupported' });
+    expect(fnCalled('ai_admin_record_compat')[0].args).toMatchObject({ p_status: 'incompatible', p_capabilities: ['text'], p_failed_capability: 'vision', p_code: 'vision_unsupported' });
   });
 
-  it('fournisseur sans entrée image (Groq) : OCR incompatible, sans aucun appel', async () => {
-    store.keys.groq = STORED_KEY;
-    fakes.groq.behavior = { kind: 'ok', content: 'rouge' };
-    const res = await call('post', '/features/cv.import.ocr/test').send({ ...TEST, providerId: 'groq' });
-    expect(res.body).toMatchObject({ status: 'incompatible', code: 'vision_unsupported', capabilities: [] });
-    expect(fakes.groq.calls).toHaveLength(0);
-    expect(fnCalled('ai_admin_record_compat')[0].args).toMatchObject({ p_status: 'incompatible' });
+  it('modèle qui répond sans lire l’image (réponse textuelle) → incompatible, jamais un succès', async () => {
+    fakes.openai.behavior = { kind: 'ok', content: 'rouge' };
+    const res = await call('post', '/features/cv.import.ocr/test').send(TEST);
+    expect(res.body).toMatchObject({ status: 'incompatible', failedCapability: 'vision', code: 'vision_misread', vision: { received: 'rouge' } });
+  });
+
+  it('modèle qui dit ne pas voir l’image → vision non prise en charge', async () => {
+    fakes.openai.behavior = { kind: 'ok', content: 'I cannot see images, I am a text-only model.' };
+    const res = await call('post', '/features/cv.import.ocr/test').send(TEST);
+    expect(res.body).toMatchObject({ status: 'incompatible', code: 'vision_unsupported' });
+  });
+
+  it('requête mal construite (image refusée) → erreur de configuration, aucune conclusion sur le modèle', async () => {
+    fakes.openai.queue = [{ kind: 'ok', content: 'OK' }, { kind: 'error', status: 400, body: { error: { message: 'The image data you provided does not represent a valid image.', type: 'invalid_request_error', param: null, code: 'invalid_image_format' } } }];
+    const res = await call('post', '/features/cv.import.ocr/test').send(TEST);
+    expect(res.body).toMatchObject({ status: 'config_error', capabilities: ['text'], failedCapability: 'vision', code: 'invalid_image' });
+    expect(fnCalled('ai_admin_record_compat')[0].args).toMatchObject({ p_status: 'config_error' });
+  });
+
+  it('autres fournisseurs : même sonde, format propre à chaque API', async () => {
+    for (const provider of ['groq', 'xai', 'gemini', 'openrouter', 'anthropic'] as const) {
+      store.keys[provider] = STORED_KEY;
+      fakes[provider].behavior = { kind: 'vision' };
+      const res = await call('post', '/features/latex.import.ocr/test').send({ ...TEST, providerId: provider });
+      expect(res.body, provider).toMatchObject({ status: 'compatible', capabilities: ['text', 'vision'] });
+      fakes[provider].behavior = { kind: 'text-only' };
+      const refused = await call('post', '/features/latex.import.ocr/test').send({ ...TEST, providerId: provider });
+      expect(refused.body, provider).toMatchObject({ status: 'incompatible', failedCapability: 'vision', code: 'vision_unsupported' });
+    }
+    // Groq : pas de champ detail (non documenté)
+    const groqImage = fakes.groq.calls.find(c => JSON.stringify(c.body).includes('image_url'))!.body.messages.at(-1).content.find((p: { type: string }) => p.type === 'image_url');
+    expect(Object.keys(groqImage.image_url)).toEqual(['url']);
+  });
+
+  it('paramètre refusé par le fournisseur : retiré, réponse obtenue, puis signalé à retirer (pas de validation)', async () => {
+    const refusal = { kind: 'error' as const, status: 400, body: { error: { message: "Unsupported value: 'temperature' does not support 0.5 with this model. Only the default (1) value is supported.", type: 'invalid_request_error', param: 'temperature', code: 'unsupported_value' } } };
+    fakes.openai.queue = [refusal, { kind: 'ok', content: 'OK' }, refusal, { kind: 'ok', content: '{"ok":true}' }];
+    const res = await call('post', '/features/cv.generate/test').send({ ...TEST, params: { temperature: 0.5 } });
+    expect(res.body).toMatchObject({ status: 'config_error', code: 'unsupported_parameter', param: 'temperature', rejectedParams: ['temperature'], capabilities: ['text', 'json'] });
+    // Le nouvel essai ne contient plus le paramètre refusé
+    expect(fakes.openai.calls[1].body.temperature).toBeUndefined();
+    expect(fnCalled('ai_admin_record_compat')[0].args).toMatchObject({ p_status: 'config_error', p_details: { rejectedParams: ['temperature'] } });
+  });
+
+  it('champ de limite refusé (max_tokens) : corrigé automatiquement, test valide', async () => {
+    store.keys.openrouter = STORED_KEY;
+    const refusal = { kind: 'error' as const, status: 400, body: { error: { message: "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.", type: 'invalid_request_error', param: 'max_tokens', code: 'unsupported_parameter' } } };
+    fakes.openrouter.queue = [refusal, { kind: 'ok', content: 'OK' }, refusal, { kind: 'ok', content: '{"ok":true}' }];
+    const res = await call('post', '/features/cv.generate/test').send({ ...TEST, providerId: 'openrouter' });
+    expect(res.body).toMatchObject({ status: 'compatible', capabilities: ['text', 'json'], adjustments: ['output_limit_field:max_completion_tokens'] });
+    expect(fakes.openrouter.calls[0].body.max_tokens).toBeDefined();
+    expect(fakes.openrouter.calls[1].body).toMatchObject({ max_completion_tokens: expect.any(Number) });
+    expect(fakes.openrouter.calls[1].body.max_tokens).toBeUndefined();
+  });
+
+  it('modèle servi uniquement par l’API Responses : repli automatique, image en input_image', async () => {
+    const refusal = { kind: 'error' as const, status: 404, body: { error: { message: 'This model is only supported in v1/responses and not in v1/chat/completions.', type: 'invalid_request_error', param: 'model', code: null } } };
+    fakes.openai.queue = [refusal, { kind: 'vision' }, refusal, { kind: 'vision' }];
+    const res = await call('post', '/features/cv.import.ocr/test').send(TEST);
+    expect(res.body).toMatchObject({ status: 'compatible', capabilities: ['text', 'vision'], adjustments: ['endpoint:responses'] });
+    expect(fakes.openai.calls.map(c => c.url)).toEqual(['/v1/chat/completions', '/v1/responses', '/v1/chat/completions', '/v1/responses']);
+    expect(JSON.stringify(fakes.openai.calls[3].body)).toContain('input_image');
+    expect(fakes.openai.calls[3].body).toMatchObject({ store: false, max_output_tokens: expect.any(Number) });
+  });
+
+  it('réflexion qui épuise la limite : une relance plus large, puis conclusion', async () => {
+    // Réponse vide avec finish_reason « length » : toute la limite est partie en réflexion
+    const truncated = { kind: 'error' as const, status: 200, body: { choices: [{ message: { content: '' }, finish_reason: 'length' }], usage: { prompt_tokens: 10, completion_tokens: 2048 } } };
+    fakes.openai.queue = [truncated, { kind: 'ok', content: 'OK' }, { kind: 'ok', content: '{"ok":true}' }];
+    const res = await call('post', '/features/cv.generate/test').send(TEST);
+    expect(res.body).toMatchObject({ status: 'compatible', adjustments: ['probe_output_limit:2048'] });
+    expect(fakes.openai.calls[1].body.max_completion_tokens).toBe(2048);
+  });
+
+  it.each([
+    [401, { error: { message: 'Incorrect API key provided: sk-...abcd', code: 'invalid_api_key' } }, 502, 'AI_TEST_INCONCLUSIVE', 'auth'],
+    [429, { error: { message: 'You exceeded your current quota', type: 'insufficient_quota', code: 'insufficient_quota' } }, 502, 'AI_TEST_INCONCLUSIVE', 'quota_exceeded'],
+    [429, { error: { message: 'credit', type: 'insufficient_quota', code: 'credit_balance_exhausted' } }, 502, 'AI_TEST_INCONCLUSIVE', 'quota_exceeded'],
+    [429, { error: { message: 'Rate limit reached for requests', type: 'requests', code: 'rate_limit_exceeded' } }, 502, 'AI_TEST_INCONCLUSIVE', 'rate_limited'],
+  ])('HTTP %s : cause distinguée, sans conclusion ni enregistrement', async (status, body, httpStatus, code, reason) => {
+    fakes.openai.behavior = { kind: 'error', status, body };
+    const res = await call('post', '/features/cv.generate/test').send(TEST);
+    expect(res.status).toBe(httpStatus);
+    expect(res.body).toMatchObject({ code, reason });
+    expect(fnCalled('ai_admin_record_compat')).toHaveLength(0);
+    expect(JSON.stringify(res.body)).not.toContain('sk-');
+  });
+
+  it.each([
+    [404, { error: { message: 'The model `x` does not exist or you do not have access to it.', type: 'invalid_request_error', code: 'model_not_found' } }, 'model_not_found'],
+    [400, { error: { message: 'Your organization must be verified to use the model `x`.', type: 'invalid_request_error', code: null } }, 'permission_denied'],
+    [403, { error: { message: 'Country, region, or territory not supported', code: 'unsupported_country_region_territory' } }, 'permission_denied'],
+    [400, { error: { message: "This model's maximum context length is 1000 tokens.", code: 'context_length_exceeded' } }, 'context_too_long'],
+    [413, { error: { message: 'Request too large' } }, 'payload_too_large'],
+    [400, { error: { message: 'Invalid JSON body' } }, 'bad_request'],
+  ])('HTTP %s : %s → erreur de configuration, pas une incompatibilité du modèle', async (status, body, code) => {
+    fakes.openai.behavior = { kind: 'error', status, body };
+    const res = await call('post', '/features/cv.generate/test').send(TEST);
+    expect(res.body).toMatchObject({ status: 'config_error', code, failedCapability: 'text' });
+  });
+
+  it('matrice : paramètre refusé par le modèle documenté → erreur de configuration, AUCUNE requête', async () => {
+    fakes.openai.models = [{ id: 'gpt-5-nano' }];
+    const res = await call('post', '/features/cv.import.ocr/test').send({ ...TEST, modelId: 'gpt-5-nano', params: { temperature: 0.2 } });
+    expect(res.body).toMatchObject({ status: 'config_error', code: 'unsupported_parameter', param: 'temperature', recorded: false });
+    expect(res.body.message).toContain('Température');
+    expect(fakes.openai.calls).toHaveLength(0);
+  });
+
+  it('modèle absent du catalogue du compte : vérification gratuite, aucune génération ; « tester quand même » possible', async () => {
+    const res = await call('post', '/features/cv.generate/test').send({ ...TEST, modelId: 'inconnu-xyz' });
+    expect(res.body).toMatchObject({ status: 'config_error', code: 'model_not_listed', recorded: false });
+    expect(fakes.openai.calls).toHaveLength(0);
+    const forced = await call('post', '/features/cv.generate/test').send({ ...TEST, modelId: 'inconnu-xyz', allowUnlisted: true });
+    expect(forced.body.status).toBe('compatible');
+    expect(fakes.openai.calls.length).toBeGreaterThan(0);
+  });
+
+  it('budget du centre IA atteint : sonde refusée avant tout appel', async () => {
+    supabase.ai.responses.ai_admin_models = { status: 200, body: { models: [{ modelId: 'modele-a', pricing: { inputPerMTok: 1_000_000, outputPerMTok: 2_000_000 } }] } };
+    supabase.ai.responses.ai_admin_overview = { status: 200, body: { budget: { dailyLimitMicroUsd: 5_000_000, monthlyLimitMicroUsd: 30_000_000, dayCostMicroUsd: 4_999_990, monthCostMicroUsd: 10 }, features: [] } };
+    const res = await call('post', '/features/cv.generate/test').send(TEST);
+    expect(res.status).toBe(429);
+    expect(res.body).toMatchObject({ code: 'AI_BUDGET_EXCEEDED' });
+    expect(fakes.openai.calls).toHaveLength(0);
+  });
+
+  it('estimation gratuite avant autorisation : requêtes, tokens et coût maximal', async () => {
+    supabase.ai.responses.ai_admin_models = { status: 200, body: { models: [{ modelId: 'gpt-5-nano', pricing: { inputPerMTok: 50_000, outputPerMTok: 400_000 } }] } };
+    const res = await call('get', '/features/latex.import.ocr/test-estimate?providerId=openai&modelId=gpt-5-nano');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ requests: 2, maxRequests: 4, steps: ['text', 'vision'], priced: true, profile: { reasoning: true, visionDocumented: true } });
+    // Entrée : 2 × (60 + 2 200) tokens à 0,05 $ / M ; sortie : 2 sondes × (1 024 + relance 2 048) à 0,40 $ / M
+    expect(res.body).toMatchObject({ inputTokens: 4520, outputTokens: 6144 });
+    expect(res.body.maxCostMicroUsd).toBe(Math.ceil((4520 * 50_000 + 6144 * 400_000) / 1_000_000));
+    expect(fakes.openai.calls).toHaveLength(0);
   });
 
   it('JSON invalide : incompatible avec une fonctionnalité JSON', async () => {
@@ -403,9 +563,16 @@ describe('test de compatibilité', () => {
     expect(fnCalled('ai_admin_record_compat')).toHaveLength(0);
   });
 
-  it('aucune donnée de visiteur dans une sonde', async () => {
+  it('aucune donnée de visiteur dans une sonde ; limite de sortie bornée (prudente si le modèle est inconnu)', async () => {
     await call('post', '/features/cv.generate/test').send(TEST);
-    expect(fakes.openai.calls.every(c => c.body.max_completion_tokens <= 256)).toBe(true);
+    expect(fakes.openai.calls.every(c => c.body.max_completion_tokens <= 1024)).toBe(true);
+    expect(JSON.stringify(fakes.openai.calls.map(c => c.body.messages))).not.toMatch(/Awa|Konan|@/);
+  });
+
+  it('modèle sans raisonnement connu : limite courte (256)', async () => {
+    fakes.openai.models = [{ id: 'gpt-5-chat-latest' }];
+    await call('post', '/features/cv.generate/test').send({ ...TEST, modelId: 'gpt-5-chat-latest' });
+    expect(fakes.openai.calls.every(c => c.body.max_completion_tokens === 256)).toBe(true);
   });
 
   it('sonde tracée dans l’historique', async () => {
@@ -419,6 +586,56 @@ describe('test de compatibilité', () => {
     // Deux sondes (texte, JSON) de 120 tokens en entrée et 40 en sortie chacune
     expect(res.body.estimatedCostMicroUsd).toBe(400);
     expect(store.events.at(-1)).toMatchObject({ kind: 'probe', costMicroUsd: 400 });
+  });
+});
+
+describe('disponibilité et matrice de capacités', () => {
+  it('disponibilité vérifiée gratuitement (catalogue), sans génération', async () => {
+    const yes = await call('post', '/providers/openai/models/check').send({ modelId: 'modele-a' });
+    expect(yes.body).toMatchObject({ status: 'available' });
+    const no = await call('post', '/providers/openai/models/check').send({ modelId: 'gpt-5.6-luna' });
+    expect(no.body).toMatchObject({ status: 'not_listed', profile: { visionDocumented: true, rule: 'openai:gpt-5.6-luna' } });
+    expect(fakes.openai.calls).toHaveLength(0);
+  });
+
+  it('clé refusée lors de la vérification de disponibilité : cause « clé »', async () => {
+    fakes.openai.acceptedKeys = ['autre-cle'];
+    const res = await call('post', '/providers/openai/models/check').send({ modelId: 'modele-a' });
+    fakes.openai.acceptedKeys = null;
+    expect(res.body.status).toBe('key_rejected');
+  });
+
+  it('catalogue enrichi par la matrice : un indice, jamais une validation', async () => {
+    supabase.ai.responses.ai_admin_models = { status: 200, body: { models: [{ modelId: 'gpt-5-nano' }, { modelId: 'gpt-4.1-mystere' }], excluded: [] } };
+    const res = await call('get', '/providers/openai/models');
+    expect(res.body.matrixVersion).toMatch(/^\d{4}-\d{2}-\d{2}/);
+    expect(res.body.models[0].profile).toMatchObject({ visionDocumented: true, reasoning: true, rejectedParams: expect.arrayContaining(['temperature']) });
+    // Famille GPT inconnue de la matrice : rien n'est supposé
+    expect(res.body.models[1].profile).toMatchObject({ visionDocumented: null, reasoning: null, rule: null });
+  });
+
+  it.each([
+    ['gpt-5-nano', { temperature: 0.3 }, 'model'],
+    ['gpt-5-mini', { reasoning_effort: 'none' }, 'effort'],
+    ['gpt-5.6-luna', { temperature: 0.3 }, 'reasoning'],
+    ['gpt-6-astra', { reasoning_effort: 'none' }, 'effort'],
+  ])('affectation %s %j refusée avec une explication (%s)', async (modelId, params, reason) => {
+    const res = await call('put', '/features/inkspace.generate/assignment').send({ ...ASSIGNMENT, modelId, params });
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ code: 'AI_PARAM_REJECTED', reason });
+    expect(fnCalled('ai_admin_save_assignment')).toHaveLength(0);
+  });
+
+  it('gpt-5.6-luna : température acceptée avec l’effort « none »', async () => {
+    supabase.ai.responses.ai_admin_save_assignment = { status: 200, body: { version: 2 } };
+    const res = await call('put', '/features/inkspace.generate/assignment').send({ ...ASSIGNMENT, modelId: 'gpt-5.6-luna', params: { temperature: 0.3, reasoning_effort: 'none' } });
+    expect(res.status).toBe(200);
+  });
+
+  it('identifiant inconnu saisi à la main : accepté, aucune capacité supposée', async () => {
+    supabase.ai.responses.ai_admin_save_assignment = { status: 200, body: { version: 2 } };
+    const res = await call('put', '/features/inkspace.generate/assignment').send({ ...ASSIGNMENT, modelId: 'gpt-9-inconnu-2027', params: {} });
+    expect(res.status).toBe(200);
   });
 });
 

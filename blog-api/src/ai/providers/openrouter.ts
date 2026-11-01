@@ -26,7 +26,6 @@ export function createOpenRouterAdapter(baseUrl: string): ProviderAdapter {
     id: 'openrouter',
     supportsImages: true,
     supportedParams: SUPPORTED_PARAMS,
-    outputLimitField: 'max_tokens',
     fixedBody: { provider: { allow_fallbacks: false, require_parameters: true, data_collection: 'deny' } },
     mapParams: ({ reasoning_effort, ...params }) => ({
       ...params,

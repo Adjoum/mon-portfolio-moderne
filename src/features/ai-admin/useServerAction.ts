@@ -1,7 +1,7 @@
 // src/features/ai-admin/useServerAction.ts
 import { useCallback, useState } from 'react'
 
-export type Notice = { type: 'success' | 'error'; text: string }
+export type Notice = { type: 'success' | 'warning' | 'error'; text: string }
 
 /**
  * Action vers le serveur : un seul message, affiché APRÈS sa réponse. En cas d'échec comme de
@@ -11,13 +11,15 @@ export function useServerAction(reload: () => Promise<unknown>) {
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
 
-  const run = useCallback(async <T,>(id: string, action: () => Promise<T>, success: string | ((result: T) => string)) => {
+  /** `success` peut renvoyer un avertissement ou une erreur : une réponse HTTP 200 n'est pas toujours un succès */
+  const run = useCallback(async <T,>(id: string, action: () => Promise<T>, success: string | ((result: T) => string | Notice)) => {
     setBusy(id)
     setNotice(null)
     try {
       const result = await action()
       await reload().catch(() => {})
-      setNotice({ type: 'success', text: typeof success === 'function' ? success(result) : success })
+      const outcome = typeof success === 'function' ? success(result) : success
+      setNotice(typeof outcome === 'string' ? { type: 'success', text: outcome } : outcome)
       return result
     } catch (err) {
       await reload().catch(() => {})

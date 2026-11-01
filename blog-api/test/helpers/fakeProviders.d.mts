@@ -14,7 +14,11 @@ export type FakeProviderBehavior =
   | { kind: 'hang' }
   | { kind: 'error'; status: number; body: unknown }
   | { kind: 'malformed' }
-  | { kind: 'filtered' };
+  | { kind: 'filtered' }
+  /** Modèle multimodal simulé : décode réellement l'image et lit le code de la sonde */
+  | { kind: 'vision' }
+  /** Modèle sans vision : refuse toute image avec l'erreur réelle du fournisseur */
+  | { kind: 'text-only' };
 
 export interface FakeModel {
   id: string;

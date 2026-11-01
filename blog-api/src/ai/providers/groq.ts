@@ -1,6 +1,7 @@
 // blog-api/src/ai/providers/groq.ts
 // Adaptateur Groq (format compatible Chat Completions, sous-ensemble de paramètres).
-// Pas d'entrée image dans cette version : aucune fonctionnalité vision ne peut lui être affectée.
+// Entrée image documentée (console.groq.com/docs/vision, relue le 01/11/2026) pour certains
+// modèles seulement, en data URL `image_url`, sans champ `detail` : la sonde vision tranche.
 
 import { createChatCompletionsAdapter } from './openaiCompatible';
 import { asNumber } from './http';
@@ -13,7 +14,7 @@ const SUPPORTED_PARAMS: ReadonlySet<GenerationParam> = new Set([
 export function createGroqAdapter(baseUrl: string): ProviderAdapter {
   return createChatCompletionsAdapter(baseUrl, {
     id: 'groq',
-    supportsImages: false,
+    supportsImages: true,
     supportedParams: SUPPORTED_PARAMS,
     mapModel: raw => ({
       contextWindow:       asNumber(raw.context_window),

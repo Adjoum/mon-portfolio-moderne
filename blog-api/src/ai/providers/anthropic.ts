@@ -3,7 +3,7 @@
 // temperature, top_p et top_k ne sont pas proposés : les modèles récents les refusent (HTTP 400).
 // Le catalogue indique les limites et l'entrée image, pas les tarifs.
 
-import { allowedParams, asNumber, asString, httpError, MAX_CATALOG_PAGES, parseDataUrl, requestJson, requireText } from './http';
+import { allowedParams, asNumber, asString, classifyError, MAX_CATALOG_PAGES, parseDataUrl, requestJson, requireText } from './http';
 import {
   ProviderError,
   type CallContext,
@@ -38,7 +38,8 @@ const headersFor = (apiKey: string) => ({ 'x-api-key': apiKey, 'anthropic-versio
 function toError(status: number, error: { type?: string; message?: string } | undefined): ProviderError {
   if (status === 529 || error?.type === 'overloaded_error') return new ProviderError('unavailable', status, 'overloaded_error');
   if (/credit balance/i.test(error?.message ?? '')) return new ProviderError('quota_exceeded', status, 'credit_balance');
-  return httpError(status, error?.type === 'not_found_error' ? 'model_not_found' : '');
+  if (error?.type === 'permission_error') return new ProviderError('permission_denied', status, 'permission_error');
+  return classifyError(status, { code: error?.type === 'not_found_error' ? 'model_not_found' : undefined, type: error?.type, message: error?.message });
 }
 
 function toBlock(part: ContentPart) {

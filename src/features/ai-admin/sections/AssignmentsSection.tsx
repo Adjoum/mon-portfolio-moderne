@@ -1,9 +1,14 @@
 // Assistants et fonctionnalités : une affectation indépendante par fonctionnalité
 // (fournisseur, modèle, paramètres, activation), testée avant toute activation.
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { FlaskConical, Plus, Save, Settings2 } from 'lucide-react'
-import { aiAdmin, PROVIDER_IDS, type Catalog, type FeatureState, type Overview, type ProviderId } from '../api'
-import { BLOCKERS, CAPABILITIES, KEY_STATUS, MODEL_STATUS, PARAM_LABELS, REASONING_LEVELS, featureLabel, formatDate, formatUsd } from '../format'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FlaskConical, Plus, Save, SearchCheck, Settings2 } from 'lucide-react'
+import { aiAdmin, PROVIDER_IDS, type Catalog, type FeatureState, type ModelProfile, type Overview, type ProbeResult, type ProviderId, type TestEstimate } from '../api'
+import {
+  BLOCKERS, CAPABILITIES, CAPABILITY_STATES, KEY_STATUS, MODEL_STATUS, PARAM_LABELS, REASONING_LEVELS,
+  compatState, featureLabel, formatDate, formatUsd, probeCode,
+} from '../format'
+import { probeNotice } from '../probeNotice'
+import type { Notice } from '../useServerAction'
 import { Badge, Button, Card, Field, NoticeBanner } from '../ui'
 import { inputClass, selectClass } from '../styles'
 import { useServerAction } from '../useServerAction'
@@ -11,6 +16,27 @@ import { useServerAction } from '../useServerAction'
 const NEW_MODEL = '__nouveau__'
 
 type Params = Record<string, number | string>
+
+/** Indices de la matrice (documentation officielle) : jamais présentés comme une validation */
+function ProfileHints({ profile }: { profile: ModelProfile | undefined }) {
+  if (!profile) return null
+  const hints = [
+    profile.reasoning === true && 'modèle à raisonnement (la limite de sortie couvre la réflexion)',
+    profile.reasoning === false && 'modèle sans raisonnement',
+    profile.visionDocumented === true && 'image annoncée par la documentation officielle — à confirmer par le test',
+    profile.visionDocumented === false && 'documenté sans entrée image',
+    profile.endpoint === 'responses' && 'servi par l’API Responses',
+    profile.rejectedParams.length > 0 && `refuse : ${profile.rejectedParams.map(p => PARAM_LABELS[p] ?? p).join(', ')}`,
+    profile.samplingOnlyWithoutReasoning && 'température et top p seulement avec l’effort « none »',
+    profile.reasoningEfforts && `efforts acceptés : ${profile.reasoningEfforts.join(', ')}`,
+  ].filter(Boolean)
+  return (
+    <p className="text-xs text-gray-400" data-profile={profile.rule ?? 'défaut'}>
+      Matrice {profile.matrixVersion} : {hints.length ? hints.join(' · ') : 'identifiant inconnu de la matrice, aucune capacité supposée'}
+      {profile.source && <> · <a href={profile.source} target="_blank" rel="noreferrer noopener" className="underline">documentation</a></>}
+    </p>
+  )
+}
 
 function ParamsEditor({ supported, params, onChange, idPrefix }: { supported: string[]; params: Params; onChange: (p: Params) => void; idPrefix: string }) {
   const set = (name: string, raw: string) => {
@@ -55,10 +81,14 @@ function AssignmentEditor({ feature, overview, reload, onClose }: { feature: Fea
   const [newModel, setNewModel] = useState('')
   const [billingOk, setBillingOk] = useState(false)
   const [catalog, setCatalog] = useState<Catalog | null>(null)
+  const [estimate, setEstimate] = useState<TestEstimate | null>(null)
+  const [lastProbe, setLastProbe] = useState<ProbeResult | null>(null)
+  const resultRef = useRef<HTMLDivElement>(null)
 
   const loadCatalog = useCallback(async () => { setCatalog(await aiAdmin.models(providerId).catch(() => ({ models: [], excluded: [] }))) }, [providerId])
   useEffect(() => { void loadCatalog() }, [loadCatalog])
   const { busy, notice, setNotice, run } = useServerAction(useCallback(() => Promise.all([reload(), loadCatalog()]), [reload, loadCatalog]))
+  useEffect(() => { if (notice) resultRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }) }, [notice])
 
   const provider = overview.providers.find(p => p.id === providerId)!
   const supported = overview.paramsByProvider[providerId] ?? []
@@ -66,6 +96,18 @@ function AssignmentEditor({ feature, overview, reload, onClose }: { feature: Fea
   const selected = catalog?.models.find(m => m.modelId === modelId)
   const compat = selected?.compat.find(c => c.featureId === feature.id)
   const id = `assign-${feature.id.replace(/\W/g, '-')}`
+  const testable = !!modelId && modelId !== NEW_MODEL
+
+  // Estimation gratuite du coût maximal, recalculée à chaque changement de modèle : l'autorisation porte sur ce montant
+  useEffect(() => {
+    setBillingOk(false)
+    setEstimate(null)
+    setLastProbe(null)
+    if (!testable) return
+    let live = true
+    aiAdmin.testEstimate(feature.id, providerId, modelId).then(e => { if (live) setEstimate(e) }).catch(() => {})
+    return () => { live = false }
+  }, [feature.id, providerId, modelId, testable])
 
   const changeProvider = (next: ProviderId) => {
     setProviderId(next)
@@ -87,13 +129,28 @@ function AssignmentEditor({ feature, overview, reload, onClose }: { feature: Fea
     maxOutputTokens: Number(maxOutputTokens), timeoutMs: Number(timeoutSec) * 1000, enabled, version: feature.version,
   }), enabled ? `${featureLabel(feature.id)} : configuration enregistrée et active.` : `${featureLabel(feature.id)} : configuration enregistrée (fonctionnalité inactive).`)
 
-  const test = () => run('test', () => aiAdmin.testFeature(feature.id, providerId, modelId, params), r => r.status === 'compatible'
-    ? `Test réussi (${r.capabilities.map(c => CAPABILITIES[c] ?? c).join(', ')}) en ${r.latencyMs} ms · coût estimé ${formatUsd(r.estimatedCostMicroUsd)}.`
-    : `Modèle incompatible avec cette fonctionnalité (${r.code ?? 'réponse inexploitable'}) : capacités validées ${r.capabilities.map(c => CAPABILITIES[c] ?? c).join(', ') || 'aucune'}.`)
+  const test = (allowUnlisted = false) => run('test', () => aiAdmin.testFeature(feature.id, providerId, modelId, params, allowUnlisted), r => {
+    setLastProbe(r)
+    // Une nouvelle autorisation est demandée avant chaque test facturé
+    if (r.recorded) setBillingOk(false)
+    return probeNotice(r)
+  })
+
+  const check = () => run('check', () => aiAdmin.checkModel(providerId, modelId), r => ({
+    type: r.status === 'available' ? 'success' : r.status === 'unknown' ? 'warning' : 'error',
+    text: `${r.status === 'available' ? CAPABILITY_STATES.available.label : r.status === 'not_listed' ? 'Absent du catalogue' : r.status === 'key_rejected' ? 'Clé refusée' : 'Non vérifié'} — ${r.message} Vérification gratuite, aucune génération.`,
+  }) as Notice)
+
+  /** Retire de l'affectation les paramètres que le test a montrés refusés */
+  const dropRejected = () => {
+    if (!lastProbe?.rejectedParams.length) return
+    setParams(Object.fromEntries(Object.entries(params).filter(([k]) => !lastProbe.rejectedParams.includes(k))))
+    setNotice({ type: 'warning', text: `Retiré de la configuration : ${lastProbe.rejectedParams.map(p => PARAM_LABELS[p] ?? p).join(', ')}. Enregistrez puis relancez le test.` })
+    setLastProbe(null)
+  }
 
   return (
     <div className="space-y-4 border-t border-white/10 pt-4" id={`${id}-editor`}>
-      <NoticeBanner notice={notice} onClose={() => setNotice(null)} />
       <p className="text-sm text-gray-400">
         Capacités requises : {feature.requiredCapabilities.map(c => CAPABILITIES[c] ?? c).join(', ')}
         {feature.personalData && ' · envoie des données personnelles au fournisseur choisi'}
@@ -140,12 +197,21 @@ function AssignmentEditor({ feature, overview, reload, onClose }: { feature: Fea
       )}
 
       {selected && (
-        <p className="text-sm">
-          {compat?.status === 'compatible' && <Badge tone="green">Testé compatible le {formatDate(compat.testedAt)}</Badge>}
-          {compat?.status === 'incompatible' && <Badge tone="red">Incompatible (test du {formatDate(compat.testedAt)})</Badge>}
-          {!compat && <Badge tone="amber">Jamais testé pour cette fonctionnalité</Badge>}
-          {!selected.pricing && <> <Badge tone="amber">Tarif à saisir dans le catalogue</Badge></>}
-        </p>
+        <div className="space-y-1">
+          <p className="text-sm flex flex-wrap gap-1.5 items-center">
+            {(() => {
+              const state = compatState(compat ? { status: compat.status, capabilities: compat.capabilities ?? [], failedCapability: compat.failedCapability ?? null } : null)
+              const info = CAPABILITY_STATES[state]
+              return (
+                <Badge tone={info.tone} title={info.hint}>
+                  {info.label}{compat ? ` (test du ${formatDate(compat.testedAt)}${compat.code ? ` : ${probeCode(compat.code)}` : ''})` : ' pour cette fonctionnalité'}
+                </Badge>
+              )
+            })()}
+            {selected.pricing ? <Badge>Tarif saisi</Badge> : <Badge tone="amber">Tarif à saisir dans le catalogue</Badge>}
+          </p>
+          <ProfileHints profile={selected.profile} />
+        </div>
       )}
 
       <ParamsEditor supported={supported} params={params} onChange={setParams} idPrefix={id} />
@@ -160,9 +226,23 @@ function AssignmentEditor({ feature, overview, reload, onClose }: { feature: Fea
       </div>
 
       <div className="space-y-2">
+        {testable && (
+          <p className="text-sm text-gray-300" data-testid="probe-estimate">
+            {!estimate ? 'Estimation du coût…' : <>
+              Test : {estimate.steps.map(c => CAPABILITIES[c] ?? c).join(', ')} — {estimate.requests} requête(s), {estimate.maxRequests} au plus avec relances,
+              {' '}{estimate.outputTokens.toLocaleString('fr-FR')} tokens de sortie au plus.{' '}
+              {estimate.maxCostMicroUsd !== null
+                ? <>Coût maximal estimé : <strong>{formatUsd(estimate.maxCostMicroUsd)}</strong>.</>
+                : <span className="text-amber-300">Tarif inconnu : coût non estimable (le test reste possible).</span>}
+              {estimate.budgetOk === false && <span className="text-red-300"> Budget du centre IA insuffisant : le test sera refusé.</span>}
+            </>}
+          </p>
+        )}
         <label className="flex items-start gap-2 text-sm text-gray-300">
           <input type="checkbox" checked={billingOk} onChange={e => setBillingOk(e.target.checked)} className="mt-1" />
-          Je comprends que le test envoie de petites requêtes réelles au fournisseur, potentiellement facturées.
+          {estimate?.maxCostMicroUsd !== null && estimate?.maxCostMicroUsd !== undefined
+            ? `J’autorise ce test réel, facturé par le fournisseur, pour un coût maximal estimé de ${formatUsd(estimate.maxCostMicroUsd)}.`
+            : 'Je comprends que le test envoie de petites requêtes réelles au fournisseur, potentiellement facturées.'}
         </label>
         <label className="flex items-center gap-2 text-sm text-gray-300">
           <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
@@ -171,13 +251,29 @@ function AssignmentEditor({ feature, overview, reload, onClose }: { feature: Fea
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button busy={busy === 'test'} disabled={!!busy || !modelId || modelId === NEW_MODEL || !billingOk} onClick={test}>
+        <Button busy={busy === 'check'} disabled={!!busy || !testable} onClick={check} title="Gratuit : aucune génération">
+          <SearchCheck size={16} /> Vérifier la disponibilité
+        </Button>
+        <Button busy={busy === 'test'} disabled={!!busy || !testable || !billingOk} onClick={() => test()}>
           <FlaskConical size={16} /> Tester la configuration
         </Button>
         <Button variant="primary" busy={busy === 'save'} disabled={!!busy || modelId === NEW_MODEL} onClick={save}>
           <Save size={16} /> Enregistrer
         </Button>
         <Button onClick={onClose}>Fermer</Button>
+      </div>
+
+      {/* Résultat juste sous les boutons qui l'ont produit, amené à l'écran */}
+      <div ref={resultRef} className="space-y-2 scroll-mb-24">
+        <NoticeBanner notice={notice} onClose={() => setNotice(null)} />
+        {lastProbe?.rejectedParams.length ? (
+          <Button onClick={dropRejected}>Retirer les paramètres refusés ({lastProbe.rejectedParams.map(p => PARAM_LABELS[p] ?? p).join(', ')})</Button>
+        ) : null}
+        {lastProbe?.code === 'model_not_listed' && (
+          <Button disabled={!!busy || !billingOk} busy={busy === 'test'} onClick={() => test(true)} title={billingOk ? undefined : 'Cochez d’abord l’autorisation de coût'}>
+            <FlaskConical size={16} /> Tester quand même ce modèle absent du catalogue
+          </Button>
+        )}
       </div>
     </div>
   )
@@ -204,9 +300,14 @@ export default function AssignmentsSection({ overview, reload, openFeature, onOp
                   {f.enabled && !f.blocker && <Badge tone="green">Actif</Badge>}
                   {f.enabled && f.blocker && <Badge tone="amber" title={BLOCKERS[f.blocker]}>Bloqué : {BLOCKERS[f.blocker].toLowerCase()}</Badge>}
                   {!f.enabled && <Badge>Inactif{f.blocker ? ` · ${BLOCKERS[f.blocker].toLowerCase()}` : ''}</Badge>}
-                  <Badge tone={f.compat?.status === 'compatible' ? 'green' : f.compat ? 'red' : 'gray'}>
-                    Dernier test : {f.compat ? `${f.compat.status === 'compatible' ? 'réussi' : 'incompatible'} le ${formatDate(f.compat.testedAt)}` : 'aucun'}
-                  </Badge>
+                  {(() => {
+                    const info = CAPABILITY_STATES[compatState(f.compat)]
+                    return (
+                      <Badge tone={info.tone} title={info.hint}>
+                        {info.label}{f.compat ? ` · test du ${formatDate(f.compat.testedAt)}${f.compat.code ? ` (${probeCode(f.compat.code)})` : ''}` : ''}
+                      </Badge>
+                    )
+                  })()}
                 </div>
                 <p className="text-xs text-gray-400">
                   Quotas : {f.quotas.perSubjectPerDay} / visiteur / jour · {f.quotas.globalPerDay} / jour au total · {f.quotas.perMinute} / minute ·

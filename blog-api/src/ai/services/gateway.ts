@@ -9,6 +9,7 @@
 import crypto from 'crypto';
 import { FEATURES, type FeatureDefinition } from '../features/registry';
 import { InputError } from '../features/validate';
+import { generateAdaptive } from '../providers/adaptive';
 import { PROVIDERS } from '../providers/registry';
 import { ProviderError, type ProviderAdapter, type ProviderDescriptor, type ProviderId } from '../providers/types';
 import { createConcurrencyLimiter, type ConcurrencyLimiter, type ConcurrencySlot } from './concurrency';
@@ -75,11 +76,18 @@ function mapProviderError(err: ProviderError): AiError {
   switch (err.code) {
     case 'timeout':          return new AiError(504, 'AI_TIMEOUT');
     case 'rate_limited':     return new AiError(503, 'AI_BUSY', 30);
+    // Configuration du centre IA en cause : le visiteur n'y peut rien
     case 'auth':
+    case 'permission_denied':
     case 'model_not_found':
     case 'model_deprecated':
+    case 'endpoint_incompatible':
+    case 'vision_unsupported':
+    case 'unsupported_parameter':
     case 'quota_exceeded':   return new AiError(503, 'AI_FEATURE_UNAVAILABLE');
     case 'context_too_long':
+    case 'payload_too_large':
+    case 'invalid_image':
     case 'bad_request':      return new AiError(422, 'AI_REQUEST_REJECTED');
     case 'content_filtered': return new AiError(422, 'AI_CONTENT_FILTERED');
     case 'aborted':          return new AiError(499, 'AI_ABORTED');
@@ -258,10 +266,13 @@ export function createAiGateway(overrides: Partial<AiGatewayDeps> = {}) {
             .flatMap(m => m.content)
             .reduce((n, p) => n + (p.type === 'text' ? p.text.length : 0), 0);
 
-          const result = await adapter.generate(
+          // Forme de la requête adaptée au modèle (matrice de capacités, refus explicites du fournisseur)
+          const result = await generateAdaptive(
+            adapter,
             { ...built, maxOutputTokens: entry.maxOutputTokens, params: entry.params, output: feature.output },
             { apiKey, model: entry.model, signal },
           );
+          if (result.adjustments.length) console.warn(`[AI] ${ctx.requestId} ${feature.id} : requête adaptée (${result.adjustments.join(', ')})`);
           const { inputTokens, outputTokens } = result.usage ?? {};
           // Consommation non indiquée par le fournisseur : le montant réservé est conservé
           const cost = inputTokens !== undefined && outputTokens !== undefined
@@ -277,12 +288,12 @@ export function createAiGateway(overrides: Partial<AiGatewayDeps> = {}) {
         } catch (err) {
           const providerError = err instanceof ProviderError ? err : new ProviderError('unknown', undefined, (err as Error)?.name);
           // Une réponse reçue puis rejetée a tout de même été facturée
-          const billed = providerError.code === 'invalid_response' ? reservedCost : 0;
+          const billed = providerError.code === 'invalid_response' || providerError.code === 'output_truncated' ? reservedCost : 0;
           await settle(billed, {
             ...meta, outcome: 'error', code: providerError.code, latencyMs: Date.now() - started,
             providerStatus: providerError.providerStatus, costMicroUsd: billed,
           });
-          if (providerError.code === 'auth' || providerError.code === 'model_not_found') {
+          if (['auth', 'permission_denied', 'model_not_found', 'endpoint_incompatible', 'vision_unsupported', 'unsupported_parameter'].includes(providerError.code)) {
             console.error(`[AI] ${feature.id} : ${providerError.code} (${providerError.detail ?? ''}) — vérifier la clé ou l'affectation`);
           }
           throw mapProviderError(providerError);
