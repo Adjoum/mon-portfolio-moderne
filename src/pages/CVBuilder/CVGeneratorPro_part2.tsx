@@ -1,5 +1,6 @@
 // CVGeneratorPro — Part 2: 8 Premium Templates
 import type { GeneratedCV, DesignConfig, TemplateId } from './CVGeneratorPro_part1';
+import { TEMPLATE_CAPS, applyDesignLayer, isTemplatePalette, normalizeDesign } from './cvDesign';
 
 /** Échappement HTML complet : valable dans le texte ET dans les attributs */
 export const esc = (s: unknown) => String(s ?? '')
@@ -104,7 +105,7 @@ function tCascade(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   let side = `
     ${d.showPhoto && p.photo ? `<div style="display:flex;justify-content:center;margin-bottom:14px;"><img src="${p.photo}" style="width:110px;height:130px;object-fit:cover;object-position:${d.photoX}% ${d.photoY}%;border:3px solid rgba(255,255,255,.4);border-radius:4px;"></div>` : ''}
     <h1 style="font-size:14pt;font-weight:700;color:#fff;text-align:center;margin-bottom:3px;line-height:1.2;">${esc(p.name)}</h1>
-    <p style="font-size:8.5pt;text-align:center;color:${ac};margin-bottom:12px;">${esc(p.title)}</p>
+    <p class="cv-role" style="font-size:8.5pt;text-align:center;color:${ac};margin-bottom:12px;">${esc(p.title)}</p>
     <div style="height:1px;background:rgba(255,255,255,.2);margin-bottom:12px;"></div>
     <div style="margin-bottom:12px;">
       <div style="font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:${ac};margin-bottom:7px;">${L('Informations','Contact')}</div>
@@ -144,13 +145,13 @@ function tCascade(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
     side += `</div>`;
   }
 
-  const SH = (t: string) => `<h2 style="font-size:12pt;font-weight:700;color:${pc};border-bottom:2px solid ${pc};padding-bottom:3px;margin:14px 0 9px;text-transform:capitalize;">${esc(t)}</h2>`;
+  const SH = (t: string) => `<h2 class="cv-section cv-section-title cv-sep" data-sep="border" style="font-size:12pt;font-weight:700;color:${pc};border-bottom:2px solid ${pc};padding-bottom:3px;margin:14px 0 9px;text-transform:capitalize;">${esc(t)}</h2>`;
   let main = `<p style="font-size:9.5pt;line-height:1.65;color:#333;margin-bottom:14px;text-align:justify;">${esc(p.summary)}</p>`;
 
   if (cv.experience?.length) {
     main += SH(L('Expérience professionnelle','Professional Experience'));
     cv.experience.forEach(exp => {
-      main += `<div style="display:flex;gap:12px;margin-bottom:12px;">
+      main += `<div class="cv-entry" style="display:flex;gap:12px;margin-bottom:12px;">
         <div style="width:78px;flex-shrink:0;text-align:right;font-size:8pt;color:#666;line-height:1.5;">${esc(exp.start)}<br>${esc(exp.end)}</div>
         <div style="flex:1;border-left:2px solid ${ac};padding-left:10px;">
           <div style="font-size:10.5pt;font-weight:700;color:${pc};">${esc(exp.role)}</div>
@@ -165,7 +166,7 @@ function tCascade(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   if (cv.projects?.length) {
     main += SH(L('Projets','Projects'));
     cv.projects.forEach(pr => {
-      main += `<div style="margin-bottom:10px;padding:8px 10px;background:#f4f8fc;border-left:3px solid ${ac};border-radius:0 6px 6px 0;">
+      main += `<div class="cv-entry" style="margin-bottom:10px;padding:8px 10px;background:#f4f8fc;border-left:3px solid ${ac};border-radius:0 6px 6px 0;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
           <strong style="font-size:10pt;color:${pc};">${esc(pr.name)}</strong>
           ${projectLink(pr.link||'', '🌐 Demo', pc)}
@@ -181,7 +182,7 @@ function tCascade(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   if (cv.education?.length) {
     main += SH(L('Formation','Education'));
     cv.education.forEach(edu => {
-      main += `<div style="display:flex;gap:12px;margin-bottom:8px;">
+      main += `<div class="cv-entry" style="display:flex;gap:12px;margin-bottom:8px;">
         <div style="width:78px;flex-shrink:0;text-align:right;font-size:8pt;color:#666;">${esc(edu.year)}</div>
         <div style="flex:1;border-left:2px solid ${ac};padding-left:10px;">
           <div style="font-size:10.5pt;font-weight:700;color:${pc};">${esc(edu.degree)}${edu.field?' — '+esc(edu.field):''}</div>
@@ -199,7 +200,7 @@ function tCascade(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   }
 
   return wrapHTML(cv, d, lang,
-    `<div style="width:220px;flex-shrink:0;background:${pc};padding:${sp.pad};color:#fff;print-color-adjust:exact;-webkit-print-color-adjust:exact;">${side}</div><div style="flex:1;padding:${sp.pad};">${main}</div>`,
+    `<div class="cv-sidebar" style="width:var(--cv-side, 220px);flex-shrink:0;background:${pc};padding:${sp.pad};color:#fff;print-color-adjust:exact;-webkit-print-color-adjust:exact;">${side}</div><div style="flex:1;padding:${sp.pad};">${main}</div>`,
     `display:flex;min-height:100vh;`, false
   );
 }
@@ -214,7 +215,7 @@ function tModerne(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   const hBG = headerBG(d);
   const headerFgColor = d.headerStyle === 'minimal' ? pc : '#fff';
 
-  const SH = (t: string, side = false) => `<div style="margin:${side?'10px':'12px'} 0 ${side?'5px':'7px'};"><span style="background:${ac};color:#fff;font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:3px 10px;border-radius:2px;display:inline-block;">${esc(t)}</span></div>`;
+  const SH = (t: string, side = false) => `<div class="cv-section" style="margin:${side?'10px':'12px'} 0 ${side?'5px':'7px'};"><span class="cv-section-title" style="background:${ac};color:#fff;font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:3px 10px;border-radius:2px;display:inline-block;">${esc(t)}</span></div>`;
 
   let left = `${SH(L('Profil','Profile'), true)}<p style="font-size:8.5pt;line-height:1.6;color:#333;text-align:justify;">${esc(p.summary)}</p>`;
   left += `${SH(L('Coordonnées','Contact'), true)}`;
@@ -241,7 +242,7 @@ function tModerne(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   if (cv.experience?.length) {
     right += SH(L('Expériences','Experience'));
     cv.experience.forEach(exp => {
-      right += `<div style="display:flex;gap:10px;margin-bottom:12px;">
+      right += `<div class="cv-entry" style="display:flex;gap:10px;margin-bottom:12px;">
         <div style="min-width:82px;text-align:right;font-size:8pt;color:${ac};font-weight:600;padding-top:2px;line-height:1.5;">${esc(exp.start)}<br>${esc(exp.end)}</div>
         <div style="flex:1;border-left:2px solid #e0eaec;padding-left:10px;">
           <div style="font-size:10pt;font-weight:700;color:${pc};">${esc(exp.role)}</div>
@@ -255,7 +256,7 @@ function tModerne(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   if (cv.projects?.length) {
     right += SH(L('Projets','Projects'));
     cv.projects.forEach(pr => {
-      right += `<div style="margin-bottom:9px;background:#f5fafa;border-left:3px solid ${ac};padding:7px 10px;border-radius:0 5px 5px 0;">
+      right += `<div class="cv-entry" style="margin-bottom:9px;background:#f5fafa;border-left:3px solid ${ac};padding:7px 10px;border-radius:0 5px 5px 0;">
         <div style="display:flex;align-items:center;gap:7px;margin-bottom:2px;">
           <strong style="font-size:9.5pt;color:${pc};">${esc(pr.name)}</strong>
           ${projectLink(pr.link||'','🌐',pc)} ${projectLink(pr.github||'','💻',pc)}
@@ -269,7 +270,7 @@ function tModerne(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   if (cv.education?.length) {
     right += SH(L('Formation','Education'));
     cv.education.forEach(edu => {
-      right += `<div style="margin-bottom:8px;border-left:2px solid #e0eaec;padding-left:10px;">
+      right += `<div class="cv-entry" style="margin-bottom:8px;border-left:2px solid #e0eaec;padding-left:10px;">
         <div style="font-size:10pt;font-weight:700;color:${pc};">${esc(edu.degree)}${edu.field?' — '+esc(edu.field):''}</div>
         <div style="font-size:8.5pt;color:${ac};font-style:italic;">${esc(edu.school)}, ${esc(edu.city)} · ${esc(edu.year)}</div>
         ${edu.mention?`<div style="font-size:8pt;color:#888;">${esc(edu.mention)}</div>`:''}
@@ -279,17 +280,17 @@ function tModerne(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
 
   
   return wrapHTML(cv, d, lang, `
-    <div style="background:${hBG};padding:20px 28px;color:${headerFgColor};print-color-adjust:exact;-webkit-print-color-adjust:exact;">
+    <div class="cv-header" style="background:${hBG};padding:20px 28px;color:${headerFgColor};print-color-adjust:exact;-webkit-print-color-adjust:exact;">
       <div style="display:flex;align-items:center;gap:16px;">
         ${d.showPhoto && p.photo ? `<img src="${p.photo}" style="width:85px;height:85px;border-radius:50%;object-fit:cover;object-position:${d.photoX}% ${d.photoY}%;border:3px solid rgba(255,255,255,.5);">` : ''}
         <div style="flex:1;">
           <h1 style="font-size:20pt;font-weight:700;margin:0;color:${headerFgColor};">${esc(p.name)}</h1>
-          <div style="font-size:10.5pt;color:${headerFgColor === pc ? ac : 'rgba(255,255,255,.85)'};margin-top:3px;">${esc(p.title)}</div>
+          <div class="cv-role" style="font-size:10.5pt;color:${headerFgColor === pc ? ac : 'rgba(255,255,255,.85)'};margin-top:3px;">${esc(p.title)}</div>
         </div>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:200px 1fr;">
-      <div style="background:#f0f4f5;padding:16px 14px;">${left}</div>
+    <div style="display:grid;grid-template-columns:var(--cv-side, 200px) 1fr;">
+      <div class="cv-sidebar" style="background:#f0f4f5;padding:16px 14px;">${left}</div>
       <div style="padding:16px 20px;">${right}</div>
     </div>`, '', false
   );
@@ -304,10 +305,10 @@ function tClassique(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   const L = (fr: string, en: string) => lang === 'fr' ? fr : en;
   const sp = spacing(d);
 
-  const SH = (t: string) => `<div style="display:flex;align-items:center;gap:8px;margin:14px 0 8px;">
-    <span style="flex:1;height:1px;background:${pc};"></span>
-    <h2 style="font-size:10.5pt;font-weight:700;color:${pc};white-space:nowrap;text-transform:uppercase;letter-spacing:1px;">${esc(t)}</h2>
-    <span style="flex:1;height:1px;background:${pc};"></span>
+  const SH = (t: string) => `<div class="cv-section" style="display:flex;align-items:center;gap:8px;margin:14px 0 8px;">
+    <span class="cv-sep" data-sep="side" style="flex:1;height:1px;background:${pc};"></span>
+    <h2 class="cv-section-title" style="font-size:10.5pt;font-weight:700;color:${pc};white-space:nowrap;text-transform:uppercase;letter-spacing:1px;">${esc(t)}</h2>
+    <span class="cv-sep" data-sep="side" style="flex:1;height:1px;background:${pc};"></span>
   </div>`;
 
   let body = '';
@@ -325,7 +326,7 @@ function tClassique(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   if (cv.experience?.length) {
     body += SH(L('Expériences professionnelles','Professional Experience'));
     cv.experience.forEach(exp => {
-      body += `<div style="margin-bottom:11px;">
+      body += `<div class="cv-entry" style="margin-bottom:11px;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;">
           <div><div style="font-size:10.5pt;font-weight:700;color:${pc};">${esc(exp.role)}</div>
           <div style="font-size:9pt;color:#555;font-style:italic;">${esc(exp.company)}, ${esc(exp.location)}</div></div>
@@ -340,7 +341,7 @@ function tClassique(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   if (cv.projects?.length) {
     body += SH(L('Projets','Projects'));
     cv.projects.forEach(pr => {
-      body += `<div style="margin-bottom:9px;">
+      body += `<div class="cv-entry" style="margin-bottom:9px;">
         <div style="display:flex;align-items:center;gap:8px;">
           <strong style="font-size:10pt;color:${pc};">${esc(pr.name)}</strong>
           ${projectLink(pr.link||'','🌐 Demo',pc)} ${projectLink(pr.github||'','💻 GitHub',pc)}
@@ -355,7 +356,7 @@ function tClassique(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   if (cv.education?.length) {
     body += SH(L('Formation','Education'));
     cv.education.forEach(edu => {
-      body += `<div style="margin-bottom:7px;display:flex;justify-content:space-between;align-items:baseline;"><div>
+      body += `<div class="cv-entry" style="margin-bottom:7px;display:flex;justify-content:space-between;align-items:baseline;"><div>
         <div style="font-size:10.5pt;font-weight:700;color:${pc};">${esc(edu.degree)}${edu.field?' — '+esc(edu.field):''}</div>
         <div style="font-size:9pt;color:#555;font-style:italic;">${esc(edu.school)}, ${esc(edu.city)}</div>
         ${edu.mention?`<div style="font-size:8.5pt;color:#888;">${esc(edu.mention)}</div>`:''}
@@ -375,11 +376,11 @@ function tClassique(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   const contacts = [p.city&&`📍 ${p.city}`,p.phone&&`📞 ${p.phone}`,p.email&&`✉ ${p.email}`,p.linkedin&&`🔗 ${p.linkedin}`,p.github&&`💻 ${p.github}`].filter(Boolean);
 
   return wrapHTML(cv, d, lang, `
-    <div style="background:${headerBG(d)};padding:22px 30px;display:flex;align-items:center;gap:18px;print-color-adjust:exact;">
+    <div class="cv-header" style="background:${headerBG(d)};padding:22px 30px;display:flex;align-items:center;gap:18px;print-color-adjust:exact;">
       ${d.showPhoto && p.photo ? `<img src="${p.photo}" style="width:100px;height:115px;object-fit:cover;object-position:${d.photoX}% ${d.photoY}%;border:3px solid rgba(255,255,255,.45);border-radius:3px;flex-shrink:0;">` : ''}
       <div style="flex:1;">
         <h1 style="font-size:22pt;font-weight:400;margin:0;color:#fff;letter-spacing:2px;">${esc(p.name).toUpperCase()}</h1>
-        <div style="font-size:11pt;color:rgba(255,255,255,.8);margin:4px 0 10px;">${esc(p.title)}</div>
+        <div class="cv-role" style="font-size:11pt;color:rgba(255,255,255,.8);margin:4px 0 10px;">${esc(p.title)}</div>
         <div style="display:flex;flex-wrap:wrap;gap:3px 12px;">${contacts.map(c=>`<span style="font-size:8pt;color:rgba(255,255,255,.75);">${esc(c as string)}</span>`).join('')}</div>
       </div>
     </div>
@@ -395,9 +396,9 @@ function tStanford(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   const pc = d.primaryColor, ac = d.accentColor;
   const L = (fr: string, en: string) => lang === 'fr' ? fr : en;
 
-  const SH = (t: string) => `<table width="100%" style="border-collapse:collapse;margin-top:13px;margin-bottom:5px;">
-    <tr><td colspan="2" style="border-bottom:1.5px double ${pc};padding-bottom:3px;">
-      <h2 style="font-size:11pt;font-weight:700;color:${pc};text-transform:uppercase;letter-spacing:1.5px;margin:0;">${esc(t)}</h2>
+  const SH = (t: string) => `<table class="cv-section" width="100%" style="border-collapse:collapse;margin-top:13px;margin-bottom:5px;">
+    <tr><td class="cv-sep" data-sep="border" colspan="2" style="border-bottom:1.5px double ${pc};padding-bottom:3px;">
+      <h2 class="cv-section-title" style="font-size:11pt;font-weight:700;color:${pc};text-transform:uppercase;letter-spacing:1.5px;margin:0;">${esc(t)}</h2>
     </td></tr>
   </table>`;
 
@@ -407,7 +408,7 @@ function tStanford(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
       <td style="border-left:1px solid ${pc}30;padding-left:14px;vertical-align:top;font-size:9.5pt;">${content}</td>
     </tr>
   </table>`;  */
-  const ROW = (label: string, content: string) => `<table width="100%" style="border-collapse:collapse;margin-top:9px;">
+  const ROW = (label: string, content: string) => `<table class="cv-entry" width="100%" style="border-collapse:collapse;margin-top:9px;">
     <tr>
       <td style="width:22%;font-size:9pt;font-weight:700;color:#666;text-align:right;padding-right:12px;vertical-align:top;">${label}</td>
       <td style="border-left:1px solid ${pc}30;padding-left:14px;vertical-align:top;font-size:9.5pt;">${content}</td>
@@ -466,7 +467,7 @@ function tStanford(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
       <div style="text-align:center;margin-bottom:18px;padding-bottom:14px;border-bottom:2px solid ${pc};">
         ${d.showPhoto && p.photo ? `<img src="${p.photo}" style="width:90px;height:90px;border-radius:50%;object-fit:cover;object-position:${d.photoX}% ${d.photoY}%;border:3px solid ${ac};display:block;margin:0 auto 10px;">` : ''}
         <h1 style="font-size:24pt;font-weight:400;margin:0;color:${pc};letter-spacing:1px;">${esc(p.name)}</h1>
-        ${p.title?`<div style="font-size:12pt;color:#555;font-style:italic;margin-top:4px;">${esc(p.title)}</div>`:''}
+        ${p.title?`<div class="cv-role" style="font-size:12pt;color:#555;font-style:italic;margin-top:4px;">${esc(p.title)}</div>`:''}
         <div style="font-size:10pt;color:#888;margin-top:8px;">${contacts}</div>
       </div>
       ${body}
@@ -479,10 +480,12 @@ function tStanford(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
 // ══════════════════════════════════════════════════════════════
 function tOpenAIDark(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   const p = cv.personal;
-  const pc = '#6366f1', ac = '#a5b4fc';
+  // Palette propre au modèle, sauf si l'utilisateur a choisi ses couleurs
+  const custom = !isTemplatePalette(d);
+  const pc = custom ? d.primaryColor : '#6366f1', ac = custom ? d.accentColor : '#a5b4fc';
   const L = (fr: string, en: string) => lang === 'fr' ? fr : en;
 
-  const SH = (t: string) => `<div style="display:flex;align-items:center;gap:8px;margin:14px 0 8px;"><div style="width:4px;height:16px;background:${pc};border-radius:2px;"></div><h2 style="font-size:10pt;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:${ac};margin:0;">${esc(t)}</h2></div>`;
+  const SH = (t: string) => `<div class="cv-section" style="display:flex;align-items:center;gap:8px;margin:14px 0 8px;"><div style="width:4px;height:16px;background:${pc};border-radius:2px;"></div><h2 class="cv-section-title" style="font-size:10pt;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:${ac};margin:0;">${esc(t)}</h2></div>`;
 
   let left = '', right = '';
 
@@ -491,7 +494,7 @@ function tOpenAIDark(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
   }
 
   left += `<h1 style="font-size:16pt;font-weight:700;color:#fff;margin-bottom:2px;line-height:1.2;">${esc(p.name)}</h1>
-    <div style="font-size:9.5pt;color:${ac};margin-bottom:12px;">${esc(p.title)}</div>
+    <div class="cv-role" style="font-size:9.5pt;color:${ac};margin-bottom:12px;">${esc(p.title)}</div>
     <div style="font-size:8.5pt;color:#8892a4;line-height:2;">
       ${p.email?`<div>✉ ${esc(p.email)}</div>`:''}
       ${p.phone?`<div>📞 ${esc(p.phone)}</div>`:''}
@@ -518,7 +521,7 @@ function tOpenAIDark(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
   if (cv.experience?.length) {
     right += SH(L('Expérience','Experience'));
     cv.experience.forEach(exp => {
-      right += `<div style="margin-bottom:12px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:11px 13px;">
+      right += `<div class="cv-entry" style="margin-bottom:12px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:11px 13px;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;">
           <span style="font-size:11pt;font-weight:700;color:${ac};">${esc(exp.role)}</span>
           <span style="font-size:8.5pt;color:#8892a4;">${esc(exp.start)} – ${esc(exp.end)}</span>
@@ -533,7 +536,7 @@ function tOpenAIDark(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
   if (cv.projects?.length) {
     right += SH(L('Projets','Projects'));
     cv.projects.forEach(pr => {
-      right += `<div style="margin-bottom:10px;border:1px solid ${pc}40;border-radius:8px;padding:10px 13px;background:${pc}08;">
+      right += `<div class="cv-entry" style="margin-bottom:10px;border:1px solid ${pc}40;border-radius:8px;padding:10px 13px;background:${pc}08;">
         <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;">
           <strong style="font-size:10.5pt;color:#fff;">${esc(pr.name)}</strong>
           ${projectLink(pr.link||'','🌐',ac)} ${projectLink(pr.github||'','💻 GitHub',ac)}
@@ -548,7 +551,7 @@ function tOpenAIDark(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
   if (cv.education?.length) {
     right += SH(L('Formation','Education'));
     cv.education.forEach(edu => {
-      right += `<div style="margin-bottom:7px;"><div style="font-weight:700;font-size:10pt;color:#fff;">${esc(edu.degree)}${edu.field?' — '+esc(edu.field):''}</div>
+      right += `<div class="cv-entry" style="margin-bottom:7px;"><div style="font-weight:700;font-size:10pt;color:#fff;">${esc(edu.degree)}${edu.field?' — '+esc(edu.field):''}</div>
         <div style="font-size:9pt;color:#8892a4;">${esc(edu.school)} · ${esc(edu.year)}</div>
         ${edu.mention?`<div style="font-size:8.5pt;color:${ac};">${esc(edu.mention)}</div>`:''}</div>`;
     });
@@ -556,7 +559,7 @@ function tOpenAIDark(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
 
   return wrapHTML(cv, d, lang, `
     <div style="display:flex;min-height:100vh;">
-      <div style="width:230px;flex-shrink:0;background:#0d1117;border-right:1px solid #30363d;padding:24px 18px;print-color-adjust:exact;-webkit-print-color-adjust:exact;">${left}</div>
+      <div class="cv-sidebar" style="width:var(--cv-side, 230px);flex-shrink:0;background:#0d1117;border-right:1px solid #30363d;padding:24px 18px;print-color-adjust:exact;-webkit-print-color-adjust:exact;">${left}</div>
       <div style="flex:1;background:#0d1117;padding:24px 22px;">${right}</div>
     </div>
   `, 'background:#0d1117;color:#c9d1d9;', false);
@@ -567,10 +570,12 @@ function tOpenAIDark(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
 // ══════════════════════════════════════════════════════════════
 function tAmazonBold(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string {
   const p = cv.personal;
-  const orange = '#ff9900', navy = '#232f3e';
+  // Palette propre au modèle, sauf si l'utilisateur a choisi ses couleurs
+  const custom = !isTemplatePalette(d);
+  const orange = custom ? d.accentColor : '#ff9900', navy = custom ? d.primaryColor : '#232f3e';
   const L = (fr: string, en: string) => lang === 'fr' ? fr : en;
 
-  const SH = (t: string) => `<div style="margin:12px 0 6px;"><div style="background:${navy};color:#fff;padding:5px 12px;display:inline-block;font-size:9.5pt;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">${esc(t)}</div><div style="height:1px;background:${orange};margin-top:-1px;"></div></div>`;
+  const SH = (t: string) => `<div class="cv-section" style="margin:12px 0 6px;"><div class="cv-section-title" style="background:${navy};color:#fff;padding:5px 12px;display:inline-block;font-size:9.5pt;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">${esc(t)}</div><div class="cv-sep" data-sep="line" style="height:1px;background:${orange};margin-top:-1px;"></div></div>`;
 
   let body = '';
   if (p.summary) { body += SH(L('Profil','Summary')); body += `<p style="font-size:9.5pt;line-height:1.7;color:#333;margin-bottom:6px;">${esc(p.summary)}</p>`; }
@@ -592,7 +597,7 @@ function tAmazonBold(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
   if (cv.experience?.length) {
     body += SH(L('Expériences — Impact Chiffré','Experience — Quantified Impact'));
     cv.experience.forEach(exp => {
-      body += `<div style="margin-bottom:11px;">
+      body += `<div class="cv-entry" style="margin-bottom:11px;">
         <div style="display:flex;justify-content:space-between;">
           <span style="font-size:11pt;font-weight:800;color:${navy};">${esc(exp.company)}</span>
           <span style="font-size:9pt;color:#666;">${esc(exp.start)} – ${esc(exp.end)}</span>
@@ -607,7 +612,7 @@ function tAmazonBold(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
   if (cv.projects?.length) {
     body += SH(L('Projets & Réalisations','Projects & Impact'));
     cv.projects.forEach(pr => {
-      body += `<div style="margin-bottom:9px;">
+      body += `<div class="cv-entry" style="margin-bottom:9px;">
         <span style="font-size:10.5pt;font-weight:700;color:${navy};">${esc(pr.name)}</span>
         ${projectLink(pr.link||'','🌐',orange)} ${projectLink(pr.github||'','💻',orange)}
         <span style="font-size:9pt;color:#555;"> | ${esc(pr.techs?.join(', ')||'')}</span>
@@ -620,7 +625,7 @@ function tAmazonBold(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
   if (cv.education?.length) {
     body += SH(L('Formation','Education'));
     cv.education.forEach(edu => {
-      body += `<div style="margin-bottom:6px;font-size:9pt;display:flex;justify-content:space-between;align-items:baseline;">
+      body += `<div class="cv-entry" style="margin-bottom:6px;font-size:9pt;display:flex;justify-content:space-between;align-items:baseline;">
         <div><strong>${esc(edu.school)}</strong> — ${esc(edu.degree)}${edu.field?' · '+esc(edu.field):''}${edu.mention?' · '+esc(edu.mention):''}</div>
         <span style="color:#666;">${esc(edu.year)}</span>
       </div>`;
@@ -636,13 +641,13 @@ function tAmazonBold(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
 
   const contacts = [p.email,p.phone,p.city,p.linkedin,p.github].filter(Boolean).map(esc).join(' | ');
   return wrapHTML(cv, d, lang, `
-    <div style="background:${navy};padding:20px 28px;print-color-adjust:exact;">
+    <div class="cv-header" style="background:${navy};padding:20px 28px;print-color-adjust:exact;">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;">
         <div style="display:flex;align-items:center;gap:14px;">
           ${d.showPhoto&&p.photo?`<img src="${p.photo}" style="width:85px;height:95px;object-fit:cover;object-position:${d.photoX}% ${d.photoY}%;border:2px solid ${orange};border-radius:2px;">`:'' }
           <div>
             <h1 style="font-size:24pt;font-weight:900;margin:0;color:#fff;">${esc(p.name)}</h1>
-            <div style="font-size:12pt;color:${orange};font-weight:700;margin-top:3px;">${esc(p.title)}</div>
+            <div class="cv-role" style="font-size:12pt;color:${orange};font-weight:700;margin-top:3px;">${esc(p.title)}</div>
           </div>
         </div>
         <div style="text-align:right;font-size:9pt;color:rgba(255,255,255,.75);line-height:1.8;">${[p.email,p.phone,p.city].filter(Boolean).map(esc).join('<br>')}</div>
@@ -661,7 +666,7 @@ function tGoogleChip(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
   const bl = d.primaryColor, ac = d.accentColor;
   const L = (fr: string, en: string) => lang === 'fr' ? fr : en;
 
-  const SH = (t: string) => `<h3 style="font-size:10pt;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${bl};border-bottom:2px solid ${bl};padding-bottom:3px;margin:12px 0 8px;">${esc(t)}</h3>`;
+  const SH = (t: string) => `<h3 class="cv-section cv-section-title cv-sep" data-sep="border" style="font-size:10pt;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${bl};border-bottom:2px solid ${bl};padding-bottom:3px;margin:12px 0 8px;">${esc(t)}</h3>`;
   const chip = (s: string) => `<span style="background:${bl}18;color:${bl};border:1px solid ${bl}40;border-radius:999px;padding:2px 10px;font-size:8.5pt;margin:2px;">${esc(s)}</span>`;
 
   let L_col = '', R_col = '';
@@ -696,7 +701,7 @@ function tGoogleChip(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
   if (cv.experience?.length) {
     R_col += SH(L('Expérience professionnelle','Experience'));
     cv.experience.forEach(exp => {
-      R_col += `<div style="margin-bottom:11px;background:#fafafa;border-left:4px solid ${bl};border-radius:0 8px 8px 0;padding:10px 12px;">
+      R_col += `<div class="cv-entry" style="margin-bottom:11px;background:#fafafa;border-left:4px solid ${bl};border-radius:0 8px 8px 0;padding:10px 12px;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;">
           <span style="font-size:11pt;font-weight:700;color:${bl};">${esc(exp.company)}</span>
           <span style="font-size:9pt;background:${bl}15;color:${bl};padding:1px 8px;border-radius:4px;">${esc(exp.start)} – ${esc(exp.end)}</span>
@@ -712,7 +717,7 @@ function tGoogleChip(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
     R_col += SH(L('Projets','Projects'));
     R_col += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">`;
     cv.projects.forEach(pr => {
-      R_col += `<div style="border:1px solid #e8eaed;border-radius:8px;padding:10px;border-top:3px solid ${bl};">
+      R_col += `<div class="cv-entry" style="border:1px solid #e8eaed;border-radius:8px;padding:10px;border-top:3px solid ${bl};">
         <div style="font-weight:700;font-size:10pt;color:#111;">${esc(pr.name)}</div>
         <div style="font-size:8.5pt;margin:2px 0;">${projectLink(pr.link||'','🌐 Demo',bl)} ${projectLink(pr.github||'','💻 GitHub',bl)}</div>
         <div style="font-size:9pt;color:#555;">${esc(pr.desc)}</div>
@@ -726,7 +731,7 @@ function tGoogleChip(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
   if (cv.education?.length) {
     R_col += SH(L('Formation','Education'));
     cv.education.forEach(edu => {
-      R_col += `<div style="margin-bottom:8px;background:#fafafa;border-left:4px solid ${ac};border-radius:0 8px 8px 0;padding:8px 12px;">
+      R_col += `<div class="cv-entry" style="margin-bottom:8px;background:#fafafa;border-left:4px solid ${ac};border-radius:0 8px 8px 0;padding:8px 12px;">
         <div style="font-weight:700;font-size:10.5pt;color:#111;">${esc(edu.school)}</div>
         <div style="font-size:9pt;color:${bl};">${esc(edu.degree)}${edu.field?' in '+esc(edu.field):''}${edu.mention?' — '+esc(edu.mention):''}</div>
         <div style="font-size:8.5pt;color:#888;">${esc(edu.year)}</div>
@@ -735,13 +740,13 @@ function tGoogleChip(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): string 
   }
 
   return wrapHTML(cv, d, lang, `
-    <div style="background:${bl};padding:24px 28px;color:#fff;print-color-adjust:exact;">
+    <div class="cv-header" style="background:${bl};padding:24px 28px;color:#fff;print-color-adjust:exact;">
       <h1 style="font-size:26pt;font-weight:700;margin:0;">${esc(p.name)}</h1>
-      <div style="font-size:12pt;opacity:.9;margin-top:4px;">${esc(p.title)}</div>
+      <div class="cv-role" style="font-size:12pt;opacity:.9;margin-top:4px;">${esc(p.title)}</div>
       ${cv.targetRole?`<div style="font-size:10pt;opacity:.7;margin-top:2px;">🎯 ${esc('')}</div>`:''}
     </div>
-    <div style="display:grid;grid-template-columns:220px 1fr;">
-      <div style="border-right:1px solid #e8eaed;padding:18px 16px;">${L_col}</div>
+    <div style="display:grid;grid-template-columns:var(--cv-side, 220px) 1fr;">
+      <div class="cv-sidebar" style="border-right:1px solid #e8eaed;padding:18px 16px;">${L_col}</div>
       <div style="padding:18px 22px;">${R_col}</div>
     </div>
   `, '', false);
@@ -755,7 +760,7 @@ function tFaangMinimal(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): strin
   const pc = d.primaryColor;
   const L = (fr: string, en: string) => lang === 'fr' ? fr : en;
 
-  const SH = (t: string) => `<div style="margin:11px 0 5px;"><h2 style="font-size:10.5pt;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:${pc};border-bottom:1.5px solid ${pc};padding-bottom:2px;margin:0;">${esc(t)}</h2></div>`;
+  const SH = (t: string) => `<div class="cv-section" style="margin:11px 0 5px;"><h2 class="cv-section-title cv-sep" data-sep="border" style="font-size:10.5pt;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:${pc};border-bottom:1.5px solid ${pc};padding-bottom:2px;margin:0;">${esc(t)}</h2></div>`;
 
   const contacts = [
     p.email&&`<a href="mailto:${esc(p.email)}" style="color:${pc};">${esc(p.email)}</a>`,
@@ -772,7 +777,7 @@ function tFaangMinimal(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): strin
   if (cv.experience?.length) {
     body += SH(L('Expérience','Experience'));
     cv.experience.forEach(exp => {
-      body += `<div style="margin-bottom:9px;">
+      body += `<div class="cv-entry" style="margin-bottom:9px;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;">
           <span style="font-size:11pt;font-weight:800;color:${pc};">${esc(exp.company)}</span>
           <span style="font-size:9.5pt;color:#555;">${esc(exp.location)}</span>
@@ -790,7 +795,7 @@ function tFaangMinimal(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): strin
   if (cv.projects?.length) {
     body += SH(L('Projets','Projects'));
     cv.projects.forEach(pr => {
-      body += `<div style="margin-bottom:8px;">
+      body += `<div class="cv-entry" style="margin-bottom:8px;">
         <div style="display:flex;align-items:baseline;gap:8px;">
           <strong style="font-size:11pt;color:${pc};">${esc(pr.name)}</strong>
           ${pr.techs?.length?`<em style="font-size:9.5pt;color:#555;">| ${esc(pr.techs.join(', '))}</em>`:''}
@@ -810,7 +815,7 @@ function tFaangMinimal(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): strin
   if (cv.education?.length) {
     body += SH(L('Formation','Education'));
     cv.education.forEach(edu => {
-      body += `<div style="display:flex;justify-content:space-between;margin-bottom:4px;align-items:baseline;">
+      body += `<div class="cv-entry" style="display:flex;justify-content:space-between;margin-bottom:4px;align-items:baseline;">
         <div>
           <span style="font-size:11pt;font-weight:800;">${esc(edu.school)}</span>
           <span style="font-size:10.5pt;color:#333;"> — ${esc(edu.degree)}${edu.field?' in '+esc(edu.field):''}${edu.mention?' · '+esc(edu.mention):''}</span>
@@ -834,7 +839,7 @@ function tFaangMinimal(cv: GeneratedCV, d: DesignConfig, lang: 'fr'|'en'): strin
     <div style="padding:32px 44px;">
       ${d.showPhoto&&p.photo?`<div style="float:right;margin-left:14px;"><img src="${p.photo}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;object-position:${d.photoX}% ${d.photoY}%;"></div>`:''}
       <h1 style="font-size:24pt;font-weight:900;margin:0 0 3px;letter-spacing:2px;text-transform:uppercase;color:${pc};">${esc(p.name)}</h1>
-      ${p.title?`<div style="font-size:11pt;color:#444;margin-bottom:6px;">${esc(p.title)}</div>`:''}
+      ${p.title?`<div class="cv-role" style="font-size:11pt;color:#444;margin-bottom:6px;">${esc(p.title)}</div>`:''}
       <div style="font-size:10pt;margin-bottom:4px;">${contacts}</div>
       ${body}
     </div>
@@ -870,19 +875,23 @@ a{color:inherit;text-decoration:none;}
 }
 
 // ── Template dispatcher ────────────────────────────────────────
-export function renderTemplate(rawCv: GeneratedCV, id: TemplateId, rawDesign: DesignConfig, lang: 'fr'|'en'): string {
-  const { cv, design } = sanitizeForRender(rawCv, rawDesign);
-  switch (id) {
-    case 'cascade':      return tCascade(cv, design, lang);
-    case 'moderne':      return tModerne(cv, design, lang);
-    case 'classique':    return tClassique(cv, design, lang);
-    case 'stanford':     return tStanford(cv, design, lang);
-    case 'openai-dark':  return tOpenAIDark(cv, design, lang);
-    case 'amazon-bold':  return tAmazonBold(cv, design, lang);
-    case 'google-chip':  return tGoogleChip(cv, design, lang);
-    case 'faang-minimal':return tFaangMinimal(cv, design, lang);
-    default:             return tCascade(cv, design, lang);
-  }
+export function renderTemplate(rawCv: GeneratedCV, rawId: TemplateId, rawDesign: DesignConfig, lang: 'fr'|'en'): string {
+  const { cv, design } = sanitizeForRender(rawCv, normalizeDesign(rawDesign));
+  const id: TemplateId = rawId in TEMPLATE_CAPS ? rawId : 'cascade';
+  const html = (() => {
+    switch (id) {
+      case 'cascade':      return tCascade(cv, design, lang);
+      case 'moderne':      return tModerne(cv, design, lang);
+      case 'classique':    return tClassique(cv, design, lang);
+      case 'stanford':     return tStanford(cv, design, lang);
+      case 'openai-dark':  return tOpenAIDark(cv, design, lang);
+      case 'amazon-bold':  return tAmazonBold(cv, design, lang);
+      case 'google-chip':  return tGoogleChip(cv, design, lang);
+      case 'faang-minimal':return tFaangMinimal(cv, design, lang);
+    }
+  })();
+  // Même couche de design pour l'aperçu et l'export (impression de ce HTML)
+  return applyDesignLayer(html, design, id);
 }
 
 export const TEMPLATE_META = [

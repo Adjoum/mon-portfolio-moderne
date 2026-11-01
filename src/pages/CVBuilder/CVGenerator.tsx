@@ -1,5 +1,6 @@
 // CVGeneratorPro — Part 3: Main Component
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { LayoutTemplate } from 'lucide-react';
 import {
   Popup, ImportCVPanel, DEFAULT_DESIGN,
   generateCV, verifyCV,
@@ -7,9 +8,15 @@ import {
   type IntakeData, type DesignConfig, type TemplateId
 } from './CVGeneratorPro_part1';
 import { renderTemplate, TEMPLATE_META } from './CVGeneratorPro_part2';
-import { DesignPanelFull } from './CVLiveEditor';
 import { useAiAvailability } from '../../hooks/useAiAvailability';
 import { printInIsolatedFrame } from './cvPrint';
+import { DESIGN_DEFAULTS, inapplicableSettings, normalizeDesign } from './cvDesign';
+import { useDesignHistory } from './useDesignHistory';
+import CvDesignPanel from './CvDesignPanel';
+import CvPreview from './CvPreview';
+import CvTemplateGallery from './CvTemplateGallery';
+import { Splitter } from '../../features/latex-studio/components/Splitter';
+import { Dialog } from '../../features/latex-studio/components/Dialog';
 
 // ── Empty intake ───────────────────────────────────────────────
 const emptyIntake = (): IntakeData => ({
@@ -100,9 +107,9 @@ function PhotoCropWidget({
   const dragRef = React.useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
-  const radius = shape === 'circle' ? '50%' : shape === 'rectangle' ? '6px' : '8px';
-  const W = shape === 'rectangle' ? 76 : 100;
-  const H = 100;
+  const radius = shape === 'circle' ? '50%' : '8px';
+  const W = shape === 'portrait' ? 76 : 100;
+  const H = shape === 'rectangle' ? 76 : 100;
 
   const onMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -458,13 +465,47 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
   );
   const [intake,   setIntake]   = useState<IntakeData>(saved.intake ?? emptyIntake());
   const [cv,       setCv]       = useState<GeneratedCV | null>(saved.cv ?? null);
-  const [template, setTemplate] = useState<TemplateId>(saved.template ?? 'cascade');
-  const [design,   setDesign]   = useState<DesignConfig>(saved.design ?? DEFAULT_DESIGN);
+  // Modèle et design : un seul historique (Annuler / Rétablir), design validé au chargement
+  const history = useDesignHistory<{ template: TemplateId; design: DesignConfig }>({
+    template: TEMPLATE_META.some(t => t.id === saved.template) ? saved.template! : 'cascade',
+    design: normalizeDesign(saved.design ?? DEFAULT_DESIGN),
+  });
+  const { template, design } = history.value;
+  const historySet = history.set;
+  const setDesign = useCallback((d: DesignConfig) => historySet(v => ({ ...v, design: d }), 'photo-crop'), [historySet]);
+  const [showGallery, setShowGallery] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [mobileTab, setMobileTab] = useState<'edit' | 'preview' | 'design'>('preview');
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches);
+  const [editW, setEditW] = useState(() => Number(localStorage.getItem('cvgenpro:edit-width')) || 360);
+  const [designW, setDesignW] = useState(() => Number(localStorage.getItem('cvgenpro:design-width')) || 320);
+  const columnsRef = useRef<HTMLDivElement>(null);
 
 
-  //const [template,    setTemplate]    = useState<TemplateId>('cascade');
-  //const [design,      setDesign]      = useState<DesignConfig>(DEFAULT_DESIGN);
-  const [showDesign,  setShowDesign]  = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1024px)');
+    const update = () => setIsDesktop(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+  useEffect(() => { localStorage.setItem('cvgenpro:edit-width', String(Math.round(editW))); }, [editW]);
+  useEffect(() => { localStorage.setItem('cvgenpro:design-width', String(Math.round(designW))); }, [designW]);
+
+  // Ctrl+Z / Ctrl+Maj+Z / Ctrl+Y : design et modèle (hors champs de saisie, qui gardent leur propre annulation)
+  const { undo, redo } = history;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || step !== 'preview') return;
+      const target = e.target as HTMLElement;
+      if (target.closest('input:not([type=range]):not([type=color]):not([type=checkbox]), textarea, select, [contenteditable="true"]')) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if ((key === 'z' && e.shiftKey) || key === 'y') { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo, redo, step]);
   const [showImport,  setShowImport]  = useState(false);
   const [activeTab,   setActiveTab]   = useState<'identity'|'experience'|'education'|'skills'|'projects'>('identity');
   const [popup,       setPopup]       = useState<PopupState>({ open: false, type: 'info', title: '' });
@@ -815,87 +856,129 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
     </div>
   );
 
-  // ══════════════════════════════════════════════════════════════
-  //  RENDER PREVIEW
-  // ══════════════════════════════════════════════════════════════
-  const renderPreview = () => (
-    <div className="gp-preview-layout">
-      {/* Template bar */}
-      <div className="gp-template-bar">
-        <span className="gp-tbar-label">Template :</span>
-        <div className="gp-tpl-scroll">
-          {TEMPLATE_META.map(t => (
-            <button key={t.id}
-              className={`gp-tpl-btn${template === t.id ? ' gp-tpl-active' : ''}`}
-              style={{ '--tc': t.primaryColor } as React.CSSProperties}
-              onClick={() => setTemplate(t.id)}
-              title={t.desc}>
-              <span className="gp-tpl-stripe" style={{ background: t.primaryColor }} />
-              {t.emoji} {t.name}
-              <span className="gp-tpl-badge" style={{ background: t.primaryColor }}>{t.badge}</span>
-            </button>
-          ))}
-        </div>
-        <div className="gp-tbar-right">
-          <span className="gp-tbar-label">Langue :</span>
-          <button className={`gp-lang-btn${intake.lang === 'fr' ? ' gp-lang-active' : ''}`}
-            onClick={() => setIntake(p => ({ ...p, lang: 'fr' }))}>🇫🇷 FR</button>
-          <button className={`gp-lang-btn${intake.lang === 'en' ? ' gp-lang-active' : ''}`}
-            onClick={() => setIntake(p => ({ ...p, lang: 'en' }))}>🇬🇧 EN</button>
-        </div>
-      </div>
+  const chooseTemplate = (id: TemplateId) => {
+    setShowGallery(false);
+    if (id === template) return;
+    historySet(v => ({ ...v, template: id }), null);
+    const meta = TEMPLATE_META.find(t => t.id === id)!;
+    const ignored = inapplicableSettings(design, id);
+    setNotice(`Modèle « ${meta.name} » appliqué : vos informations et vos réglages compatibles sont conservés.${ignored.length ? ` Sans effet sur ce modèle : ${ignored.join(', ')}.` : ''}`);
+  };
 
-      {/* Actions + Design */}
-      <div className="gp-actions-bar">
-        <div className="gp-actions-left">
-          <button className="gp-action-btn" onClick={() => setStep('form')}>✏️ Modifier</button>
-          <button className="gp-action-btn" onClick={handleRegenerate}>🔄 Régénérer</button>
-          <button className={`gp-action-btn${showDesign ? ' gp-action-active' : ''}`}
-            onClick={() => setShowDesign(s => !s)}>🎨 Design</button>
-        </div>
-        <div className="gp-actions-right">
-          <button className="gp-action-btn" onClick={doDownload}>⬇️ Télécharger .html</button>
-          <button className="gp-btn-verify" onClick={handleVerifyAndExport}>
-            🔍 Vérifier & Exporter PDF
+  const columnsRect = () => columnsRef.current?.getBoundingClientRect();
+  const templateMeta = TEMPLATE_META.find(t => t.id === template)!;
+
+  // ══════════════════════════════════════════════════════════════
+  //  RENDER PREVIEW — desktop : 3 colonnes redimensionnables ; mobile et tablette : onglets
+  // ══════════════════════════════════════════════════════════════
+  const renderPreview = () => {
+    const editPanel = (
+      <CVEditPanel cv={cv!} onChange={setCv} lang={intake.lang} design={design} onDesignChange={setDesign} />
+    );
+    const designPanel = (
+      <div className="gp-design-scroll">
+        <CvDesignPanel
+          design={design}
+          templateId={template}
+          templateName={templateMeta.name}
+          onChange={(patch, key) => historySet(v => ({ ...v, design: { ...v.design, ...patch } }), key)}
+          onReplace={d => historySet(v => ({ ...v, design: normalizeDesign(d) }), null)}
+          onResetAll={() => setConfirmReset(true)}
+          canUndo={history.canUndo}
+          canRedo={history.canRedo}
+          onUndo={undo}
+          onRedo={redo}
+        />
+      </div>
+    );
+    const preview = <CvPreview html={getHTML()} title={`Aperçu du CV, modèle ${templateMeta.name}`} />;
+    const width = columnsRect()?.width ?? 1200;
+
+    return (
+      <div className="gp-preview-layout">
+        <div className="gp-toolbar" role="toolbar" aria-label="Actions du CV">
+          <button type="button" className="gp-action-btn" onClick={() => setStep('form')}>✏️ Informations</button>
+          <button type="button" className="gp-action-btn gp-tpl-current" onClick={() => setShowGallery(true)} aria-haspopup="dialog">
+            <span className="gp-tpl-stripe" style={{ background: templateMeta.primaryColor }} aria-hidden="true" />
+            Modèle : {templateMeta.name}
           </button>
-        </div>
-      </div>
-
-      {/* Design panel */}
-      {showDesign && (
-        <div className="gp-design-overlay">
-          <DesignPanelFull design={design} onChange={setDesign} />
-          <button className="gp-design-close" onClick={() => setShowDesign(false)}>✓ Appliquer</button>
-        </div>
-      )}
-
-      {/* Split: edit panel + iframe real template */}
-      <div className="gp-split-area">
-
-        {/* LEFT — Edit panel */}
-        <div className="gp-edit-panel">
-          <CVEditPanel cv={cv!} onChange={setCv} lang={intake.lang} design={design} onDesignChange={setDesign} />
-        </div>
-
-        {/* RIGHT — Real template preview */}
-        <div className="gp-iframe-area">
-          <div className="gp-iframe-hint no-print">
-            ✏️ Éditez à gauche — le rendu réel du template s'actualise ici
+          <div className="gp-lang-group" role="group" aria-label="Langue du CV">
+            <button type="button" aria-pressed={intake.lang === 'fr'} className={`gp-lang-btn${intake.lang === 'fr' ? ' gp-lang-active' : ''}`}
+              onClick={() => setIntake(p => ({ ...p, lang: 'fr' }))}>FR</button>
+            <button type="button" aria-pressed={intake.lang === 'en'} className={`gp-lang-btn${intake.lang === 'en' ? ' gp-lang-active' : ''}`}
+              onClick={() => setIntake(p => ({ ...p, lang: 'en' }))}>EN</button>
           </div>
-          <div className="gp-iframe-wrap">
-            <iframe
-              key={`${template}-${JSON.stringify(design)}-${intake.lang}-${JSON.stringify(cv?.personal)}`}
-              srcDoc={getHTML()}
-              className="gp-iframe"
-              title="CV Preview"
-              sandbox="allow-same-origin"
-            />
-          </div>
+          <span className="gp-toolbar-spacer" aria-hidden="true" />
+          <button type="button" className="gp-action-btn" onClick={handleRegenerate}>🔄 Régénérer</button>
+          <button type="button" className="gp-action-btn" onClick={doDownload}>⬇️ HTML</button>
+          <button type="button" className="gp-btn-verify gp-hide-mobile" onClick={handleVerifyAndExport}>🔍 Vérifier & exporter PDF</button>
         </div>
+        {notice && (
+          <div className="gp-notice" role="status">
+            <span>{notice}</span>
+            <button type="button" onClick={() => setNotice('')} aria-label="Fermer le message">✕</button>
+          </div>
+        )}
 
+        {isDesktop ? (
+          <div className="gp-columns" ref={columnsRef}>
+            <div className="gp-col gp-col-edit" style={{ width: editW }} aria-label="Modifier le contenu">{editPanel}</div>
+            <Splitter label="Largeur du panneau Modifier" value={editW} min={280} max={560} onChange={setEditW}
+              toValue={x => x - (columnsRect()?.left ?? 0)} />
+            <div className="gp-col gp-col-preview">{preview}</div>
+            <Splitter label="Largeur du panneau Design" value={width - designW} min={width - 480} max={width - 260}
+              onChange={v => setDesignW(width - v)} toValue={x => x - (columnsRect()?.left ?? 0)} />
+            <div className="gp-col gp-col-design" style={{ width: designW }}>{designPanel}</div>
+          </div>
+        ) : (
+          <>
+            <div className="gp-mtabs" role="tablist" aria-label="Vue de l’éditeur"
+              onKeyDown={e => {
+                const order = ['edit', 'preview', 'design'] as const;
+                const i = order.indexOf(mobileTab);
+                const next = e.key === 'ArrowRight' ? order[(i + 1) % 3] : e.key === 'ArrowLeft' ? order[(i + 2) % 3] : null;
+                if (!next) return;
+                e.preventDefault();
+                setMobileTab(next);
+                document.getElementById(`gp-mtab-${next}`)?.focus();
+              }}>
+              {([['edit', '✏️ Modifier'], ['preview', '👁 Aperçu'], ['design', '🎨 Design']] as const).map(([id, label]) => (
+                <button key={id} id={`gp-mtab-${id}`} type="button" role="tab" aria-selected={mobileTab === id} aria-controls="gp-mpanel"
+                  tabIndex={mobileTab === id ? 0 : -1} className={`gp-mtab${mobileTab === id ? ' gp-mtab-active' : ''}`} onClick={() => setMobileTab(id)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div id="gp-mpanel" className={`gp-mpanel gp-mpanel-${mobileTab}`} role="tabpanel" aria-labelledby={`gp-mtab-${mobileTab}`}>
+              {mobileTab === 'edit' ? editPanel : mobileTab === 'design' ? designPanel : preview}
+            </div>
+            <div className="gp-mobile-actions">
+              <button type="button" className="gp-action-btn" onClick={() => setShowGallery(true)} aria-haspopup="dialog"><LayoutTemplate size={16} aria-hidden="true" /> Modèle</button>
+              <button type="button" className="gp-btn-verify" onClick={handleVerifyAndExport}>🔍 Vérifier & exporter PDF</button>
+            </div>
+          </>
+        )}
+
+        {showGallery && cv && (
+          <CvTemplateGallery cv={cv} design={design} lang={intake.lang} current={template} onChoose={chooseTemplate} onClose={() => setShowGallery(false)} />
+        )}
+        {confirmReset && (
+          <Dialog title="Réinitialiser tout le design ?" onClose={() => setConfirmReset(false)}
+            footer={(
+              <>
+                <button type="button" className="min-h-11 rounded-lg px-4 text-sm text-gray-300 hover:text-white" onClick={() => setConfirmReset(false)}>Annuler</button>
+                <button type="button" className="min-h-11 rounded-lg bg-red-500/80 px-4 text-sm font-semibold text-white hover:bg-red-500"
+                  onClick={() => { historySet(v => ({ ...v, design: normalizeDesign(DESIGN_DEFAULTS) }), null); setConfirmReset(false); setNotice('Design réinitialisé : style d’origine du modèle. Ctrl+Z pour revenir en arrière.'); }}>
+                  Tout réinitialiser
+                </button>
+              </>
+            )}>
+            <p className="text-sm text-gray-300">Toutes les couleurs, tailles, espacements et réglages de la photo reviennent au style d’origine du modèle. Le contenu du CV n’est pas modifié. Cette action peut être annulée.</p>
+          </Dialog>
+        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   // ══════════════════════════════════════════════════════════════
   //  RENDER
@@ -951,7 +1034,8 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
       <style>{`
         /* ── Root & layout ─────────────────────────────────── */
         .gp-root {
-          display:flex; flex-direction:column; height:100vh;
+          color-scheme:dark;
+          display:flex; flex-direction:column; height:100vh; height:100dvh;
           background:#0d1117; color:#e6edf3;
           font-family:'Inter','Segoe UI',system-ui,sans-serif; font-size:13px;
         }
@@ -972,6 +1056,13 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
         .gp-logo-sub { font-size:10px; color:#8b949e; }
         .gp-header-right { display:flex; align-items:center; gap:12px; }
         .gp-cv-name { font-size:12px; color:#8b949e; font-weight:600; }
+        /* En-tête compact sur téléphone : le contenu passe avant le titre */
+        @media (max-width:640px) {
+          .gp-header { padding:8px 10px; gap:8px; }
+          .gp-header-left { gap:8px; min-width:0; }
+          .gp-logo { font-size:14px; white-space:nowrap; }
+          .gp-logo-sub, .gp-header-right { display:none !important; }
+        }
         .gp-step-indicator { display:flex; gap:6px; }
         .gp-step { font-size:11px; color:#30363d; font-weight:600; }
         .gp-step-active { color:#6366f1 !important; }
@@ -1143,6 +1234,32 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
         .gp-iframe-hint { font-size:11px; color:#8b949e; padding:8px 16px; background:#161b22; border-bottom:1px solid #30363d; text-align:center; flex-shrink:0; }
         .gp-iframe-wrap { padding:20px; display:flex; justify-content:center; flex:1; }
         .gp-iframe { width:794px; min-height:1100px; border:none; background:#fff; box-shadow:0 8px 40px rgba(0,0,0,.6); flex-shrink:0; }
+
+        /* ── Aperçu : barre d'outils, 3 colonnes (desktop), onglets (mobile et tablette) ── */
+        .gp-toolbar { display:flex; align-items:center; gap:6px; padding:8px 12px; background:#161b22; border-bottom:1px solid #30363d; flex-shrink:0; overflow-x:auto; scrollbar-width:thin; }
+        .gp-toolbar .gp-action-btn, .gp-toolbar .gp-btn-verify { white-space:nowrap; flex-shrink:0; min-height:36px; }
+        .gp-toolbar-spacer { flex:1; min-width:4px; }
+        .gp-tpl-current { display:inline-flex; align-items:center; gap:6px; }
+        .gp-lang-group { display:inline-flex; gap:3px; flex-shrink:0; }
+        .gp-lang-group .gp-lang-btn { min-height:36px; min-width:40px; }
+        .gp-notice { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:8px 14px; background:rgba(99,102,241,.12); border-bottom:1px solid rgba(99,102,241,.3); color:#c7d2fe; font-size:12px; flex-shrink:0; }
+        .gp-notice button { background:none; border:none; color:#a5b4fc; cursor:pointer; min-width:32px; min-height:32px; }
+        .gp-columns { flex:1; min-height:0; display:flex; overflow:hidden; }
+        .gp-col { min-width:0; min-height:0; overflow:hidden; display:flex; flex-direction:column; }
+        .gp-col-edit { flex-shrink:0; overflow-y:auto; background:#161b22; }
+        .gp-col-preview { flex:1; }
+        .gp-col-design { flex-shrink:0; background:#161b22; }
+        .gp-design-scroll { height:100%; overflow-y:auto; padding:0 12px 24px; }
+        .gp-mtabs { display:grid; grid-template-columns:repeat(3,1fr); background:#161b22; border-bottom:1px solid #30363d; flex-shrink:0; }
+        .gp-mtab { min-height:46px; background:none; border:none; border-bottom:2px solid transparent; color:#8b949e; font-size:13px; font-weight:700; cursor:pointer; }
+        .gp-mtab-active { color:#e6edf3; border-bottom-color:#6366f1; background:rgba(99,102,241,.08); }
+        .gp-mtab:focus-visible, .gp-action-btn:focus-visible, .gp-btn-verify:focus-visible, .gp-lang-btn:focus-visible { outline:3px solid #a5b4fc; outline-offset:2px; }
+        .gp-mpanel { flex:1; min-height:0; overflow:hidden; display:flex; flex-direction:column; }
+        .gp-mpanel-edit { overflow-y:auto; background:#161b22; }
+        .gp-mpanel-design { background:#161b22; }
+        .gp-mobile-actions { display:flex; gap:8px; padding:8px 10px calc(8px + env(safe-area-inset-bottom)); background:#161b22; border-top:1px solid #30363d; flex-shrink:0; }
+        .gp-mobile-actions > * { flex:1; min-height:46px; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+        @media (max-width:1023px) { .gp-hide-mobile { display:none !important; } }
 
         /* Edit panel */
         .ep-root { height:100%; display:flex; flex-direction:column; }

@@ -17,8 +17,10 @@ import { OUT, ROOT, check, pw, results } from './premium/harness.mjs';
 import { accueil } from './premium/accueil.mjs';
 import { session } from './premium/session.mjs';
 import { clone } from './premium/clone.mjs';
+import { cvgen, cvbaseline } from './premium/cvgen.mjs';
+import { cvpublic } from './premium/cvpublic.mjs';
 
-export const SCENARIOS = { accueil, session, clone };
+export const SCENARIOS = { accueil, session, clone, cvgen, cvbaseline, cvpublic };
 
 const wanted = process.argv.slice(2).filter(a => !a.startsWith('--'));
 const engines = (process.env.ENGINES || 'chromium,webkit').split(',');

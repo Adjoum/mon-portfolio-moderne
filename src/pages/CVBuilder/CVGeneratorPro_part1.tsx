@@ -9,6 +9,7 @@
 //    ⑥ Système de popups responsives centrées
 // ═══════════════════════════════════════════════════════════════
 import { useState, useRef } from 'react';
+import { DESIGN_DEFAULTS } from './cvDesign';
 import { runAiFeature, AiFeatureError } from '../../lib/aiClient';
 
 // ── Types core ─────────────────────────────────────────────────
@@ -53,6 +54,8 @@ export type TemplateId =
   'google-chip' | 'faang-minimal';
 
 export interface DesignConfig {
+  /** 2 depuis le panneau Design enrichi (cvDesign.ts) ; absent sur les états enregistrés avant */
+  designVersion?: number;
   primaryColor:  string;
   accentColor:   string;
   fontFamily:    string;
@@ -60,9 +63,34 @@ export interface DesignConfig {
   headerStyle:   'solid' | 'gradient' | 'minimal';
   showPhoto:     boolean;
   showBars:      boolean;
-  photoShape:    'circle' | 'square' | 'rectangle';
+  /** 'template' : forme d'origine du modèle */
+  photoShape:    'template' | 'circle' | 'square' | 'portrait' | 'rectangle';
   photoX:        number; // 0-100, object-position x%
   photoY:        number; // 0-100, object-position y%
+  // ── Réglages enrichis : null ou valeur neutre = style du modèle ──
+  secondaryColor:   string | null;  // intitulé du poste
+  titleColor:       string | null;  // titres de section
+  textColor:        string | null;  // texte courant
+  separatorColor:   string | null;
+  separatorStyle:   'template' | 'none' | 'solid' | 'dashed' | 'dotted' | 'double';
+  separatorWidth:   number | null;  // px
+  nameScale:        number;         // multiplicateurs de taille
+  titleScale:       number;
+  textScale:        number;
+  lineHeight:       number;
+  headingWeight:    number | null;
+  letterSpacing:    number | null;  // em, nom et titres
+  titleAlign:       'template' | 'left' | 'center' | 'right';
+  marginMm:         number;         // marges ajoutées à chaque page
+  sectionGap:       number;         // multiplicateurs d'espacement
+  entryGap:         number;
+  sidebarWidth:     number | null;  // px, modèles à colonne latérale
+  avoidBreaks:      boolean;        // ne pas couper une expérience entre deux pages
+  photoSize:        number | null;  // px (largeur)
+  photoBorder:      number | null;  // px
+  photoBorderColor: string | null;
+  photoRadius:      number | null;  // px
+  photoZoom:        number;         // 1 à 3, cadrage conservé
 }
 
 export interface IntakeData {
@@ -600,13 +628,8 @@ function ImportCVPanel({
 // ══════════════════════════════════════════════════════════════
 //  ④ DESIGN PANEL
 // ══════════════════════════════════════════════════════════════
-const DEFAULT_DESIGN: DesignConfig = {
-  primaryColor: '#1e3a5f', accentColor: '#6fa3d0',
-  fontFamily: 'Calibri', spacing: 'normal',
-  headerStyle: 'solid', showPhoto: true, showBars: true,
-  photoShape: 'circle',
-  photoX: 50, photoY: 25,
-};
+// Valeurs « du modèle » pour tous les réglages (src/pages/CVBuilder/cvDesign.ts)
+const DEFAULT_DESIGN: DesignConfig = { ...DESIGN_DEFAULTS };
 
 const FONT_OPTIONS = [
   { value: 'Calibri,Segoe UI,Arial,sans-serif',        label: 'Calibri (moderne)' },
