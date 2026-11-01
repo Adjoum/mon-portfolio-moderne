@@ -139,7 +139,7 @@ async function enrollMfa(token) {
   const factor = await auth('/factors', { factor_type: 'totp', friendly_name: `banc-${crypto.randomUUID()}` }, token);
   const challenge = await auth(`/factors/${factor.id}/challenge`, {}, token);
   const verified = await auth(`/factors/${factor.id}/verify`, { challenge_id: challenge.id, code: totp(factor.totp.secret) }, token);
-  return { aal2: verified.access_token, secret: factor.totp.secret };
+  return { aal2: verified.access_token, secret: factor.totp.secret, factorId: factor.id, window: Math.floor(Date.now() / 30000) };
 }
 
 // ── Accès HTTP aux services ─────────────────────────────────
@@ -270,7 +270,7 @@ async function main() {
   psql('supabase_admin', `insert into public.admin_users (user_id, email) values ('${adminUser.id}', 'admin@example.test');`);
   const adminAal1 = await signIn('admin@example.test', 'Banc-Test-Admin-1!');
   const userAal1  = await signIn('user@example.test', 'Banc-Test-User-1!');
-  const { aal2: adminAal2, secret: adminTotp } = await enrollMfa(adminAal1);
+  const { aal2: adminAal2, secret: adminTotp, factorId: adminFactor, window: adminWindow } = await enrollMfa(adminAal1);
   const { aal2: userAal2 } = await enrollMfa(userAal1);
   const aalOf = t => JSON.parse(Buffer.from(t.split('.')[1], 'base64url')).aal;
   check('jetons réels : MFA TOTP validée par Supabase Auth', aalOf(adminAal1) === 'aal1' && aalOf(adminAal2) === 'aal2', `${aalOf(adminAal1)} → ${aalOf(adminAal2)}`);
@@ -278,7 +278,7 @@ async function main() {
   console.log('▶ Application des migrations (rôle postgres, transaction unique)');
   for (const file of ['20261030120000_p0a1_admin_access_control', '20261030120100_p0a1_storage_access_control', '20261030120200_p0a1_security_advisor', '20261030150000_cv_public_document', '20261030150100_project_images_no_public_listing',
     '20261030170000_ai_control_center_schema', '20261030170100_ai_admin_functions', '20261030170200_ai_runtime_functions', '20261030170300_ai_initial_catalog',
-    '20261101120000_ai_probe_details']) {
+    '20261101120000_ai_probe_details', '20261102100000_admin_session_idle']) {
     psql('postgres', `set client_min_messages = warning;\n${fs.readFileSync(path.join(ROOT, 'supabase/migrations', `${file}.sql`), 'utf8')}`, ['--single-transaction']);
     psql('postgres', `set client_min_messages = warning;\n${fs.readFileSync(path.join(ROOT, 'supabase/migrations', `${file}.sql`), 'utf8')}`, ['--single-transaction']);
   }
@@ -287,6 +287,16 @@ async function main() {
   psql('supabase_admin', "notify pgrst, 'reload schema';");
   await sleep(1500);
   check('migrations appliquées deux fois sans erreur (idempotence)', true);
+
+  console.log('▶ Session administrateur : ouverture après la MFA (jetons réels de Supabase Auth)');
+  const claimsOf = t => JSON.parse(Buffer.from(t.split('.')[1], 'base64url'));
+  check('jeton réel : claim session_id signé par Supabase Auth', /^[0-9a-f-]{36}$/.test(claimsOf(adminAal2).session_id ?? ''));
+  const beforeOpen = await rest('visits?select=id', adminAal2);
+  check('admin MFA, session pas encore ouverte : aucune donnée d’administration', beforeOpen.status === 200 && beforeOpen.body?.length === 0, `HTTP ${beforeOpen.status}`);
+  check('admin sans MFA : ouverture refusée', (await rpc('admin_session_begin', {}, adminAal1)).status >= 400);
+  check('utilisateur non admin avec MFA : ouverture refusée', (await rpc('admin_session_begin', {}, userAal2)).status >= 400);
+  const opened = await rpc('admin_session_begin', {}, adminAal2);
+  check('admin MFA : session ouverte, 600 s avant verrouillage', opened.status === 200 && opened.body?.[0]?.active === true && opened.body?.[0]?.remaining_seconds === 600, JSON.stringify(opened.body));
 
   console.log('▶ project-images : politiques réelles');
   const anonList = await list('project-images');
@@ -336,6 +346,27 @@ async function main() {
   const directAnon = await rpc('cv_publish_version', { p_id: crypto.randomUUID(), p_storage_path: path1, p_size_bytes: 1, p_sha256: 'a'.repeat(64), p_original_filename: null, p_expected_active: null });
   const directNoMfa = await rpc('cv_publish_version', { p_id: crypto.randomUUID(), p_storage_path: path1, p_size_bytes: 1, p_sha256: 'a'.repeat(64), p_original_filename: null, p_expected_active: null }, adminAal1);
   check('appel direct de la fonction SQL : anonyme et admin sans MFA refusés', directAnon.status >= 400 && directNoMfa.status === 403, `${directAnon.status} / ${directNoMfa.status}`);
+
+  console.log('▶ Session administrateur : verrouillage après 10 minutes (horloge simulée en base)');
+  {
+    // Seconde session du même administrateur : nouveau session_id, sans effet sur la première
+    while (Math.floor(Date.now() / 30000) <= adminWindow) await sleep(1000);
+    const aal1b = await signIn('admin@example.test', 'Banc-Test-Admin-1!');
+    const challenge = await auth(`/factors/${adminFactor}/challenge`, {}, aal1b);
+    const aal2b = (await auth(`/factors/${adminFactor}/verify`, { challenge_id: challenge.id, code: totp(adminTotp) }, aal1b)).access_token;
+    const sid = claimsOf(aal2b).session_id;
+    check('seconde connexion : session_id distinct', sid && sid !== claimsOf(adminAal2).session_id);
+    await rpc('admin_session_begin', {}, aal2b);
+    check('seconde session ouverte : lecture des visites autorisée', (await rest('visits?select=id', aal2b)).status === 200);
+    psql('supabase_admin', `update public.admin_session_activity set last_activity_at = now() - interval '10 minutes' where session_id = '${sid}';`);
+    const idleApi = await uploadCv(PDF_A, aal2b);
+    check('10 min sans interaction : API → 401 ADMIN_SESSION_EXPIRED (jeton pourtant valide)', idleApi.status === 401 && idleApi.body?.code === 'ADMIN_SESSION_EXPIRED', `HTTP ${idleApi.status} ${idleApi.body?.code ?? ''}`);
+    const idleRls = await rest('visits?select=id', aal2b);
+    check('10 min sans interaction : RLS → aucune donnée d’administration', idleRls.status === 200 && idleRls.body?.length === 0);
+    const revived = await rpc('admin_session_touch', {}, aal2b);
+    check('interaction après expiration : la session ne se rouvre pas', revived.status === 200 && revived.body?.[0]?.active === false && revived.body?.[0]?.reason === 'idle_timeout', JSON.stringify(revived.body));
+    check('la première session reste active (isolation par session_id)', (await rpc('admin_session_status', {}, adminAal2)).body?.[0]?.active === true);
+  }
 
   console.log('▶ Publication, persistance, historique');
   const a = await uploadCv(PDF_A, adminAal2, '', 'CV-A.pdf');

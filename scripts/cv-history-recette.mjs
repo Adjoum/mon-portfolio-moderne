@@ -60,6 +60,11 @@ async function account(label, { isAdmin, mfa }) {
   const factor = await auth('/factors', aal1, { factor_type: 'totp', friendly_name: label });
   const challenge = await auth(`/factors/${factor.id}/challenge`, aal1, {});
   const aal2 = (await auth(`/factors/${factor.id}/verify`, aal1, { challenge_id: challenge.id, code: totp(factor.totp.secret) })).access_token;
+  // Administrateur : session ouverte après la MFA, comme le fait le site (verrouillage d'inactivité)
+  if (isAdmin) {
+    const opened = await fetch(`${GATEWAY}/rest/v1/rpc/admin_session_begin`, { method: 'POST', headers: { apikey: ANON, Authorization: `Bearer ${aal2}`, 'Content-Type': 'application/json' }, body: '{}' });
+    if (!opened.ok && opened.status !== 404) throw new Error(`ouverture de la session administrateur : HTTP ${opened.status}`);
+  }
   return { id: user.id, token: aal2, aal1 };
 }
 

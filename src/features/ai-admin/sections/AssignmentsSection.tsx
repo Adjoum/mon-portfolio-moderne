@@ -279,16 +279,48 @@ function AssignmentEditor({ feature, overview, reload, onClose }: { feature: Fea
   )
 }
 
+type RunState = 'active' | 'blocked' | 'inactive'
+const runState = (f: FeatureState): RunState => (!f.enabled ? 'inactive' : f.blocker ? 'blocked' : 'active')
+const RUN_STATE: Record<RunState, { label: string; border: string; dot: string; card: string }> = {
+  active:   { label: 'Actives',   border: 'border-l-emerald-400', dot: 'bg-emerald-400', card: '' },
+  blocked:  { label: 'Bloquées',  border: 'border-l-amber-400',   dot: 'bg-amber-400',   card: '' },
+  inactive: { label: 'Inactives', border: 'border-l-slate-500',   dot: 'bg-slate-500',   card: 'opacity-80' },
+}
+
 export default function AssignmentsSection({ overview, reload, openFeature, onOpenFeature }: {
   overview: Overview; reload: () => Promise<unknown>; openFeature: string | null; onOpenFeature: (id: string | null) => void
 }) {
+  const [filter, setFilter] = useState<RunState | 'all'>('all')
+  const counts = useMemo(() => {
+    const c: Record<RunState, number> = { active: 0, blocked: 0, inactive: 0 }
+    for (const f of overview.features) c[runState(f)]++
+    return c
+  }, [overview.features])
+  const shown = overview.features.filter(f => filter === 'all' || runState(f) === filter || f.id === openFeature)
+
   return (
     <div className="space-y-4">
-      {overview.features.map(f => {
+      {/* Résumé et filtre : l'état de chaque configuration se lit d'un coup d'œil */}
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrer les fonctionnalités par état">
+        {(['all', 'active', 'blocked', 'inactive'] as const).map(id => {
+          const selected = filter === id
+          const n = id === 'all' ? overview.features.length : counts[id]
+          return (
+            <button key={id} type="button" aria-pressed={selected} onClick={() => setFilter(id)}
+              className={`inline-flex min-h-[40px] items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${selected ? 'border-indigo-400/60 bg-indigo-500/20 text-white' : 'border-white/10 bg-white/5 text-slate-300 hover:text-white'}`}>
+              {id !== 'all' && <span className={`h-2 w-2 rounded-full ${RUN_STATE[id].dot}`} aria-hidden="true" />}
+              {id === 'all' ? 'Toutes' : RUN_STATE[id].label} <span className="tabular-nums text-slate-400">{n}</span>
+            </button>
+          )
+        })}
+      </div>
+      {!shown.length && <p className="text-sm text-slate-400">Aucune fonctionnalité dans cet état.</p>}
+      {shown.map(f => {
         const provider = overview.providers.find(p => p.id === f.providerId)
         const open = openFeature === f.id
+        const state = RUN_STATE[runState(f)]
         return (
-          <Card key={f.id} className={open ? 'ring-1 ring-primary/50' : ''}>
+          <Card key={f.id} className={`border-l-4 ${state.border} ${state.card} ${open ? 'ring-1 ring-primary/50' : ''}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 space-y-1">
                 <h4 className="text-lg font-semibold text-white">{featureLabel(f.id)}</h4>

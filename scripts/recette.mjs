@@ -217,6 +217,17 @@ function alignSchema() {
   psql('postgres', `set client_min_messages = warning;\n${fs.readFileSync(path.join(ROOT, 'env/recette/schema-alignment.sql'), 'utf8')}`, ['--single-transaction']);
 }
 
+/** Session administrateur ouverte après la MFA, comme le fait le site (migration 20261102100000) */
+async function beginAdminSession(stack, token) {
+  const res = await fetch(`${GATEWAY}/rest/v1/rpc/admin_session_begin`, {
+    method: 'POST',
+    headers: { apikey: stack.RECETTE_ANON_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok || body?.[0]?.active !== true) throw new Error(`ouverture de la session administrateur : HTTP ${res.status} ${JSON.stringify(body).slice(0, 160)}`);
+}
+
 async function authAdmin(pathname, stack, init = {}) {
   const res = await fetch(`${GATEWAY}/auth/v1${pathname}`, {
     ...init,
@@ -410,6 +421,9 @@ async function verify() {
     const factor = await auth('/factors', aal1, { factor_type: 'totp', friendly_name: 'controle' });
     const challenge = await auth(`/factors/${factor.id}/challenge`, aal1, {});
     const aal2 = (await auth(`/factors/${factor.id}/verify`, aal1, { challenge_id: challenge.id, code: totp(factor.totp.secret) })).access_token;
+    const notOpened = await overview(aal2);
+    check('session admin : MFA validée mais session non ouverte → refusée', notOpened.status === 401 && (await notOpened.json().catch(() => null))?.code === 'ADMIN_SESSION_REQUIRED', `HTTP ${notOpened.status}`);
+    await beginAdminSession(stack, aal2);
     const withMfa = await overview(aal2);
     const body = await withMfa.json().catch(() => null);
     check('centre IA : anonyme refusé', anonymous.status === 401, `HTTP ${anonymous.status}`);
@@ -432,6 +446,15 @@ async function verify() {
     const row = (await created.json().catch(() => []))[0];
     await rest(`ailab_capabilities?slug=eq.${slug}`, { method: 'DELETE' });
     check('AI Lab : ajout d’une capacité (createdat et updatedat renseignés), puis retrait', created.status === 201 && !!row?.createdat && !!row?.updatedat, `HTTP ${created.status}`);
+
+    // Horloge simulée côté serveur : dernière interaction il y a 10 minutes, jeton toujours valide
+    psql('supabase_admin', `update public.admin_session_activity set last_activity_at = now() - interval '10 minutes' where user_id = '${user.id}';`);
+    const idleApi = await overview(aal2);
+    const idleBody = await idleApi.json().catch(() => null);
+    const idleWrite = await rest('ailab_capabilities', { method: 'POST', body: JSON.stringify({ slug: `${slug}-idle`, icon: 'Brain', title: 'Contrôle', description: 'Ne doit pas être créée' }) });
+    const idleRead = await rest('visits?select=id');
+    check('session admin : 10 min sans interaction → API 401 ADMIN_SESSION_EXPIRED, jeton pourtant valide', idleApi.status === 401 && idleBody?.code === 'ADMIN_SESSION_EXPIRED', `HTTP ${idleApi.status} ${idleBody?.code ?? ''}`);
+    check('session admin : 10 min sans interaction → écriture et lecture admin refusées par la RLS', idleWrite.status >= 400 && JSON.stringify(await idleRead.json().catch(() => null)) === '[]', `écriture HTTP ${idleWrite.status}`);
   } finally {
     await authAdmin(`/admin/users/${user.id}`, stack, { method: 'DELETE', body: '{}' });
   }
@@ -479,6 +502,7 @@ async function visionProbe() {
     const factor = await auth('/factors', aal1, { factor_type: 'totp', friendly_name: 'sonde' });
     const challenge = await auth(`/factors/${factor.id}/challenge`, aal1, {});
     const token = (await auth(`/factors/${factor.id}/verify`, aal1, { challenge_id: challenge.id, code: totp(factor.totp.secret) })).access_token;
+    await beginAdminSession(stack, token);
     const admin = async (pathname, init = {}) => {
       const res = await fetch(`${API}/api/admin/ai${pathname}`, { ...init, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
       const body = await res.json().catch(() => null);
@@ -538,10 +562,18 @@ function down(wipe) {
   console.log(wipe ? 'Recette arrêtée, base effacée (clés de test comprises).' : 'Recette arrêtée, données conservées.');
 }
 
-const commands = { up, verify, 'sonde-vision': visionProbe, down: () => down(false), reset: () => down(true) };
+/** Migrations ajoutées depuis le dernier « up », sur la base de recette en marche (rien n'est effacé) */
+function migrate() {
+  ensureConfig();
+  step('Migrations en attente sur la base de recette');
+  applyPendingMigrations();
+  psql('supabase_admin', "notify pgrst, 'reload schema';");
+}
+
+const commands = { up, verify, migrate, 'sonde-vision': visionProbe, down: () => down(false), reset: () => down(true) };
 const command = commands[process.argv[2]];
 if (!command) {
-  console.error('Usage : node scripts/recette.mjs up | verify | sonde-vision [--confirmer-cout <$>] | down | reset');
+  console.error('Usage : node scripts/recette.mjs up | verify | migrate | sonde-vision [--confirmer-cout <$>] | down | reset');
   process.exit(2);
 }
 try {

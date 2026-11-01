@@ -1,6 +1,7 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react'
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Brain, Cpu, Sparkles } from 'lucide-react'
+import { Brain, Cpu, Sparkles, LogOut, ShieldCheck, Clock3, RotateCcw } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Edit, Trash2, Save, X, Upload, FileText, Briefcase, Award, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -9,6 +10,8 @@ import AdminGate from '../components/admin/AdminGate';
 import CvManager from '../components/admin/CvManager';
 import VisitorStats from '../components/VisitorStats'
 import AILabManager from '../components/AILabManager'
+import { formatRemaining, useAdminSession } from '../components/admin/adminSessionContext'
+import { BEFORE_LOCK_EVENT, DRAFT_PREFIX } from '../lib/adminSession'
 
 // Centre IA chargé à la demande : il n'alourdit pas le reste du dashboard
 const AiAdminPanel = lazy(() => import('../features/ai-admin/AiAdminPanel'))
@@ -17,6 +20,54 @@ const AiAdminPanel = lazy(() => import('../features/ai-admin/AiAdminPanel'))
 
 
 type TabType = 'projects' | 'skills' | 'cv' | 'visitors' | 'ailab' | 'ai'
+
+const TABS: { id: TabType; label: string; icon: LucideIcon }[] = [
+  { id: 'projects', label: 'Projets',                  icon: Briefcase },
+  { id: 'skills',   label: 'Compétences',              icon: Award },
+  { id: 'cv',       label: 'CV PDF',                   icon: FileText },
+  { id: 'visitors', label: 'Visiteurs',                icon: Users },
+  { id: 'ailab',    label: 'AI Lab',                   icon: Cpu },
+  { id: 'ai',       label: 'Intelligence artificielle', icon: Sparkles },
+]
+
+// Brouillons conservés au verrouillage de la session (sessionStorage de cet onglet uniquement).
+// Contenu : champs du formulaire (texte, URL publiques) ; jamais de fichier, de jeton ni de clé.
+const PROJECT_DRAFT = `${DRAFT_PREFIX}project`
+const SKILL_DRAFT   = `${DRAFT_PREFIX}skill`
+interface Draft<F, E> { form: F; editing: E | null; at: number }
+
+function readDraft<F, E>(key: string): Draft<F, E> | null {
+  try {
+    const raw = sessionStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as Draft<F, E>) : null
+  } catch {
+    return null
+  }
+}
+
+/** Indicateur discret : session MFA, contrôle serveur, compte à rebours en fin de délai */
+function SessionIndicator() {
+  const session = useAdminSession()
+  const warning = session.status === 'warning'
+  return (
+    <p
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${warning ? 'border-amber-400/40 bg-amber-400/10 text-amber-200' : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200'}`}
+      title="La session se verrouille après 10 minutes sans clic, saisie, défilement ou touche clavier. Le serveur refuse toute action au-delà."
+    >
+      {warning ? <Clock3 size={14} aria-hidden="true" /> : <ShieldCheck size={14} aria-hidden="true" />}
+      <span className="whitespace-nowrap">Session MFA</span>
+      <span className="text-white/40" aria-hidden="true">·</span>
+      {warning
+        ? <span className="whitespace-nowrap tabular-nums">verrouillage dans {formatRemaining(session.remainingMs)}</span>
+        : (
+          <span className="whitespace-nowrap">
+            verrouillage 10 min
+            {session.serverEnforced && <span className="hidden sm:inline"> · contrôlé par le serveur</span>}
+          </span>
+        )}
+    </p>
+  )
+}
 
 interface ProjectForm {
   title: string
@@ -71,7 +122,12 @@ const AdminDashboardContent: React.FC = () => {
   const [projectImagePreview, setProjectImagePreview] = useState<string>("");
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const navigate = useNavigate()
-  const INACTIVITY_LIMIT = 30 * 60 * 1000 // 30 minutes
+  const session = useAdminSession()
+  const tabRefs = useRef<Partial<Record<TabType, HTMLButtonElement | null>>>({})
+  const [drafts, setDrafts] = useState(() => ({
+    project: readDraft<ProjectForm, Project>(PROJECT_DRAFT),
+    skill:   readDraft<SkillForm, Skill>(SKILL_DRAFT),
+  }))
 
 
 
@@ -378,183 +434,160 @@ const uploadProjectImage = async (file: File) => {
     })
   }
 
-  // ✅ AJOUTE CETTE FONCTION DE DÉCONNEXION
+  // Déconnexion volontaire : session close côté serveur, puis toutes les sessions du compte
   const handleLogout = async () => {
     if (confirm('Êtes-vous sûr de vouloir vous déconnecter ?')) {
-      await supabase.auth.signOut() // AdminGate réaffiche la connexion
+      await session.logout() // AdminGate réaffiche la connexion
     }
   }
 
-
+  // Verrouillage pour inactivité (AdminSessionProvider) : brouillon des formulaires ouverts
   useEffect(() => {
-    let loggedOut = false
-    let lastActivity = Date.now()
-
-    const logoutForInactivity = async () => {
-      if (loggedOut) return
-      loggedOut = true
-      alert('Session expirée pour inactivité. Veuillez vous reconnecter.')
-      await supabase.auth.signOut() // AdminGate réaffiche la connexion
-    }
-
-    const markActivity = () => { lastActivity = Date.now() }
-
-    const activityEvents: Array<keyof WindowEventMap> = [
-      'mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click',
-    ]
-    activityEvents.forEach((e) =>
-      window.addEventListener(e, markActivity, { passive: true })
-    )
-
-    // Vérifie l'inactivité réelle toutes les 15 s (robuste face à la veille / onglet en arrière-plan)
-    const intervalId = window.setInterval(() => {
-      if (Date.now() - lastActivity >= INACTIVITY_LIMIT) logoutForInactivity()
-    }, 15_000)
-
-    // Vérifie aussi dès qu'on revient sur l'onglet (cas du PC qui sort de veille)
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible'
-          && Date.now() - lastActivity >= INACTIVITY_LIMIT) {
-        logoutForInactivity()
+    const save = () => {
+      try {
+        if (showProjectForm) sessionStorage.setItem(PROJECT_DRAFT, JSON.stringify({ form: projectForm, editing: editingProject, at: Date.now() }))
+        if (showSkillForm) sessionStorage.setItem(SKILL_DRAFT, JSON.stringify({ form: skillForm, editing: editingSkill, at: Date.now() }))
+      } catch {
+        // stockage indisponible : l'avertissement à 9 minutes a prévenu l'administrateur
       }
     }
-    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener(BEFORE_LOCK_EVENT, save)
+    return () => window.removeEventListener(BEFORE_LOCK_EVENT, save)
+  }, [showProjectForm, showSkillForm, projectForm, skillForm, editingProject, editingSkill])
 
-    return () => {
-      window.clearInterval(intervalId)
-      activityEvents.forEach((e) => window.removeEventListener(e, markActivity))
-      document.removeEventListener('visibilitychange', onVisibility)
+  const discardDrafts = () => {
+    sessionStorage.removeItem(PROJECT_DRAFT)
+    sessionStorage.removeItem(SKILL_DRAFT)
+    setDrafts({ project: null, skill: null })
+  }
+
+  const restoreDrafts = () => {
+    if (drafts.skill) {
+      setActiveTab('skills')
+      setSkillForm(drafts.skill.form)
+      setEditingSkill(drafts.skill.editing)
+      setShowSkillForm(true)
     }
-  }, [])
+    if (drafts.project) {
+      setActiveTab('projects')
+      setProjectForm(drafts.project.form)
+      setEditingProject(drafts.project.editing)
+      setShowProjectForm(true)
+    }
+    discardDrafts()
+  }
 
+  // Onglets : flèches gauche/droite, Début, Fin (motif ARIA « tabs »)
+  const onTabKeyDown = (e: React.KeyboardEvent) => {
+    const index = TABS.findIndex(t => t.id === activeTab)
+    const next = e.key === 'ArrowRight' ? (index + 1) % TABS.length
+      : e.key === 'ArrowLeft' ? (index - 1 + TABS.length) % TABS.length
+      : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : -1
+    if (next < 0) return
+    e.preventDefault()
+    setActiveTab(TABS[next].id)
+    tabRefs.current[TABS[next].id]?.focus()
+  }
+
+  const tabCount = (id: TabType) => id === 'projects' ? projects.length : id === 'skills' ? skills.length : null
 
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="min-h-screen pt-32 pb-20 px-6"
+      className="min-h-screen px-4 pb-20 pt-28 sm:px-6 sm:pt-32"
     >
       <div className="container mx-auto max-w-7xl">
 
-        {/* ✅ AJOUTE CE BOUTON DE DÉCONNEXION */}
-        <div className="flex justify-end mb-4">
-          <button
-            onClick={handleLogout}
-            className="px-4 py-2 glass-effect rounded-lg text-gray-300 hover:text-white transition-colors flex items-center gap-2"
-          >
-            <X size={18} />
-            Déconnexion
-          </button>
+        {/* En-tête */}
+        <header className="relative mb-8 overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-950/80 via-slate-900/80 to-violet-950/70 p-5 shadow-2xl shadow-indigo-950/40 sm:p-8">
+          <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-violet-500/20 blur-3xl" aria-hidden="true" />
+          <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <h1 className="mb-2 text-3xl font-bold sm:text-4xl lg:text-5xl">
+                <span className="gradient-text">Dashboard Admin</span>
+              </h1>
+              <p className="mb-4 text-base text-slate-300 sm:text-lg">
+                Projets, compétences, CV, statistiques et intelligence artificielle
+              </p>
+              <SessionIndicator />
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/admin/knowledge')}
+                className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-indigo-400/40 bg-indigo-500/15 px-4 py-2 text-sm font-semibold text-indigo-200 transition-colors hover:bg-indigo-500/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
+              >
+                <Brain size={18} aria-hidden="true" />
+                Knowledge Base
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleLogout()}
+                className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
+              >
+                <LogOut size={18} aria-hidden="true" />
+                Déconnexion
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Brouillons conservés lors d'un verrouillage */}
+        {(drafts.project || drafts.skill) && (
+          <div role="status" className="mb-6 flex flex-col gap-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100 sm:flex-row sm:items-center sm:justify-between">
+            <p>
+              Un formulaire non enregistré a été conservé lors du verrouillage de la session
+              {drafts.project ? ` (projet « ${drafts.project.form.title || 'sans titre'} »)` : ''}
+              {drafts.skill ? ` (compétence « ${drafts.skill.form.name || 'sans nom'} »)` : ''}.
+              {drafts.project ? ' Une image chargée depuis l’ordinateur devra être rechargée.' : ''}
+            </p>
+            <div className="flex shrink-0 gap-2">
+              <button type="button" onClick={restoreDrafts} className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-amber-300/20 px-3 py-2 font-semibold text-white hover:bg-amber-300/30">
+                <RotateCcw size={16} aria-hidden="true" /> Restaurer
+              </button>
+              <button type="button" onClick={discardDrafts} className="min-h-[40px] rounded-lg px-3 py-2 text-amber-100/80 hover:text-white">Ignorer</button>
+            </div>
+          </div>
+        )}
+
+        {/* Onglets : une ligne défilable sur mobile, jamais de débordement */}
+        <div
+          role="tablist"
+          aria-label="Rubriques d’administration"
+          onKeyDown={onTabKeyDown}
+          className="scrollbar-hide -mx-4 mb-8 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0"
+        >
+          {TABS.map(({ id, label, icon: Icon }) => {
+            const selected = activeTab === id
+            const count = tabCount(id)
+            return (
+              <button
+                key={id}
+                ref={el => { tabRefs.current[id] = el }}
+                id={`admin-tab-${id}`}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                aria-controls="admin-tabpanel"
+                tabIndex={selected ? 0 : -1}
+                onClick={() => setActiveTab(id)}
+                className={`inline-flex min-h-[44px] shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300 sm:text-base ${
+                  selected
+                    ? 'bg-gradient-to-r from-primary to-secondary text-white shadow-lg shadow-indigo-500/25'
+                    : 'border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <Icon size={18} aria-hidden="true" />
+                {label}
+                {count !== null && <span className={`rounded-full px-2 py-0.5 text-xs ${selected ? 'bg-white/20' : 'bg-white/10'}`}>{count}</span>}
+              </button>
+            )
+          })}
         </div>
 
-        {/* Header */}
-        <div className="mb-12">
-          <h1 className="text-5xl font-bold mb-4">
-            <span className="gradient-text">Dashboard Admin</span>
-          </h1>
-          <p className="text-xl text-gray-400">
-            Gérez vos projets, compétences et CV
-          </p>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex flex-wrap gap-4 mb-8">
-          <button
-            onClick={() => setActiveTab('projects')}
-            className={`px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all ${
-              activeTab === 'projects'
-                ? 'bg-gradient-to-r from-primary to-secondary text-white'
-                : 'glass-effect text-gray-300 hover:text-white'
-            }`}
-          >
-            <Briefcase size={20} />
-            Projets ({projects.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('skills')}
-            className={`px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all ${
-              activeTab === 'skills'
-                ? 'bg-gradient-to-r from-primary to-secondary text-white'
-                : 'glass-effect text-gray-300 hover:text-white'
-            }`}
-          >
-            <Award size={20} />
-            Compétences ({skills.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('cv')}
-            className={`px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all ${
-              activeTab === 'cv'
-                ? 'bg-gradient-to-r from-primary to-secondary text-white'
-                : 'glass-effect text-gray-300 hover:text-white'
-            }`}
-          >
-            <FileText size={20} />
-            CV PDF
-          </button>
-
-          <button
-            onClick={() => setActiveTab('visitors')}
-            className={`px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all ${
-              activeTab === 'visitors'
-                ? 'bg-gradient-to-r from-primary to-secondary text-white'
-                : 'glass-effect text-gray-300 hover:text-white'
-            }`}
-          >
-            <Users size={20} />
-            Visiteurs
-          </button>
-
-          {/* Nouveau bouton pour l'AILab */}
-          <button
-            onClick={() => setActiveTab('ailab')}
-            className={`px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all ${
-              activeTab === 'ailab'
-                ? 'bg-gradient-to-r from-primary to-secondary text-white'
-                : 'glass-effect text-gray-300 hover:text-white'
-            }`}
-          >
-            <Cpu size={20} />
-            AILab
-          </button>
-
-          <button
-            onClick={() => setActiveTab('ai')}
-            className={`px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all ${
-              activeTab === 'ai'
-                ? 'bg-gradient-to-r from-primary to-secondary text-white'
-                : 'glass-effect text-gray-300 hover:text-white'
-            }`}
-          >
-            <Sparkles size={20} />
-            Intelligence artificielle
-          </button>
-
-          {/* Bouton accès Knowledge Base */}
-          <motion.button
-            onClick={() => navigate('/admin/knowledge')}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="px-5 py-3 rounded-xl font-semibold flex items-center gap-2 text-sm relative overflow-hidden"
-            style={{
-              background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(236,72,153,0.2))',
-              border: '1px solid rgba(99,102,241,0.4)',
-              color: '#a5b4fc',
-            }}
-          >
-            <Brain size={18} />
-            🧠 Knowledge Base
-            <span style={{
-              position: 'absolute', top: 4, right: 6,
-              width: 7, height: 7, borderRadius: '50%',
-              background: '#22c55e',
-              animation: 'pulse 2s infinite',
-            }} />
-          </motion.button>
-
-        </div>
-
-        {/* Contenu des tabs */}
+        {/* Contenu de l'onglet actif */}
+        <div role="tabpanel" id="admin-tabpanel" aria-labelledby={`admin-tab-${activeTab}`} className="min-w-0">
         <AnimatePresence mode="wait">
           {/* TAB PROJETS */}
           {activeTab === 'projects' && (
@@ -1036,6 +1069,7 @@ const uploadProjectImage = async (file: File) => {
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
       </div>
     </motion.div>
     

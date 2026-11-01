@@ -18,7 +18,7 @@ const TONES: Record<Tone, string> = {
 
 export function Badge({ tone = 'gray', children, title }: { tone?: Tone; children: ReactNode; title?: string }) {
   return (
-    <span title={title} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-medium whitespace-nowrap ${TONES[tone]}`}>
+    <span title={title} className={`inline-flex max-w-full items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-medium [overflow-wrap:anywhere] ${TONES[tone]}`}>
       {children}
     </span>
   )

@@ -9,7 +9,12 @@
 //   3. appartenance à admin_users vérifiée par Supabase lui-même (rpc is_portfolio_admin)
 //      avec le jeton de l'utilisateur : PostgREST revalide la signature, aucune clé
 //      service_role n'est nécessaire sur le serveur
-//   4. toute indisponibilité ou configuration absente → refus (fail closed)
+//   4. jeton aal2 : session administrateur encore active (rpc admin_session_status, migration
+//      20261102100000) — verrouillée après 10 minutes sans interaction réelle, même si le jeton
+//      n'a pas expiré. Lecture seule : une requête d'API ne prolonge jamais la session.
+//      État relu à chaque requête (aucune fenêtre après une déconnexion) ; seuls les refus
+//      définitifs sont mis en cache, une session close ne se rouvrant jamais.
+//   5. toute indisponibilité ou configuration absente → refus (fail closed)
 // requireAdminMfa : session aal2 (TOTP validé) exigée pour les opérations sensibles
 
 import crypto from 'crypto';
@@ -68,6 +73,8 @@ const MESSAGES: Record<string, string> = {
   MFA_REQUIRED:               'Validation par double authentification (MFA) requise pour cette opération',
   ADMIN_AUTH_UNAVAILABLE:     'Vérification des droits momentanément indisponible',
   ADMIN_AUTH_NOT_CONFIGURED:  'Administration indisponible : authentification non configurée sur le serveur',
+  ADMIN_SESSION_EXPIRED:      'Session administrateur expirée après 10 minutes d’inactivité. Reconnectez-vous.',
+  ADMIN_SESSION_REQUIRED:     'Session administrateur non ouverte. Reconnectez-vous.',
 };
 
 // ── Configuration (lue à chaque requête : aucune valeur figée au démarrage) ──
@@ -241,6 +248,55 @@ async function isPortfolioAdmin(cfg: SupabaseConfig, token: string, exp: number)
   return isAdmin;
 }
 
+// ── Session administrateur active (verrouillage d'inactivité) ─
+interface SessionState { active: boolean; reason: string | null }
+const sessionCache = new Map<string, SessionState & { until: number }>();   // refus définitifs uniquement
+// Une session close ne se rouvre jamais : ces états restent valables jusqu'à l'expiration du jeton
+const TERMINAL_REASONS = new Set(['idle_timeout', 'logout', 'admin_revoked']);
+
+async function adminSessionState(cfg: SupabaseConfig, token: string, exp: number): Promise<SessionState> {
+  const cacheKey = crypto.createHash('sha256').update(token).digest('hex');
+  const now      = Date.now();
+  const hit      = sessionCache.get(cacheKey);
+  if (hit && hit.until > now) return { active: hit.active, reason: hit.reason };
+
+  const res = await fetch(`${cfg.url}/rest/v1/rpc/admin_session_status`, {
+    method:  'POST',
+    headers: {
+      apikey:         cfg.anonKey,
+      Authorization:  `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      Accept:         'application/json',
+    },
+    body:   '{}',
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+  }).catch((err: Error) => {
+    console.error('[ADMIN_AUTH] rpc admin_session_status injoignable:', err.message);
+    throw new AdminAuthError(503, 'ADMIN_AUTH_UNAVAILABLE', 'session_check_unreachable');
+  });
+
+  if (res.status === 401 || res.status === 403) {
+    throw new AdminAuthError(401, 'INVALID_TOKEN', 'rejected_by_supabase');
+  }
+  if (!res.ok) {
+    // 404 = migration absente : refus, jamais d'accès sans contrôle de session
+    console.error(`[ADMIN_AUTH] rpc admin_session_status HTTP ${res.status}`);
+    throw new AdminAuthError(503, 'ADMIN_AUTH_UNAVAILABLE', `session_check_http_${res.status}`);
+  }
+
+  const body = await res.json().catch(() => null) as unknown;
+  const row  = (Array.isArray(body) ? body[0] : body) as { active?: unknown; remaining_seconds?: unknown; reason?: unknown } | null;
+  const state: SessionState = {
+    active: row?.active === true,
+    reason: typeof row?.reason === 'string' ? row.reason : null,
+  };
+  if (!state.active && state.reason && TERMINAL_REASONS.has(state.reason) && exp * 1000 > now) {
+    if (sessionCache.size >= ADMIN_CACHE_MAX) sessionCache.clear();
+    sessionCache.set(cacheKey, { ...state, until: exp * 1000 });
+  }
+  return state;
+}
+
 // ── Réponses ──────────────────────────────────────────────────
 function deny(
   req: Request,
@@ -295,6 +351,15 @@ export const requireSupabaseAdmin = async (
       return deny(req, res, 403, 'FORBIDDEN', 'not_in_admin_users', sub);
     }
 
+    // Session MFA : encore active (moins de 10 minutes sans interaction réelle) ?
+    if (claims.aal === 'aal2') {
+      const session = await adminSessionState(cfg, token, claims.exp!);
+      if (!session.active) {
+        const code = session.reason === 'not_started' ? 'ADMIN_SESSION_REQUIRED' : 'ADMIN_SESSION_EXPIRED';
+        return deny(req, res, 401, code, `admin_session_${session.reason ?? 'inactive'}`, sub);
+      }
+    }
+
     req.supabaseAdmin = { userId: claims.sub!, aal: claims.aal === 'aal2' ? 'aal2' : 'aal1' };
     next();
   } catch (err) {
@@ -322,4 +387,5 @@ export const requireAdminMfa = (
 export function resetSupabaseAdminCaches(): void {
   jwksCache = null;
   adminCache.clear();
+  sessionCache.clear();
 }

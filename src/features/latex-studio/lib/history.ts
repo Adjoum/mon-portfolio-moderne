@@ -6,6 +6,7 @@
 // Les fichiers importés ne sont jamais enregistrés ici : seulement le PDF final et son code source.
 // Conservation : 365 jours au plus, purge à l'ouverture de « Mes CV ».
 import { supabase } from '../../../lib/supabase'
+import { whenAdminSessionSettled } from '../../../lib/adminSession'
 
 export type HistoryMode = 'server' | 'device'
 
@@ -39,6 +40,8 @@ export async function detectMode(): Promise<HistoryMode> {
   try {
     const { data } = await supabase.auth.getSession()
     if (!data.session) return 'device'
+    // Administrateur : la session (verrouillée après inactivité) doit d'abord être ouverte
+    await whenAdminSessionSettled()
     const { data: allowed, error } = await supabase.rpc('cv_history_allowed')
     return !error && allowed === true ? 'server' : 'device'
   } catch {

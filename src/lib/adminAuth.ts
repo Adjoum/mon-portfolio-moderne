@@ -127,6 +127,8 @@ const ADMIN_API_MESSAGES: Record<string, string> = {
   ADMIN_AUTH_NOT_CONFIGURED: 'Administration indisponible : serveur non configuré.',
   ADMIN_AUTH_UNAVAILABLE:    'Vérification des droits momentanément indisponible. Réessayez.',
   RATE_LIMIT_EXCEEDED:       'Trop de requêtes. Patientez avant de réessayer.',
+  ADMIN_SESSION_EXPIRED:     'Session verrouillée après 10 minutes d’inactivité. Reconnectez-vous.',
+  ADMIN_SESSION_REQUIRED:    'Session administrateur non ouverte. Reconnectez-vous.',
 }
 
 /** Message utilisateur pour une réponse d'erreur de l'API d'administration */

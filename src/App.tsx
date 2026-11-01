@@ -6,6 +6,7 @@ import { AnimatePresence } from 'framer-motion'
 import Navigation from './components/Navigation'
 import { useVisitTracker } from './hooks/useVisitTracker'
 import Footer from './components/Footer'
+import AdminSessionProvider from './components/admin/AdminSessionProvider'
 
 // ✅ Pages existantes — lazy loading
 // Accueil inclus dans le bundle principal : un aller-retour réseau de moins avant le premier affichage de /
@@ -203,7 +204,10 @@ function App() {
     <Router>
       <div className="app-container">
         <CustomCursor />
-        <AnimatedRoutes />
+        {/* Session administrateur : suivie sur tout le site et dans tous les onglets */}
+        <AdminSessionProvider>
+          <AnimatedRoutes />
+        </AdminSessionProvider>
       </div>
     </Router>
   )

@@ -2,6 +2,8 @@
 //  - GET  /auth/v1/.well-known/jwks.json   clés publiques ES256 du projet
 //  - POST /rest/v1/rpc/is_portfolio_admin  revalide la signature du jeton comme PostgREST
 //                                          (401 si invalide) puis teste l'appartenance admin
+//  - POST /rest/v1/rpc/admin_session_status état de la session (claim session_id) : la logique
+//                                          réelle est prouvée par supabase/tests/session
 // Les jetons sont signés avec des clés générées à chaque exécution : aucun secret réel.
 
 import http from 'http';
@@ -24,6 +26,18 @@ export interface TokenOptions {
   /** clé de signature : celle du projet par défaut, ou une clé étrangère */
   signWith?: 'project' | 'foreign';
   kid?: string;
+  /** claim session_id (aléatoire par défaut) */
+  sessionId?: string;
+}
+
+/** États de session simulés (admin_session_status) ; une session inconnue est active par défaut */
+export interface FakeSessions {
+  states: Map<string, { active: boolean; remaining_seconds: number; reason: string | null }>;
+  /** 'ok' | 'down' (HTTP 500) | 'missing_function' (HTTP 404, migration absente) */
+  mode: 'ok' | 'down' | 'missing_function';
+  calls: number;
+  expire(sessionId: string, reason?: 'idle_timeout' | 'logout'): void;
+  reset(): void;
 }
 
 export interface FakeCvVersion {
@@ -68,6 +82,7 @@ export interface FakeSupabase {
   hs256Secret: string | null;
   token(opts?: TokenOptions): string;
   ai: FakeAiBackend;
+  sessions: FakeSessions;
   hs256Token(secret: string, opts?: TokenOptions): string;
   close(): Promise<void>;
 }
@@ -77,6 +92,13 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
     calls: [],
     responses: {},
     reset() { ai.calls.length = 0; ai.responses = {}; },
+  };
+  const sessions: FakeSessions = {
+    states: new Map(),
+    mode: 'ok',
+    calls: 0,
+    expire(sessionId, reason = 'idle_timeout') { sessions.states.set(sessionId, { active: false, remaining_seconds: 0, reason }); },
+    reset() { sessions.states.clear(); sessions.mode = 'ok'; sessions.calls = 0; },
   };
   const project = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
   const foreign = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
@@ -177,6 +199,22 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
       return send(200, { keys: [{ ...jwk, kid: KID, alg: 'ES256', use: 'sig' }] });
     }
 
+    if (req.method === 'POST' && req.url === '/rest/v1/rpc/admin_session_status') {
+      sessions.calls++;
+      if (sessions.mode === 'down') return send(500, { message: 'internal' });
+      if (sessions.mode === 'missing_function') return send(404, { code: 'PGRST202' });
+      const token = (req.headers.authorization || '').replace(/^Bearer /, '');
+      try {
+        const claims = jwt.verify(token, project.publicKey, { algorithms: ['ES256'], issuer: `${state.url}/auth/v1`, audience: 'authenticated' }) as { sub: string; aal: string; session_id?: string };
+        if (!state.admins.has(claims.sub)) return send(200, [{ active: false, remaining_seconds: 0, idle_limit_seconds: 600, reason: 'not_admin' }]);
+        if (claims.aal !== 'aal2') return send(200, [{ active: false, remaining_seconds: 0, idle_limit_seconds: 600, reason: 'mfa_required' }]);
+        const st = sessions.states.get(claims.session_id ?? '') ?? { active: true, remaining_seconds: 600, reason: null };
+        return send(200, [{ ...st, idle_limit_seconds: 600 }]);
+      } catch {
+        return send(401, { code: 'PGRST301', message: 'JWT invalid' });
+      }
+    }
+
     if (req.method === 'POST' && req.url === '/rest/v1/rpc/is_portfolio_admin') {
       state.calls.rpc++;
       if (state.mode === 'down') return send(500, { message: 'internal' });
@@ -210,7 +248,7 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
     role:         opts.role ?? 'authenticated',
     aal:          opts.aal ?? 'aal1',
     is_anonymous: opts.isAnonymous ?? false,
-    session_id:   crypto.randomUUID(),
+    session_id:   opts.sessionId ?? crypto.randomUUID(),
   });
 
   const fake: FakeSupabase = {
@@ -224,6 +262,7 @@ export async function startFakeSupabase(): Promise<FakeSupabase> {
     get hs256Secret() { return state.hs256Secret; },
     set hs256Secret(v) { state.hs256Secret = v; },
     ai,
+    sessions,
     token(opts = {}) {
       const key = opts.signWith === 'foreign' ? foreign.privateKey : project.privateKey;
       return jwt.sign(claimsFor(opts), key, {

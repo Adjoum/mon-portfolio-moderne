@@ -1,6 +1,7 @@
 // src/components/admin/AdminGate.tsx
 // Garde d'interface des pages d'administration (/admin, /admin/knowledge) :
-// connexion → appartenance à admin_users → double authentification TOTP (aal2).
+// connexion → appartenance à admin_users → double authentification TOTP (aal2)
+// → session administrateur ouverte côté serveur (verrouillée après 10 min d'inactivité).
 //
 // ⚠️ Confort d'affichage uniquement : les données restent protégées côté serveur
 // (RLS Supabase + blog-api) même si ce composant est contourné.
@@ -15,6 +16,7 @@ import {
   type AdminAccess,
 } from '../../lib/adminAuth'
 import AdminLogin from '../AdminLogin'
+import { lockMessage, useAdminSession } from './adminSessionContext'
 
 const BUTTON = 'px-6 py-3 bg-gradient-to-r from-primary to-secondary rounded-lg font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed'
 const SECONDARY = 'px-4 py-2 glass-effect rounded-lg text-gray-300 hover:text-white transition-colors flex items-center gap-2'
@@ -34,8 +36,9 @@ function Panel({ icon, title, children }: { icon: ReactNode; title: string; chil
 }
 
 function SignOutButton() {
+  const session = useAdminSession()
   return (
-    <button type="button" onClick={() => supabase.auth.signOut()} className={SECONDARY}>
+    <button type="button" onClick={() => void (session.status === 'off' ? supabase.auth.signOut() : session.logout())} className={SECONDARY}>
       <LogOut size={16} /> Se déconnecter
     </button>
   )
@@ -120,6 +123,7 @@ function TotpEnrollment({ onVerified }: { onVerified: () => void }) {
 export default function AdminGate({ children }: { children: ReactNode }) {
   const [access, setAccess] = useState<AdminAccess | null>(null)
   const [denied, setDenied] = useState(false)
+  const session = useAdminSession()
 
   const refresh = useCallback(async () => {
     try {
@@ -146,6 +150,13 @@ export default function AdminGate({ children }: { children: ReactNode }) {
     void supabase.auth.signOut({ scope: 'local' })
   }, [access?.status])
 
+  // MFA validée : la session serveur doit être ouverte avant tout affichage d'administration
+  const sessionStatus = session.status
+  const startSession = session.start
+  useEffect(() => {
+    if (access?.status === 'ready' && sessionStatus === 'off' && !session.startError) startSession()
+  }, [access?.status, sessionStatus, startSession, session.startError])
+
   if (!access) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -170,11 +181,27 @@ export default function AdminGate({ children }: { children: ReactNode }) {
 
   switch (access.status) {
     case 'ready':
-      return <>{children}</>
+      if (sessionStatus === 'active' || sessionStatus === 'warning') return <>{children}</>
+      if (session.startError) {
+        return (
+          <Panel icon={<ShieldAlert className="text-yellow-400" />} title="Session impossible à ouvrir">
+            <p className="text-gray-400 mb-6">{session.startError}</p>
+            <SignOutButton />
+          </Panel>
+        )
+      }
+      return (
+        <div className="min-h-screen flex items-center justify-center" role="status">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-gray-400">Ouverture de la session sécurisée…</p>
+          </div>
+        </div>
+      )
 
     case 'signed_out':
     case 'not_admin':
-      return <AdminLogin onLoginSuccess={refresh} />
+      return <AdminLogin onLoginSuccess={refresh} notice={lockMessage(session.lock?.reason)} />
 
     case 'mfa_enroll':
       return (
