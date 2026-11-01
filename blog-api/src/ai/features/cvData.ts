@@ -45,6 +45,8 @@ export const CV_LIMITS = {
 
 type Mode = 'strict' | 'lenient';
 
+// Caractères de contrôle retirés volontairement des données du CV (hors tabulation et sauts de ligne)
+// eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 
 function str(value: unknown, max: number, field: string, mode: Mode): string {
