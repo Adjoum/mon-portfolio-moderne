@@ -444,16 +444,104 @@ async function verify() {
   process.exitCode = failures ? 1 : 0;
 }
 
+// ── Sonde vision réelle : préparation gratuite, envoi facturé seulement sur confirmation du coût ──
+//   node scripts/recette.mjs sonde-vision                         disponibilité, tarif, coût maximal, budget : rien de facturé
+//   node scripts/recette.mjs sonde-vision --confirmer-cout 0.02   envoie la sonde si le coût maximal total est ≤ 0,02 $
+// Options : --modele <id> (défaut gpt-5.6-luna), --fonctionnalite latex.import.ocr | cv.import.ocr (défaut : les deux).
+// Compte administrateur temporaire avec MFA, supprimé à la fin. Aucune affectation n'est modifiée.
+const OCR_FEATURES = ['latex.import.ocr', 'cv.import.ocr'];
+// Tarif publié (https://developers.openai.com/api/docs/models/gpt-5.6-luna, relu le 01/11/2026)
+const OFFICIAL_PRICING = { 'gpt-5.6-luna': { input: 0.2, output: 1.2 } };
+
+async function visionProbe() {
+  const args = process.argv.slice(3);
+  const opt = name => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
+  const model = opt('--modele') ?? 'gpt-5.6-luna';
+  const features = opt('--fonctionnalite') ? [opt('--fonctionnalite')] : OCR_FEATURES;
+  const confirmed = opt('--confirmer-cout') !== undefined ? Number(opt('--confirmer-cout')) : null;
+  if (features.some(f => !OCR_FEATURES.includes(f))) throw new Error(`fonctionnalité attendue : ${OCR_FEATURES.join(' ou ')}`);
+  if (confirmed !== null && !(confirmed > 0 && confirmed <= 1)) throw new Error('--confirmer-cout : montant en dollars, entre 0 et 1');
+  const official = OFFICIAL_PRICING[model] ?? null;
+  const stack = readEnv(STACK_ENV);
+  const usd = micro => `${(micro / 1e6).toFixed(4)} $`;
+
+  const email = `sonde-${crypto.randomUUID()}@recette.test`;
+  const password = random(16);
+  const user = await authAdmin('/admin/users', stack, { method: 'POST', body: JSON.stringify({ email, password, email_confirm: true }) });
+  try {
+    psql('supabase_admin', `insert into public.admin_users (user_id, email) values ('${user.id}', '${email}');`);
+    const auth = async (pathname, token, body) => {
+      const res = await fetch(`${GATEWAY}/auth/v1${pathname}`, { method: 'POST', headers: { apikey: stack.RECETTE_ANON_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error(`auth ${pathname} : HTTP ${res.status}`);
+      return res.json();
+    };
+    const aal1 = (await auth('/token?grant_type=password', stack.RECETTE_ANON_KEY, { email, password })).access_token;
+    const factor = await auth('/factors', aal1, { factor_type: 'totp', friendly_name: 'sonde' });
+    const challenge = await auth(`/factors/${factor.id}/challenge`, aal1, {});
+    const token = (await auth(`/factors/${factor.id}/verify`, aal1, { challenge_id: challenge.id, code: totp(factor.totp.secret) })).access_token;
+    const admin = async (pathname, init = {}) => {
+      const res = await fetch(`${API}/api/admin/ai${pathname}`, { ...init, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(`${pathname} : HTTP ${res.status} ${body?.code ?? ''} ${body?.error ?? ''}`.trim());
+      return body;
+    };
+
+    step(`Disponibilité de ${model} (catalogue du compte OpenAI, gratuit)`);
+    const availability = await admin('/providers/openai/models/check', { method: 'POST', body: JSON.stringify({ modelId: model }) });
+    console.log(`  ${availability.status} — ${availability.message}`);
+    console.log(`  matrice ${availability.profile?.matrixVersion ?? ''} : vision documentée ${availability.profile?.visionDocumented ? 'oui' : 'non'}, raisonnement ${availability.profile?.reasoning ? 'oui' : 'non'}`);
+    if (availability.status !== 'available') throw new Error('modèle non disponible pour ce compte : sonde non envoyée');
+
+    step('Coût maximal (relance comprise) et budget');
+    let total = 0;
+    const plans = [];
+    for (const feature of features) {
+      const e = await admin(`/features/${feature}/test-estimate?providerId=openai&modelId=${encodeURIComponent(model)}`);
+      const max = e.priced ? e.maxCostMicroUsd
+        : official ? Math.ceil(e.inputTokens * official.input + e.outputTokens * official.output) : null;
+      if (max === null) throw new Error(`${model} : tarif inconnu, saisissez-le dans le catalogue avant toute sonde`);
+      total += max;
+      plans.push({ feature, priced: e.priced });
+      console.log(`  ${feature} : ${e.requests} requêtes (${e.maxRequests} au plus), ${e.inputTokens} tokens d’entrée et ${e.outputTokens} de sortie au plus → ${usd(max)} au plus${e.priced ? '' : ' (tarif officiel, à enregistrer)'} ; budget ${e.budgetOk === false ? 'INSUFFISANT' : 'suffisant'}`);
+      if (e.budgetOk === false) throw new Error('budget du centre IA insuffisant : sonde non envoyée');
+    }
+    console.log(`  Total : ${usd(total)} au plus.`);
+
+    if (confirmed === null) {
+      console.log(`\nAucun appel facturé n’a été envoyé. Pour lancer la sonde : node scripts/recette.mjs sonde-vision${model === 'gpt-5.6-luna' ? '' : ` --modele ${model}`} --confirmer-cout ${(Math.ceil(total / 100) / 1e4).toFixed(4)}`);
+      return;
+    }
+    if (total > confirmed * 1e6) throw new Error(`coût maximal ${usd(total)} supérieur au montant confirmé (${confirmed} $) : sonde non envoyée`);
+
+    if (plans.some(p => !p.priced) && official) {
+      step(`Tarif officiel enregistré au catalogue (${official.input} $ / ${official.output} $ par million de tokens), pour que la sonde soit décomptée du budget`);
+      await admin('/providers/openai/models/pricing', { method: 'PUT', body: JSON.stringify({ modelId: model, inputUsdPerMTok: official.input, outputUsdPerMTok: official.output }) });
+    }
+    for (const { feature } of plans) {
+      step(`Sonde facturée : ${feature} avec ${model}`);
+      const r = await admin(`/features/${feature}/test`, { method: 'POST', body: JSON.stringify({ providerId: 'openai', modelId: model, params: {}, confirmBilling: true }) });
+      console.log(`  statut ${r.status} ; capacités démontrées : ${r.capabilities.join(', ') || 'aucune'}${r.failedCapability ? ` ; en échec : ${r.failedCapability}` : ''}${r.code ? ` ; code ${r.code}` : ''}`);
+      if (r.vision) console.log(`  vision : code de l’image « ${r.vision.expected} », réponse du modèle « ${r.vision.received} »`);
+      if (r.adjustments?.length) console.log(`  ajustements : ${r.adjustments.join(', ')}`);
+      console.log(`  coût réel : ${usd(r.estimatedCostMicroUsd)} ; ${r.latencyMs} ms ; enregistré : ${r.recorded ? 'oui' : 'non'}`);
+    }
+  } finally {
+    await authAdmin(`/admin/users/${user.id}`, stack, { method: 'DELETE', body: '{}' });
+    const left = sqlValue("select count(*) from public.admin_users where email like 'sonde-%';");
+    console.log(left === '0' ? '✔ compte temporaire supprimé' : `✗ ${left} compte(s) temporaire(s) restant(s)`);
+  }
+}
+
 function down(wipe) {
   stopVite();
   if (fs.existsSync(STACK_ENV)) mustCompose('down', '--remove-orphans', ...(wipe ? ['-v'] : []));
   console.log(wipe ? 'Recette arrêtée, base effacée (clés de test comprises).' : 'Recette arrêtée, données conservées.');
 }
 
-const commands = { up, verify, down: () => down(false), reset: () => down(true) };
+const commands = { up, verify, 'sonde-vision': visionProbe, down: () => down(false), reset: () => down(true) };
 const command = commands[process.argv[2]];
 if (!command) {
-  console.error('Usage : node scripts/recette.mjs up | verify | down | reset');
+  console.error('Usage : node scripts/recette.mjs up | verify | sonde-vision [--confirmer-cout <$>] | down | reset');
   process.exit(2);
 }
 try {
