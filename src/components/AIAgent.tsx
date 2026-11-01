@@ -1,9 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, GripHorizontal } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-const AI_AVATAR_VIDEO = '/videos/ai-avatar.mp4';
+// Version légère de la vidéo (200 × 200, sans son, 40 Ko) ; l'original reste dans public/videos
+const AI_AVATAR_VIDEO = '/videos/ai-avatar-200.mp4';
+const AI_AVATAR_POSTER = '/videos/ai-avatar-poster.webp';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -17,32 +19,72 @@ const SUGGESTIONS = [
   'Quelle est ta formation ?',
 ];
 
+const WELCOME: Message = {
+  role: 'assistant',
+  content:
+    "👋 Salut ! Je suis le clone IA d'Adjoumani. Pose-moi n'importe quelle question sur son parcours, ses projets ou ses compétences !",
+};
+
+// ── Conversation de la session ────────────────────────────────
+// En mémoire seulement (politique de confidentialité : aucun stockage) : conservée quand la fenêtre
+// est fermée puis rouverte, ou quand on change de page ; effacée au rechargement de l'onglet.
+// Une réponse arrivée après la fermeture de la fenêtre y est quand même ajoutée.
+type ChatState = { messages: Message[]; loading: boolean };
+let chatState: ChatState = { messages: [WELCOME], loading: false };
+const chatListeners = new Set<() => void>();
+const setChat = (update: (s: ChatState) => ChatState) => {
+  chatState = update(chatState);
+  chatListeners.forEach(listener => listener());
+};
+const subscribeChat = (listener: () => void) => {
+  chatListeners.add(listener);
+  return () => { chatListeners.delete(listener); };
+};
+const getChat = () => chatState;
+
+/** Éléments interactifs de l'en-tête : jamais le point de départ d'un déplacement de la fenêtre */
+const INTERACTIVE = 'button, a, input, textarea, select, [role="button"]';
+
+// Décision prise une fois par chargement de page : la bulle réaffichée reprend directement la vidéo
+let avatarVideoAllowed = false;
+
 const VideoAvatar: React.FC<{ className?: string }> = ({ className = '' }) => {
+  // Image fixe d'abord ; la vidéo est chargée une fois la page affichée, jamais en mouvement réduit
+  const [playVideo, setPlayVideo] = useState(avatarVideoAllowed);
+  useEffect(() => {
+    if (avatarVideoAllowed || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const start = () => { avatarVideoAllowed = true; setPlayVideo(true); };
+    // Safari n'a pas requestIdleCallback : simple délai
+    const hasIdle = typeof window.requestIdleCallback === 'function';
+    let handle: number | undefined;
+    const schedule = () => {
+      handle = hasIdle ? window.requestIdleCallback(start, { timeout: 4000 }) : window.setTimeout(start, 2500);
+    };
+    if (document.readyState === 'complete') schedule();
+    else window.addEventListener('load', schedule, { once: true });
+    return () => {
+      window.removeEventListener('load', schedule);
+      if (handle === undefined) return;
+      if (hasIdle) window.cancelIdleCallback(handle);
+      else window.clearTimeout(handle);
+    };
+  }, []);
+
   return (
-    <span className={`ai-video-avatar ${className}`}>
-      <video
-        src={AI_AVATAR_VIDEO}
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="metadata"
-      />
+    <span className={`ai-video-avatar ${className}`} aria-hidden="true">
+      {playVideo ? (
+        <video src={AI_AVATAR_VIDEO} poster={AI_AVATAR_POSTER} autoPlay loop muted playsInline preload="auto" />
+      ) : (
+        <img src={AI_AVATAR_POSTER} alt="" width={70} height={70} decoding="async" />
+      )}
     </span>
   );
 };
 
 export const AIAgent: React.FC = () => {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content:
-        "👋 Salut ! Je suis le clone IA d'Adjoumani. Pose-moi n'importe quelle question sur son parcours, ses projets ou ses compétences !",
-    },
-  ]);
+  const { messages, loading } = useSyncExternalStore(subscribeChat, getChat, getChat);
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const [isSmallScreen, setIsSmallScreen] = useState(false);
@@ -50,6 +92,8 @@ export const AIAgent: React.FC = () => {
   const dragStart = useRef({ mx: 0, my: 0, px: 0, py: 0 });
   const messagesEnd = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 640px)');
@@ -77,19 +121,45 @@ export const AIAgent: React.FC = () => {
   // Auto-scroll
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, open]);
 
-  // Focus input à l'ouverture
+  // Focus : champ de saisie à l'ouverture, bouton flottant à la fermeture
   useEffect(() => {
     if (open) {
-      setTimeout(() => inputRef.current?.focus(), 300);
+      wasOpen.current = true;
+      const t = setTimeout(() => inputRef.current?.focus(), 300);
+      return () => clearTimeout(t);
+    }
+    if (wasOpen.current) {
+      wasOpen.current = false;
+      launcherRef.current?.focus({ preventScroll: true });
     }
   }, [open]);
 
+  const closeChat = useCallback(() => {
+    setOpen(false);
+    setDragging(false);
+    setPos({ x: 0, y: 0 });
+  }, []);
+
+  // Échap ferme la fenêtre
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) closeChat();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, closeChat]);
+
   // ── Drag desktop/tablette uniquement ───────────────────────
+  // Cause du bouton de fermeture inopérant : la capture du pointeur posée sur l'en-tête au
+  // pointerdown détournait le clic de la croix vers l'en-tête. Le déplacement ne démarre donc
+  // jamais depuis un élément interactif, ni avec un autre bouton que le principal.
   const onDragStart = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      if (isSmallScreen) return;
+      if (isSmallScreen || e.button !== 0) return;
+      if ((e.target as HTMLElement).closest(INTERACTIVE)) return;
 
       setDragging(true);
 
@@ -132,15 +202,14 @@ export const AIAgent: React.FC = () => {
   const sendMessage = async (text?: string) => {
     const msg = (text || input).trim();
 
-    if (!msg || loading) return;
+    if (!msg || getChat().loading) return;
 
     setInput('');
 
     const userMsg: Message = { role: 'user', content: msg };
-    const newHistory = [...messages, userMsg];
+    const previous = getChat().messages;
 
-    setMessages(newHistory);
-    setLoading(true);
+    setChat(s => ({ messages: [...s.messages, userMsg], loading: true }));
 
     try {
       const res = await fetch(`${API_URL}/agent/chat`, {
@@ -148,31 +217,37 @@ export const AIAgent: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: msg,
-          history: messages
-            .filter((m) => m.role !== 'assistant' || messages.indexOf(m) > 0)
+          history: previous
+            .filter((m) => m.role !== 'assistant' || previous.indexOf(m) > 0)
             .slice(-6),
         }),
       });
 
       const data = await res.json();
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: data.reply || data.error || 'Désolé, une erreur est survenue.',
-        },
-      ]);
+      setChat(s => ({
+        ...s,
+        messages: [
+          ...s.messages,
+          {
+            role: 'assistant',
+            content: data.reply || data.error || 'Désolé, une erreur est survenue.',
+          },
+        ],
+      }));
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: '❌ Connexion impossible. Réessaie dans un instant.',
-        },
-      ]);
+      setChat(s => ({
+        ...s,
+        messages: [
+          ...s.messages,
+          {
+            role: 'assistant',
+            content: '❌ Connexion impossible. Réessaie dans un instant.',
+          },
+        ],
+      }));
     } finally {
-      setLoading(false);
+      setChat(s => ({ ...s, loading: false }));
     }
   };
 
@@ -199,8 +274,11 @@ export const AIAgent: React.FC = () => {
       <AnimatePresence>
         {!open && (
           <motion.button
+            ref={launcherRef}
             type="button"
-            aria-label="Ouvrir le chat IA"
+            aria-label="Ouvrir l'assistant Adjoumani AI"
+            aria-haspopup="dialog"
+            aria-expanded={false}
             onClick={() => setOpen(true)}
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -225,6 +303,9 @@ export const AIAgent: React.FC = () => {
       <AnimatePresence>
         {open && (
           <motion.div
+            role="dialog"
+            aria-modal="false"
+            aria-label="Adjoumani AI, clone IA"
             initial={{ opacity: 0, scale: 0.8, y: 40 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.8, y: 40 }}
@@ -237,10 +318,10 @@ export const AIAgent: React.FC = () => {
               className={`ai-chat-header ${isSmallScreen ? 'ai-chat-header-mobile' : ''}`}
               onPointerDown={onDragStart}
             >
-              <GripHorizontal size={14} style={{ opacity: 0.4 }} />
+              <GripHorizontal size={14} style={{ opacity: 0.4 }} aria-hidden="true" />
 
               <div className="ai-chat-header-info">
-                <div className="ai-chat-avatar">🤖</div>
+                <div className="ai-chat-avatar" aria-hidden="true">🤖</div>
 
                 <div className="ai-chat-title-zone">
                   <div className="ai-chat-name">Adjoumani AI</div>
@@ -253,19 +334,16 @@ export const AIAgent: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => {
-                  setOpen(false);
-                  setPos({ x: 0, y: 0 });
-                }}
+                onClick={closeChat}
                 className="ai-close-btn"
-                aria-label="Fermer le chat IA"
+                aria-label="Fermer l'assistant"
               >
-                <X size={16} />
+                <X size={18} aria-hidden="true" />
               </button>
             </div>
 
             {/* Messages */}
-            <div className="ai-messages">
+            <div className="ai-messages" aria-live="polite">
               {messages.map((msg, i) => (
                 <motion.div
                   key={i}
@@ -275,7 +353,7 @@ export const AIAgent: React.FC = () => {
                   className={`ai-msg ai-msg-${msg.role}`}
                 >
                   {msg.role === 'assistant' && (
-                    <span className="ai-msg-icon">🤖</span>
+                    <span className="ai-msg-icon" aria-hidden="true">🤖</span>
                   )}
 
                   <div className="ai-msg-bubble">{msg.content}</div>
@@ -287,8 +365,10 @@ export const AIAgent: React.FC = () => {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   className="ai-msg ai-msg-assistant"
+                  role="status"
+                  aria-label="Réponse en cours de rédaction"
                 >
-                  <span className="ai-msg-icon">🤖</span>
+                  <span className="ai-msg-icon" aria-hidden="true">🤖</span>
 
                   <div className="ai-msg-bubble ai-typing">
                     <span />
@@ -329,6 +409,7 @@ export const AIAgent: React.FC = () => {
                   }
                 }}
                 placeholder="Pose ta question..."
+                aria-label="Votre question pour l'assistant"
                 className="ai-input"
                 disabled={loading}
               />
@@ -340,7 +421,7 @@ export const AIAgent: React.FC = () => {
                 className="ai-send-btn"
                 aria-label="Envoyer le message"
               >
-                <Send size={16} />
+                <Send size={16} aria-hidden="true" />
               </button>
             </div>
           </motion.div>
@@ -578,17 +659,39 @@ export const AIAgent: React.FC = () => {
         .ai-close-btn {
           background: none;
           border: none;
-          color: #94a3b8;
+          color: #cbd5e1;
           cursor: pointer;
-          padding: 6px;
-          border-radius: 8px;
+          width: 44px;
+          height: 44px;
+          margin: -6px -8px -6px 0;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 10px;
           transition: 0.2s;
           flex-shrink: 0;
+          touch-action: manipulation;
         }
 
         .ai-close-btn:hover {
           color: #fff;
           background: rgba(255,255,255,0.1);
+        }
+
+        .ai-close-btn:focus-visible,
+        .ai-agent-btn:focus-visible,
+        .ai-send-btn:focus-visible,
+        .ai-suggestion-chip:focus-visible {
+          outline: 3px solid #a5b4fc;
+          outline-offset: 2px;
+        }
+
+        .ai-video-avatar img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+          border-radius: inherit;
         }
 
         .ai-messages {
