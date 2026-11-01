@@ -315,18 +315,23 @@ const LOADS_XCOLOR = /\\usepackage\s*(?:\[[^\]]*\]\s*)?\{[^}]*\bxcolor\b[^}]*\}/
  * sont définies dans un groupe, sans effet sur le reste du document ; un document généré sans
  * xcolor reçoit un simple cadre. Le marqueur ne provoque ainsi jamais d'erreur de compilation.
  */
-export function photoPlaceholder(source: string): string {
-  const box = (inner: string) => `\\parbox[c][3.8cm][c]{3.2cm}{\\centering${inner}}`
+export function photoPlaceholder(source: string, size?: { width: number; height: number }): string {
+  // Taille du cadre photo du document (studio) : le cadre vide occupe exactement la place de la photo
+  const dims = size
+    ? `[\\dimexpr${size.height.toFixed(1)}cm-2\\fboxsep\\relax][c]{\\dimexpr${size.width.toFixed(1)}cm-2\\fboxsep\\relax}`
+    : '[3.8cm][c]{3.2cm}'
+  const box = (inner: string) => `\\parbox[c]${dims}{\\centering${inner}}`
   if (!LOADS_XCOLOR.test(source)) return `\\fbox{${box('\\small Photo\\\\optionnelle')}}`
   return '{\\definecolor{softblue}{HTML}{EDF4FB}\\definecolor{textmuted}{HTML}{6B7280}'
     + `\\colorbox{softblue}{${box('\\textcolor{textmuted}{\\small Photo\\\\optionnelle}')}}}`
 }
 
 /** Code compilé et téléchargé : le marqueur devient la photo (photo.jpg) ou le cadre vide */
-export function buildFinalLatex(source: string, hasPhoto: boolean, photoWidthCm: number): string {
+export function buildFinalLatex(source: string, hasPhoto: boolean, photoWidthCm: number, photoHeightCm?: number): string {
   const width = Math.min(6, Math.max(1, Number.isFinite(photoWidthCm) ? photoWidthCm : 3.2)).toFixed(1)
+  const height = photoHeightCm !== undefined && Number.isFinite(photoHeightCm) ? Math.min(7, Math.max(1, photoHeightCm)) : undefined
   const replacement = hasPhoto
     ? `\\includegraphics[width=${width}cm,keepaspectratio]{photo.jpg}`
-    : photoPlaceholder(source)
+    : photoPlaceholder(source, height === undefined ? undefined : { width: Number(width), height })
   return source.replace(PHOTO_MARKER, () => replacement)
 }

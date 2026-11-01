@@ -23,7 +23,7 @@ const OUT = path.join(ROOT, 'secrets', 'recette', 'latex', 'modeles');
 const THUMBS = path.join(ROOT, 'public', 'latex-templates');
 fs.mkdirSync(OUT, { recursive: true });
 
-const { TEMPLATE_LIBRARY, renderCv } = await import('../src/features/latex-studio/templates/library.ts');
+const { TEMPLATE_LIBRARY, renderCv, photoSetup } = await import('../src/features/latex-studio/templates/library.ts');
 const { sampleCv } = await import('../src/features/latex-studio/templates/sample.ts');
 const { analyzeQuality, extractPageText } = await import('../src/features/latex-studio/lib/quality.ts');
 const { buildFinalLatex, TEMPLATES } = await import('../src/pages/CVBuilder/latexTemplates.ts');
@@ -36,11 +36,14 @@ const check = (label, ok, detail = '') => {
 };
 const photo = `data:image/jpeg;base64,${fs.readFileSync(path.join(ROOT, 'tests', 'latex', 'fixtures', 'photo-test.jpg')).toString('base64')}`;
 
-async function compile(code, withPhoto) {
+/** Cadre photo du modèle pour ces réglages : la photo (ou le cadre vide) prend sa taille, comme dans le studio */
+const frameOf = (id, opts = {}) => photoSetup(id, { ...TEMPLATE_LIBRARY.find(t => t.id === id).defaults, ...opts }).frame;
+
+async function compile(code, withPhoto, frame = { width: 3.2, height: 4.1 }) {
   const res = await fetch(`${API}/api/cv/compile`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': `198.19.${crypto.randomInt(0, 255)}.${crypto.randomInt(1, 254)}` },
-    body: JSON.stringify(withPhoto ? { code: buildFinalLatex(code, true, 3.2), photo } : { code: buildFinalLatex(code, false, 3.2) }),
+    body: JSON.stringify(withPhoto ? { code: buildFinalLatex(code, true, frame.width, frame.height), photo } : { code: buildFinalLatex(code, false, frame.width, frame.height) }),
   });
   const buf = Buffer.from(await res.arrayBuffer());
   if (res.status !== 200) return { status: res.status, error: JSON.parse(buf.toString('utf8')) };
@@ -67,12 +70,17 @@ const variants = [
 ];
 const summary = [];
 for (const t of TEMPLATE_LIBRARY) {
-  const list = [...variants, ...(t.supports.twoColumns ? [{ key: 'une-colonne', label: 'une colonne', opts: { twoColumns: false } }] : [])];
+  const list = [
+    ...variants,
+    ...(t.supports.twoColumns ? [{ key: 'une-colonne', label: 'une colonne', opts: { twoColumns: false } }] : []),
+    // P3 : cadre réglé par l'utilisateur (rond, 4 cm, à gauche, bordure)
+    ...(t.supports.photo ? [{ key: 'photo-cadre', label: 'photo ronde 4 cm à gauche, bordure', opts: { photo: true, photoFrames: { [t.id]: { shape: 'circle', width: 4, border: 2, position: 'left' } } } }] : []),
+  ];
   for (const v of list) {
     const cv = sampleCv(v.long ? 'long' : 'short');
     const code = renderCv(t.id, cv, v.opts);
     const withPhoto = !!v.opts.photo && t.supports.photo;
-    const r = await compile(code, withPhoto);
+    const r = await compile(code, withPhoto, frameOf(t.id, v.opts));
     if (r.status !== 200) {
       check(`${t.name} — ${v.label}`, false, JSON.stringify(r.error).slice(0, 300));
       continue;
@@ -121,7 +129,7 @@ for (const t of TEMPLATE_LIBRARY) {
   for (const v of THEMES) {
     const cv = sampleCv('long');
     const code = renderCv(t.id, cv, v.opts);
-    const r = await compile(code, false);
+    const r = await compile(code, false, frameOf(t.id, v.opts));
     if (r.status !== 200) { check(`${t.name} — ${v.label}`, false, JSON.stringify(r.error).slice(0, 300)); continue; }
     fs.writeFileSync(path.join(OUT, `${t.id}-${v.key}.pdf`), r.pdf);
     const q = await analyze(r.pdf, r.warnings, cv.identity.fullName);
@@ -135,7 +143,7 @@ const EXPECTED_FONT = {
 };
 for (const f of FONT_CHOICES) {
   const code = renderCv('executive-prestige', sampleCv('short'), { font: f.id })
-  const r = await compile(code, false);
+  const r = await compile(code, false, frameOf('executive-prestige', { font: f.id }));
   const fonts = r.status === 200 ? embeddedFonts(r.pdf) : [];
   check(`police « ${f.label} » réellement intégrée au PDF`, fonts.some(n => EXPECTED_FONT[f.id].test(n)) && !fonts.some(n => /^SF(RM|BX|TI)/.test(n)), fonts.slice(0, 4).join(' '));
 }
@@ -154,7 +162,7 @@ if (process.argv.includes('--thumbnails')) {
   for (const t of TEMPLATE_LIBRARY) {
     for (const withPhoto of t.supports.photo ? [false, true] : [false]) {
       // Cadre « Photo optionnelle » plutôt qu'une image d'essai
-      const r = await compile(renderCv(t.id, sampleCv('short'), { photo: withPhoto }), false);
+      const r = await compile(renderCv(t.id, sampleCv('short'), { photo: withPhoto }), false, frameOf(t.id, { photo: withPhoto }));
       const task = pdfjs.getDocument({ data: new Uint8Array(r.pdf), verbosity: 0 });
       const doc = await task.promise;
       const page = await doc.getPage(1);

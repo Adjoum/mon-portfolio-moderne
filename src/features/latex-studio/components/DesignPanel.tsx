@@ -22,19 +22,22 @@ function Section({ title, children, open = false }: { title: string; children: R
   )
 }
 
-function Range({ id, text, value, min, max, step, unit, onChange }: {
-  id: string; text: string; value: number; min: number; max: number; step: number; unit: string; onChange: (v: number) => void
+export function Range({ id, text, value, min, max, step, unit, onChange, disabled = false }: {
+  id: string; text: string; value: number; min: number; max: number; step: number; unit: string; onChange: (v: number) => void; disabled?: boolean
 }) {
+  const shown = `${value.toLocaleString('fr-FR')} ${unit}`
+  // Nom accessible : le libellé seul ; la valeur est annoncée avec son unité (« 3,2 cm »)
   return (
     <div>
-      <label className={`${label} flex justify-between`} htmlFor={id}><span>{text}</span><output htmlFor={id} className="font-normal text-gray-400">{value.toLocaleString('fr-FR')} {unit}</output></label>
-      <input id={id} type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))} className="w-full accent-indigo-400" />
+      <label className={`${label} flex justify-between`} htmlFor={id}><span>{text}</span><output htmlFor={id} className="shrink-0 whitespace-nowrap pl-2 font-normal text-gray-400" aria-hidden="true">{shown}</output></label>
+      <input id={id} type="range" min={min} max={max} step={step} value={value} disabled={disabled} aria-label={text} aria-valuetext={shown}
+        onChange={e => onChange(Number(e.target.value))} className="w-full accent-indigo-400 disabled:opacity-40" />
     </div>
   )
 }
 
 /** Couleur : nuancier natif et saisie hexadécimale validée ; « Auto » revient à la couleur du modèle */
-function ColorField({ id, text, value, fallback, onChange }: {
+export function ColorField({ id, text, value, fallback, onChange }: {
   id: string; text: string; value: string | undefined; fallback: string; onChange: (hex: string | undefined) => void
 }) {
   const [draft, setDraft] = useState<string | null>(null)
@@ -78,7 +81,11 @@ export function DesignPanel({ choice, onChange, previous, onPrevious }: {
     setOptions({ theme: sanitizeTheme(next) })
   }
   const density: Density = t.density ?? (o.compact ? 'compact' : 'standard')
-  const reset = () => onChange({ ...choice, options: { ...template.defaults, lang: o.lang, photo: template.supports.photo && o.photo, theme: {} } }, 'options')
+  // Style du modèle rétabli ; l'organisation des sections et les cadres photo appartiennent au CV
+  const reset = () => onChange({ ...choice, options: {
+    ...template.defaults, lang: o.lang, photo: template.supports.photo && o.photo, theme: {},
+    ...(o.layout ? { layout: o.layout } : {}), ...(o.photoFrames ? { photoFrames: o.photoFrames } : {}),
+  } }, 'options')
   const customized = Object.keys(t).length > 0 || (['accent', 'font', 'size', 'margins', 'compact'] as const).some(k => o[k] !== template.defaults[k])
 
   return (

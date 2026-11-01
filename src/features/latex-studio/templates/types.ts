@@ -2,6 +2,7 @@
 import type { CvData } from '../lib/cvData'
 import { FONT_CHOICES, type FontId, type TemplateDesign, type ThemeOverrides } from './theme'
 import type { SectionLayout, StandardSection } from '../lib/layout'
+import type { PhotoFrame } from '../lib/photo'
 
 export type { FontId }
 export type MarginId = 'compact' | 'normal' | 'large'
@@ -23,6 +24,10 @@ export interface TemplateOptions {
   theme?: ThemeOverrides
   /** Organisation des sections (P6) : ordre, masquage, titres, sections personnalisées */
   layout?: SectionLayout
+  /** Cadre de la photo réglé par l'utilisateur, propre à chaque modèle (P3) */
+  photoFrames?: Record<string, Partial<PhotoFrame>>
+  /** Cadre effectif du modèle rendu, calculé par renderCv (jamais enregistré) */
+  photoFrame?: PhotoFrame
 }
 
 export interface CvTemplate {
@@ -37,6 +42,10 @@ export interface CvTemplate {
   sections: readonly StandardSection[]
   /** Style d'origine (P5) : valeurs affichées et rétablies par « Réinitialiser » */
   design: Partial<TemplateDesign>
+  /** Cadre photo d'origine (P3) ; sinon portrait 3,2 cm à droite */
+  photoFrame?: Partial<PhotoFrame>
+  /** Couleur du fond sous la photo (hexadécimal) : détourage du cercle et des coins arrondis */
+  photoBackground?: (o: TemplateOptions) => string
   render(cv: CvData, options: TemplateOptions): string
 }
 

@@ -695,13 +695,182 @@ async function v2p6(browser) {
   await mobile.context.close();
 }
 
+// ── Phase avancée, P3 : éditeur photo ────────────────────────
+const CRC = new Int32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c; });
+const crc32 = buf => { let c = -1; for (const b of buf) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ -1) >>> 0; };
+/** PNG en quatre quadrants : rouge | vert / bleu | jaune (repères pour la rotation, le zoom et le déplacement) */
+async function quadrantPng(w = 800, h = 600) {
+  const zlib = await import('node:zlib');
+  const raw = Buffer.alloc((w * 3 + 1) * h);
+  const colors = [[230, 20, 20], [20, 170, 40], [20, 40, 230], [250, 210, 0]];
+  for (let y = 0; y < h; y++) {
+    raw[y * (w * 3 + 1)] = 0;
+    for (let x = 0; x < w; x++) raw.set(colors[(y < h / 2 ? 0 : 2) + (x < w / 2 ? 0 : 1)], y * (w * 3 + 1) + 1 + x * 3);
+  }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr.set([8, 2, 0, 0, 0], 8);
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+const GPS_MARKER = 'GPS-E2E-48.8584N-2.2945E';
+/** JPEG du dépôt, augmenté d'un bloc EXIF portant une fausse position GPS */
+function jpegWithExif() {
+  const jpeg = fs.readFileSync(path.join(ROOT, 'tests', 'latex', 'fixtures', 'photo-test.jpg'));
+  const payload = Buffer.concat([Buffer.from('Exif\0\0MM\0\x2A\0\0\0\x08\0\0\0\0\0\0', 'latin1'), Buffer.from(GPS_MARKER)]);
+  const len = Buffer.alloc(2); len.writeUInt16BE(payload.length + 2);
+  return Buffer.concat([jpeg.subarray(0, 2), Buffer.from([0xff, 0xe1]), len, payload, jpeg.subarray(2)]);
+}
+/** Couleurs de l'image JPEG envoyée à la compilation, aux points demandés (fractions de la taille) */
+const sample = (page, dataUrl, points) => page.evaluate(async ([url, pts]) => {
+  const bmp = await createImageBitmap(await (await fetch(url)).blob());
+  const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+  const ctx = c.getContext('2d'); ctx.drawImage(bmp, 0, 0);
+  return { width: bmp.width, height: bmp.height, colors: pts.map(([fx, fy]) => [...ctx.getImageData(Math.floor(fx * bmp.width), Math.floor(fy * bmp.height), 1, 1).data].slice(0, 3)) };
+}, [dataUrl, points]);
+const near = (rgb, target, tol = 60) => rgb.every((v, i) => Math.abs(v - target[i]) <= tol);
+const RED = [230, 20, 20], GREEN = [20, 170, 40], BLUE = [20, 40, 230], YELLOW = [250, 210, 0], WHITE = [255, 255, 255];
+const hexRgb = h => [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
+
+async function v2p3(browser, engine = 'chromium') {
+  console.log(`\n▶ Phase avancée P3 — Éditeur photo (${engine}, compilation réelle)`);
+  const { context, page, calls } = await newStudio(browser, { session: { 'latex-studio:cv': IMPORTED } });
+  const compiles = [];
+  const pdfs = [];
+  page.on('request', r => { if (r.url().includes('/api/cv/compile') && r.method() === 'POST') compiles.push(JSON.parse(r.postData() ?? '{}')); });
+  page.on('response', async r => { if (r.url().includes('/api/cv/compile') && (r.headers()['content-type'] ?? '').startsWith('application/pdf')) pdfs.push(await r.body().catch(() => null)); });
+  const ready = async () => {
+    await page.getByRole('status').filter({ hasText: 'PDF prêt' }).first().waitFor({ timeout: 45_000 });
+    await page.locator('[data-preview][aria-busy="false"]').waitFor({ timeout: 15_000 });
+  };
+  /** Attend une nouvelle compilation (après la n-ième), puis l'aperçu à jour */
+  const compiledAfter = async n => {
+    for (let i = 0; i < 100 && compiles.length <= n; i++) await page.waitForTimeout(100);
+    await page.waitForTimeout(300);
+    await ready();
+    return compiles.at(-1);
+  };
+  const code = () => codeArea(page).inputValue();
+  await ready();
+  await page.getByRole('tab', { name: /Photo/ }).click();
+
+  // 1. Fichier refusé : SVG déguisé en PNG
+  await page.locator('input[type="file"][accept^="image/"]').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>') });
+  await page.getByRole('alert').filter({ hasText: 'JPEG, PNG ou WebP uniquement' }).waitFor({ timeout: 5_000 }).catch(() => {});
+  check('fichier déguisé (SVG nommé .png) refusé par sa signature', await page.getByRole('alert').filter({ hasText: 'JPEG, PNG ou WebP uniquement' }).isVisible());
+
+  // 2. Photo choisie : l'éditeur s'ouvre ; rotation, zoom et déplacement au clavier
+  let n = compiles.length;
+  await page.locator('input[type="file"][accept^="image/"]').setInputFiles({ name: 'quadrants.png', mimeType: 'image/png', buffer: await quadrantPng() });
+  const editor = page.getByRole('dialog', { name: /Cadrer la photo/ });
+  await editor.waitFor();
+  check('éditeur de cadrage ouvert dès le choix de la photo', await editor.getByTestId('photo-stage').isVisible());
+  await editor.getByRole('button', { name: 'Pivoter de 90 degrés vers la droite' }).click();
+  await editor.getByLabel('Zoom').fill('200');
+  await editor.getByTestId('photo-stage').focus();
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowLeft');
+  await page.screenshot({ path: path.join(OUT, `v2-p3-editeur-${engine}.png`) });
+  await editor.getByRole('button', { name: 'Valider le cadrage' }).click();
+  let sent = await compiledAfter(n);
+  check('emplacement photo activé automatiquement dans le code', (await code()).includes('%%PHOTO%%') && /% Photo : portrait 3\.2 × 4\.1 cm, à droite/.test(await code()));
+  check('photo envoyée à la compilation, en JPEG', /^data:image\/jpeg;base64,/.test(sent.photo ?? ''));
+  // Après rotation de 90° vers la droite : bleu | rouge / jaune | vert ; zoom 200 % ; image décalée vers la gauche de 10 % du cadre
+  let px = await sample(page, sent.photo, [[0.3, 0.25], [0.45, 0.25], [0.7, 0.75], [0.3, 0.75]]);
+  check('rotation, zoom et déplacement appliqués à l’image envoyée', near(px.colors[0], BLUE) && near(px.colors[1], RED) && near(px.colors[2], GREEN) && near(px.colors[3], YELLOW), JSON.stringify(px.colors));
+  check('image à 300 dpi pour 3,2 × 4,1 cm', px.width === 378 && px.height === 484, `${px.width} × ${px.height}`);
+
+  // 3. Cercle, bordure, taille, position : code, image et PDF suivent
+  n = compiles.length;
+  await page.getByRole('radiogroup', { name: 'Forme' }).getByRole('radio', { name: 'Cercle' }).click();
+  await page.getByRole('slider', { name: 'Épaisseur de la bordure', exact: true }).fill('2');
+  await page.getByRole('slider', { name: 'Largeur', exact: true }).fill('4');
+  await page.getByRole('radiogroup', { name: 'Position dans l’en-tête' }).getByRole('radio', { name: /À gauche/ }).click();
+  sent = await compiledAfter(n);
+  for (let i = 0; i < 30 && !/cercle 4\.0/.test(compiles.at(-1).code); i++) await page.waitForTimeout(200);
+  sent = compiles.at(-1);
+  await ready();
+  const c = await code();
+  check('code : cercle 4,0 cm, bordure 2 pt, à gauche (commentaire et colonne)', /% Photo : cercle 4\.0 × 4\.0 cm, bordure 2 pt couleur d’accent, à gauche/.test(c) && c.includes('\\begin{minipage}[t]{4.0cm}\\vspace{0pt}\\raggedright'));
+  check('compilation : photo de 4,0 cm insérée', sent.code.includes('\\includegraphics[width=4.0cm,keepaspectratio]{photo.jpg}'));
+  px = await sample(page, sent.photo, [[0.03, 0.03], [0.5, 0.008], [0.3, 0.3]]);
+  check('image ronde : coins blancs (fond de la page), bordure couleur d’accent, photo au centre',
+    near(px.colors[0], WHITE, 20) && near(px.colors[1], hexRgb('0B57D0'), 70) && !near(px.colors[2], WHITE, 40) && px.width === px.height, JSON.stringify(px.colors));
+  const pdf = pdfs.at(-1)?.toString('latin1') ?? '';
+  check('PDF réel : image JPEG intégrée à 472 × 472 px (4 cm à 300 dpi)', /\/Subtype\s*\/Image[\s\S]{0,200}\/Width 472[\s\S]{0,40}\/Height 472/.test(pdf) && /\/DCTDecode/.test(pdf));
+  await page.screenshot({ path: path.join(OUT, `v2-p3-cercle-${engine}.png`) });
+
+  // 4. Annulation d'un réglage
+  await page.getByRole('button', { name: /Annuler le dernier réglage/ }).first().click();
+  check('annulation : la photo revient à droite', /% Photo : cercle 4\.0[^\n]*à droite/.test(await code()));
+
+  // 5. Cadre propre à chaque modèle : Modern Creative (rond, cerclé de blanc sur le bandeau), puis retour
+  n = compiles.length;
+  await page.getByRole('tab', { name: /Modèles/ }).click();
+  await page.getByRole('list', { name: 'Modèles de CV' }).getByRole('button', { name: /Modern Creative/ }).click();
+  sent = await compiledAfter(n);
+  for (let i = 0; i < 30 && !/cercle 2\.8/.test(compiles.at(-1).code); i++) await page.waitForTimeout(200);
+  sent = compiles.at(-1);
+  await ready();
+  check('Modern Creative : son propre cadre (cercle 2,8 cm, bordure blanche)', /% Photo : cercle 2\.8 × 2\.8 cm, bordure 1\.5 pt #FFFFFF, à droite/.test(await code()));
+  px = await sample(page, sent.photo, [[0.02, 0.02], [0.5, 0.006]]);
+  check('détourage sur la couleur du bandeau (violet) et bordure blanche', near(px.colors[0], hexRgb('7C3AED'), 30) && near(px.colors[1], WHITE, 60), JSON.stringify(px.colors));
+  await page.screenshot({ path: path.join(OUT, `v2-p3-modern-creative-${engine}.png`) });
+  await page.getByRole('list', { name: 'Modèles de CV' }).getByRole('button', { name: /Silicon Valley/ }).click();
+  check('retour à Silicon Valley : cadre retrouvé (cercle 4,0 cm, bordure 2 pt)', /% Photo : cercle 4\.0 × 4\.0 cm, bordure 2 pt/.test(await code()));
+
+  // 6. Métadonnées retirées
+  n = compiles.length;
+  await page.getByRole('tab', { name: /Photo/ }).click();
+  await page.locator('input[type="file"][accept^="image/"]').setInputFiles({ name: 'avec-gps.jpg', mimeType: 'image/jpeg', buffer: jpegWithExif() });
+  await page.getByRole('dialog', { name: /Cadrer la photo/ }).getByRole('button', { name: 'Valider le cadrage' }).click();
+  sent = await compiledAfter(n);
+  const bytes = Buffer.from(sent.photo.split(',')[1], 'base64').toString('latin1');
+  check('métadonnées éliminées (aucun bloc EXIF, aucune position GPS)', !bytes.includes(GPS_MARKER) && !bytes.includes('Exif'));
+
+  // 7. Jamais conservée : ni en session, ni dans les versions
+  const stored = await page.evaluate(() => Object.values(sessionStorage).join(''));
+  check('photo absente du stockage de session', !stored.includes('data:image') && !stored.includes('photo.jpg'));
+
+  // 8. Retrait confirmé : emplacement retiré, compilation sans photo
+  n = compiles.length;
+  await page.getByRole('button', { name: 'Retirer la photo…' }).click();
+  await page.getByRole('group', { name: 'Confirmer le retrait de la photo' }).getByRole('button', { name: 'Retirer la photo' }).click();
+  sent = await compiledAfter(n);
+  check('photo retirée : plus d’emplacement dans le code ni de photo envoyée', !(await code()).includes('%%PHOTO%%') && !sent.photo);
+  check('aucun appel IA', calls.length === 0);
+  await context.close();
+
+  if (engine !== 'chromium') return;
+  // Smartphone : éditeur plein écran, aucun débordement, cadrage au toucher
+  const mobile = await newStudio(browser, { width: 390, height: 844, mobile: true, session: { 'latex-studio:cv': IMPORTED } });
+  await mobile.page.getByRole('button', { name: /Informations/ }).click();
+  await mobile.page.getByRole('tab', { name: /Photo/ }).click();
+  await mobile.page.locator('input[type="file"][accept^="image/"]').setInputFiles({ name: 'q.png', mimeType: 'image/png', buffer: await quadrantPng() });
+  const dlg = mobile.page.getByRole('dialog', { name: /Cadrer la photo/ });
+  await dlg.waitFor();
+  const stage = await dlg.getByTestId('photo-stage').boundingBox();
+  const overflow = await mobile.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  check('smartphone 390 px : zone de cadrage entière à l’écran, sans débordement', stage && stage.x >= 0 && stage.x + stage.width <= 390 && overflow <= 1, `${overflow} px`);
+  await mobile.page.screenshot({ path: path.join(OUT, 'v2-p3-mobile.png') });
+  await dlg.getByRole('button', { name: 'Valider le cadrage' }).click();
+  await mobile.context.close();
+}
+
+async function v2p3webkit() {
+  const webkit = await pw.webkit.launch();
+  try { await v2p3(webkit, 'webkit'); } finally { await webkit.close(); }
+}
+
 async function p5webkit() {
   // Moteur de Safari (iPhone, iPad) : mêmes contrôles
   const webkit = await pw.webkit.launch();
   try { await p5(webkit, 'webkit'); } finally { await webkit.close(); }
 }
 
-const SCENARIOS = { p1, p2, p3, p4, p5, p5webkit, v2p2, v2p5, v2p6 };
+const SCENARIOS = { p1, p2, p3, p4, p5, p5webkit, v2p2, v2p3, v2p3webkit, v2p5, v2p6 };
 
 const selected = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(SCENARIOS);
 const browser = await pw.chromium.launch();

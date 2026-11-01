@@ -12,14 +12,18 @@ import { buildFinalLatex } from '../../pages/CVBuilder/latexTemplates'
 
 export const AUTO_COMPILE_DELAY_MS = 3000
 
-export interface CompileInput { code: string; photo: string | null; photoWidth: number }
+/** Taille du cadre photo (cm) : largeur de la photo, ou du cadre vide en l'absence de photo */
+export interface PhotoSize { width: number; height: number }
+export interface CompileInput { code: string; photo: string | null; photoSize: PhotoSize }
 
-export function compileKey({ code, photo, photoWidth }: CompileInput): string {
-  return `${buildFinalLatex(code, !!photo, photoWidth)}\u0000${photo ?? ''}`
+const finalLatex = ({ code, photo, photoSize }: CompileInput) => buildFinalLatex(code, !!photo, photoSize.width, photoSize.height)
+
+export function compileKey(input: CompileInput): string {
+  return `${finalLatex(input)}\u0000${input.photo ?? ''}`
 }
 
-export function useCompile(code: string, photo: string | null, photoWidth: number) {
-  const input = useMemo<CompileInput>(() => ({ code, photo, photoWidth }), [code, photo, photoWidth])
+export function useCompile(code: string, photo: string | null, { width, height }: PhotoSize) {
+  const input = useMemo<CompileInput>(() => ({ code, photo, photoSize: { width, height } }), [code, photo, width, height])
   const [result, setResult] = useState<(LatexCompileResult & { url: string; key: string }) | null>(null)
   const [error, setError] = useState<LatexCompileError | null>(null)
   const [unavailable, setUnavailable] = useState(false)
@@ -51,7 +55,7 @@ export function useCompile(code: string, photo: string | null, photoWidth: numbe
     setRendering(true)
     let skipped = false
     try {
-      const compiled = await compileLatexPdf(buildFinalLatex(current.code, !!current.photo, current.photoWidth), current.photo)
+      const compiled = await compileLatexPdf(finalLatex(current), current.photo)
       // Une version plus récente attend : ce PDF ne correspond plus à rien de ce qui est affiché
       if (s.pending && compileKey(latest.current) !== key) {
         skipped = true

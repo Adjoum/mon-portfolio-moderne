@@ -7,7 +7,7 @@ import { runAiFeature } from '../../lib/aiClient'
 import { stripCodeFences, type LatexCompileDetail } from '../../lib/latexCompile'
 import { useAiAvailability, useAiStatuses } from '../../hooks/useAiAvailability'
 import { buildFinalLatex } from '../../pages/CVBuilder/latexTemplates'
-import { renderCv, TEMPLATE_LIBRARY } from './templates/library'
+import { photoSetup, renderCv, TEMPLATE_LIBRARY } from './templates/library'
 import { sampleCv } from './templates/sample'
 import { emptyCv, forServer, isEmptyCv, normalizeCv, type CvData } from './lib/cvData'
 import { rewriteCv, type RewriteResult } from './lib/importCv'
@@ -37,6 +37,7 @@ import { FixDialog } from './components/FixDialog'
 import { AiPanel, TargetFields } from './components/AiPanel'
 import type { Target } from './lib/target'
 import { PhotoPanel } from './components/PhotoPanel'
+import { IDENTITY, renderPhotoJpeg, type PhotoFrame, type PhotoSource, type PhotoTransform } from './lib/photo'
 import { Splitter } from './components/Splitter'
 import { btn, btnDanger, btnGhost, btnPrimary } from './components/ui'
 
@@ -56,9 +57,10 @@ const NO_WARNINGS: never[] = []
 /** Réglages modifiés entre deux choix (options du modèle et variables de thème) */
 function changedSettings(a: TemplateChoice, b: TemplateChoice): string {
   const flat = (c: TemplateChoice) => ({
-    ...c.options, theme: undefined, layout: undefined,
+    ...c.options, theme: undefined, layout: undefined, photoFrames: undefined,
     ...Object.fromEntries(Object.entries(c.options.theme ?? {}).map(([k, v]) => [`theme.${k}`, v])),
     ...Object.fromEntries(Object.entries(c.options.layout ?? {}).map(([k, v]) => [`layout.${k}`, JSON.stringify(v)])),
+    ...Object.fromEntries(Object.entries(c.options.photoFrames ?? {}).flatMap(([t, f]) => Object.entries(f ?? {}).map(([k, v]) => [`photo.${t}.${k}`, v]))),
   }) as Record<string, unknown>
   const x = flat(a)
   const y = flat(b)
@@ -89,11 +91,26 @@ export default function LatexStudio() {
   const [steps, setSteps] = useState<TemplateStep[]>(() => readSession(STEPS_KEY, []))
   const [pendingSwitch, setPendingSwitch] = useState<{ choice: TemplateChoice; code: string; reason: 'manual' | 'foreign' } | null>(null)
   const aiStatuses = useAiStatuses()
+  // Photo (P3) : source et cadrage en mémoire seulement ; l'image finale suit le cadre du modèle
+  const [photoSource, setPhotoSource] = useState<PhotoSource | null>(null)
+  const [photoTransform, setPhotoTransform] = useState<PhotoTransform>(IDENTITY)
   const [photo, setPhoto] = useState<string | null>(null)
-  const [photoWidth, setPhotoWidth] = useState(3.2)
+  const [photoRendering, setPhotoRendering] = useState(false)
+  const photoSet = useMemo(() => photoSetup(choice.id, choice.options), [choice])
+  useEffect(() => {
+    if (!photoSource) { setPhoto(null); return }
+    let cancelled = false
+    setPhotoRendering(true)
+    renderPhotoJpeg(photoSource, photoTransform, photoSet.frame, photoSet.colors)
+      .then(url => { if (!cancelled) setPhoto(url) })
+      .catch(() => { if (!cancelled) setPhoto(null) })
+      .finally(() => { if (!cancelled) setPhotoRendering(false) })
+    return () => { cancelled = true }
+  }, [photoSource, photoTransform, photoSet])
+  const photoSize = { width: photoSet.frame.width, height: photoSet.frame.height }
   const [target, setTarget] = useState<Target>(() => readSession(TARGET_KEY, { organization: '', role: '' }))
   const versions = useVersions(code, setCode)
-  const compile = useCompile(code, photo, photoWidth)
+  const compile = useCompile(code, photo, photoSize)
   const editor = useRef<CodeEditorHandle>(null)
 
   useEffect(() => {
@@ -211,7 +228,7 @@ export default function LatexStudio() {
     setTimeout(() => editor.current?.goToLine(line), 50)
   }
   const downloadTex = () => {
-    const url = URL.createObjectURL(new Blob([buildFinalLatex(code, !!photo, photoWidth)], { type: 'text/plain;charset=utf-8' }))
+    const url = URL.createObjectURL(new Blob([buildFinalLatex(code, !!photo, photoSize.width, photoSize.height)], { type: 'text/plain;charset=utf-8' }))
     downloadUrl(url, 'cv.tex')
     setTimeout(() => URL.revokeObjectURL(url), 10_000)
   }
@@ -309,14 +326,41 @@ export default function LatexStudio() {
     if (!compile.result) return
     await history[historyMode].save({
       title, templateId: choice.id, target,
-      pdf: compile.result.pdf, tex: buildFinalLatex(code, !!photo, photoWidth),
+      pdf: compile.result.pdf, tex: buildFinalLatex(code, !!photo, photoSize.width, photoSize.height),
     })
   }
 
   const quality = useQuality(compile.result?.pdf ?? null, compile.result?.warnings ?? NO_WARNINGS, cv.identity.fullName)
-  const changePhoto = (url: string | null) => {
-    compile.compileSoon()
-    setPhoto(url)
+  // ── Photo (P3) : le cadre est un réglage du document (code, PDF, annulation) ; le cadrage reste en mémoire ──
+  const currentTemplate = TEMPLATE_LIBRARY.find(t => t.id === choice.id) ?? TEMPLATE_LIBRARY[0]
+  const setPhotoSlot = (on: boolean) => {
+    if (currentTemplate.supports.photo && choice.options.photo !== on) requestChoice({ ...choice, options: { ...choice.options, photo: on } }, 'options')
+  }
+  const choosePhoto = (source: PhotoSource) => {
+    compile.compileAfter(300)
+    setPhotoSource(source)
+    setPhotoTransform(IDENTITY)
+    setPhotoSlot(true)
+  }
+  const changeTransform = (t: PhotoTransform) => {
+    compile.compileAfter(300)
+    setPhotoTransform(t)
+  }
+  const setPhotoFrame = (patch: Partial<PhotoFrame> | null) => {
+    const frames = { ...(choice.options.photoFrames ?? {}) }
+    if (patch === null) delete frames[choice.id]
+    else {
+      // Passage en forme libre : la hauteur affichée devient la hauteur réglable
+      const extra = patch.shape === 'free' ? { height: photoSet.frame.height } : {}
+      frames[choice.id] = { ...frames[choice.id], ...extra, ...patch }
+    }
+    requestChoice({ ...choice, options: { ...choice.options, photo: currentTemplate.supports.photo && (choice.options.photo || !!photoSource), photoFrames: frames } }, 'options')
+  }
+  const removePhoto = () => {
+    compile.compileAfter(300)
+    setPhotoSource(null)
+    setPhotoTransform(IDENTITY)
+    setPhotoSlot(false)
   }
 
   // ── Mise en page ──
@@ -407,7 +451,13 @@ export default function LatexStudio() {
           previous={previousLabel} onPrevious={backToPreviousTemplate} onDesign={() => setSideTab('design')} />
       )}
       {sideTab === 'design' && <DesignPanel choice={choice} onChange={requestChoice} previous={previousLabel} onPrevious={backToPreviousTemplate} />}
-      {sideTab === 'photo' && <PhotoPanel photo={photo} width={photoWidth} setWidth={setPhotoWidth} onPhoto={changePhoto} hasMarker={code.includes('%%PHOTO%%')} />}
+      {sideTab === 'photo' && (
+        <PhotoPanel source={photoSource} photo={photo} frame={photoSet.frame} colors={photoSet.colors} transform={photoTransform}
+          templateName={currentTemplate.name} supportsPhoto={currentTemplate.supports.photo} rendering={photoRendering}
+          markerMissing={!!photoSource && currentTemplate.supports.photo && choice.options.photo && !code.includes('%%PHOTO%%')}
+          onSource={choosePhoto} onTransform={changeTransform} onFrame={setPhotoFrame} onResetFrame={() => setPhotoFrame(null)} onRemove={removePhoto}
+          previous={previousLabel} onPrevious={backToPreviousTemplate} />
+      )}
       {sideTab === 'versions' && (
         <div className="space-y-2 text-xs">
           <p className="text-gray-400">Versions de cette session (conservées dans cet onglet uniquement).</p>

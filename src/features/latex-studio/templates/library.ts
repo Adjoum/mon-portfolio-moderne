@@ -11,6 +11,7 @@ import {
 import { email, link, tex } from './escape'
 import type { TemplateDesign } from './theme'
 import { sanitizeLayout, visibleSections, type CustomSection } from '../lib/layout'
+import { resolveFrame, type PhotoColors, type PhotoFrame } from '../lib/photo'
 
 /** Corps commun : sections dans l'ordre demandé, chacune seulement si elle est renseignée */
 type SectionId = 'summary' | 'experience' | 'education' | 'skills' | 'projects' | 'publications' | 'certifications' | 'languages' | 'interests'
@@ -298,6 +299,9 @@ const creative: CvTemplate = {
   design: {
     nameSize: 24, sectionSize: 'large', sectionUpper: false, tracking: 0, sectionColor: 'text', ruleWidth: 0, headlineColor: 'text',
   },
+  // Photo ronde, cerclée de blanc, posée sur le bandeau de couleur d'accent
+  photoFrame: { shape: 'circle', width: 2.8, border: 1.5, borderColor: 'FFFFFF' },
+  photoBackground: o => accentOf(o),
   render(cv, o) {
     const design: Partial<TemplateDesign> = { ...creative.design, sectionBefore: o.compact ? 6 : 9 }
     const macros = [
@@ -365,12 +369,27 @@ export const TEMPLATE_LIBRARY: CvTemplate[] = [siliconValley, executive, dataSci
 
 export const templateById = (id: string) => TEMPLATE_LIBRARY.find(t => t.id === id)
 
+function accentOf(o: Pick<TemplateOptions, 'accent'>): string {
+  return /^[0-9A-Fa-f]{6}$/.test(o.accent) ? o.accent.toUpperCase() : '0B57D0'
+}
+
+/** Cadre de la photo et couleurs de détourage pour un modèle et des réglages donnés (P3) */
+export function photoSetup(templateId: string, options: TemplateOptions): { frame: PhotoFrame; colors: PhotoColors } {
+  const template = templateById(templateId) ?? TEMPLATE_LIBRARY[0]
+  const frame = resolveFrame(template.photoFrame, options.photoFrames?.[template.id])
+  return {
+    frame,
+    colors: { matte: template.photoBackground?.(options) ?? 'FFFFFF', border: frame.borderColor === 'accent' ? accentOf(options) : frame.borderColor },
+  }
+}
+
 /** Code LaTeX d'un CV pour un modèle et des réglages donnés (réglages hors du modèle ignorés) */
 export function renderCv(templateId: string, cv: CvData, options?: Partial<TemplateOptions>): string {
   const template = templateById(templateId) ?? TEMPLATE_LIBRARY[0]
   const o: TemplateOptions = { ...template.defaults, ...options }
   if (!template.supports.photo) o.photo = false
   if (!template.supports.twoColumns) o.twoColumns = false
+  o.photoFrame = resolveFrame(template.photoFrame, o.photoFrames?.[template.id])
   // Saisie nettoyée : espaces superflus, lignes et éléments vides écartés
   return template.render(normalizeCv(cv), o)
 }

@@ -39,8 +39,13 @@ export function planSwitch(current: string, generated: string | null, next: stri
 export function choiceForTemplate(templateId: string, previous: TemplateOptions): TemplateChoice | null {
   const t = templateById(templateId)
   if (!t) return null
-  // L'organisation des sections appartient au CV : elle suit d'un modèle à l'autre (P6)
-  return { id: t.id, options: { ...t.defaults, lang: previous.lang, photo: t.supports.photo && (previous.photo || t.defaults.photo), ...(previous.layout ? { layout: previous.layout } : {}) } }
+  // L'organisation des sections appartient au CV : elle suit d'un modèle à l'autre (P6).
+  // Les cadres photo sont gardés par modèle : chacun retrouve le sien au retour (P3).
+  return { id: t.id, options: {
+    ...t.defaults, lang: previous.lang, photo: t.supports.photo && (previous.photo || t.defaults.photo),
+    ...(previous.layout ? { layout: previous.layout } : {}),
+    ...(previous.photoFrames ? { photoFrames: previous.photoFrames } : {}),
+  } }
 }
 
 /** Code d'une session antérieure : reconnu comme généré s'il correspond exactement au rendu du choix enregistré */

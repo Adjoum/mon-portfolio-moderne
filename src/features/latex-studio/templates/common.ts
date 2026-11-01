@@ -6,6 +6,7 @@ import type { CvData, CvExperience, CvEducation } from '../lib/cvData'
 import type { TemplateOptions } from './types'
 import { email, link, period, tex } from './escape'
 import { DEFAULT_DESIGN, DENSITY, FONT_LINES, resolveTheme, sanitizeTheme, type ResolvedTheme, type TemplateDesign } from './theme'
+import { DEFAULT_FRAME, frameSummary } from '../lib/photo'
 
 export const LABELS = {
   fr: {
@@ -134,17 +135,20 @@ export function bullets(items: string[]): string {
   return `\\begin{itemize}\n${list.map(b => `  \\item ${tex(b)}`).join('\n')}\n\\end{itemize}`
 }
 
-/** Bloc d'en-tête avec photo à droite : les deux colonnes sont alignées par le haut */
+/**
+ * Bloc d'en-tête avec photo, à droite ou à gauche (P3) : les deux colonnes sont alignées par le haut,
+ * la colonne de la photo a exactement la largeur du cadre. Le cadre est rappelé en commentaire.
+ */
 export function headerWithPhoto(left: string, o: TemplateOptions): string {
   if (!o.photo) return left
-  return [
-    '\\begin{minipage}[t]{\\dimexpr\\linewidth-4.4cm\\relax}\\vspace{0pt}',
-    left,
-    '\\end{minipage}\\hfill',
-    '\\begin{minipage}[t]{4cm}\\vspace{0pt}\\raggedleft',
-    '%%PHOTO%%',
-    '\\end{minipage}',
-  ].join('\n')
+  const f = o.photoFrame ?? DEFAULT_FRAME
+  const w = `${f.width.toFixed(1)}cm`
+  const text = [`\\begin{minipage}[t]{\\dimexpr\\linewidth-${w}-0.4cm\\relax}\\vspace{0pt}`, left]
+  const photo = [`\\begin{minipage}[t]{${w}}\\vspace{0pt}${f.position === 'left' ? '\\raggedright' : '\\raggedleft'}`, `% Photo : ${frameSummary(f)}`, '%%PHOTO%%']
+  return (f.position === 'left'
+    ? [...photo, '\\end{minipage}\\hfill', ...text, '\\end{minipage}']
+    : [...text, '\\end{minipage}\\hfill', ...photo, '\\end{minipage}']
+  ).join('\n')
 }
 
 /** Ligne d'entrée : titre à gauche (qui passe à la ligne si besoin), dates alignées à droite */
