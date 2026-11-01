@@ -1,12 +1,17 @@
 import React from 'react'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { ArrowRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { Variants } from 'framer-motion'
 import Hero from '../components/Hero'
-import ProjectsGallery from '../components/ProjectsGallery'
-import Skills from '../components/Skills'
+
+// Sections sous la ligne de flottaison : chargées après le Hero, hauteur réservée en attendant
+const ProjectsGallery = lazy(() => import('../components/ProjectsGallery'))
+const Skills          = lazy(() => import('../components/Skills'))
+const SectionPlaceholder: React.FC<{ minHeight: number }> = ({ minHeight }) => (
+  <div style={{ minHeight }} aria-hidden="true" />
+)
 
 import { supabase } from '../lib/supabase'
 
@@ -99,10 +104,7 @@ useEffect(() => {
 
   return (
     <motion.div
-      initial="hidden"
-      animate="visible"
       exit={{ opacity: 0, transition: { duration: 0.3 } }}
-      variants={fadeIn}
       className="relative overflow-x-hidden"
     >
       {/* ── Hero ── */}
@@ -157,7 +159,9 @@ useEffect(() => {
             whileInView="visible"
             viewport={{ once: true, margin: '-60px' }}
           >
-            <ProjectsGallery limit={3} showFilters={false} showHeader={false} />
+            <Suspense fallback={<SectionPlaceholder minHeight={520} />}>
+              <ProjectsGallery limit={3} showFilters={false} showHeader={false} />
+            </Suspense>
           </motion.div>
 
           {/* CTA voir tous */}
@@ -169,7 +173,7 @@ useEffect(() => {
             viewport={{ once: true }}
             className="text-center mt-10 sm:mt-14"
           >
-            <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
+            <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }} tabIndex={-1}>
               <Link
                 to="/projects"
                 className="inline-flex items-center gap-2 sm:gap-3 px-6 sm:px-8 py-3.5 sm:py-4
@@ -199,7 +203,9 @@ useEffect(() => {
         variants={fadeIn}
         viewport={{ once: true, margin: '-100px' }}
       >
-        <Skills />
+        <Suspense fallback={<SectionPlaceholder minHeight={800} />}>
+          <Skills />
+        </Suspense>
       </motion.div>
 
       {/* ════════════════════════════════════════
@@ -265,6 +271,7 @@ useEffect(() => {
               <motion.div
                 whileHover={{ scale: 1.05, boxShadow: '0 0 40px rgba(108,99,255,0.4)' }}
                 whileTap={{ scale: 0.97 }}
+                tabIndex={-1}
                 className="w-full sm:w-auto"
               >
                 <Link
@@ -283,6 +290,7 @@ useEffect(() => {
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.97 }}
+                tabIndex={-1}
                 className="w-full sm:w-auto"
               >
                 <Link

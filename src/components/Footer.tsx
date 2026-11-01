@@ -1,13 +1,23 @@
-import React from 'react'
-import { motion } from 'framer-motion'
+import React, { useEffect, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Mail, ArrowUp } from 'lucide-react' //Heart,
 import { SiGithub, SiLinkedin, SiFacebook, SiX } from 'react-icons/si'
 import { Link } from 'react-router-dom'
 import { AIAgent } from './AIAgent';
 
 const Footer: React.FC = () => {
+  // Le bouton n'apparaît qu'une fois la page défilée : il ne recouvre pas le haut de page
+  const [showTop, setShowTop] = useState(false)
+  useEffect(() => {
+    const onScroll = () => setShowTop(window.scrollY > 600)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
   const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' })
   }
 
   /*const socialLinks = [
@@ -187,16 +197,23 @@ const Footer: React.FC = () => {
       </div>
 
       {/* Scroll to top button */}
-      <motion.button
-        onClick={scrollToTop}
-        className="fixed bottom-8 right-8 w-14 h-14 bg-gradient-to-r from-primary to-secondary rounded-full flex items-center justify-center text-white shadow-lg neon-glow z-50"
-        initial={{ opacity: 0, scale: 0 }}
-        animate={{ opacity: 1, scale: 1 }}
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
-      >
-        <ArrowUp size={24} />
-      </motion.button>
+      <AnimatePresence>
+        {showTop && (
+          <motion.button
+            type="button"
+            onClick={scrollToTop}
+            aria-label="Revenir en haut de la page"
+            className="fixed bottom-8 right-8 w-14 h-14 bg-gradient-to-r from-primary to-secondary rounded-full flex items-center justify-center text-white shadow-lg neon-glow z-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
+            initial={{ opacity: 0, scale: 0 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0 }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+          >
+            <ArrowUp size={24} aria-hidden="true" />
+          </motion.button>
+        )}
+      </AnimatePresence>
       <AIAgent />
     </footer>
   )

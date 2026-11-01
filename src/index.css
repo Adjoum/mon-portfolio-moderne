@@ -1,5 +1,5 @@
 /* MindMap Page Styles - Cosmos Dark Theme */
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap');
+/* Polices Space Mono et Syne : chargées par index.html avec les autres (pas de @import en chaîne, bloquant) */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

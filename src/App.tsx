@@ -8,7 +8,8 @@ import { useVisitTracker } from './hooks/useVisitTracker'
 import Footer from './components/Footer'
 
 // ✅ Pages existantes — lazy loading
-const HomePage        = lazy(() => import('./pages/HomePage'))
+// Accueil inclus dans le bundle principal : un aller-retour réseau de moins avant le premier affichage de /
+import HomePage from './pages/HomePage'
 const AboutPage       = lazy(() => import('./pages/AboutPage'))
 const ProjectsPage    = lazy(() => import('./pages/ProjectsPage'))
 const SkillsPage      = lazy(() => import('./pages/SkillsPage'))
@@ -73,8 +74,8 @@ const FULLSCREEN_ROUTES = [
 
 // ── Custom cursor ─────────────────────────────────────────────
 const CustomCursor: React.FC = () => {
-  const [position, setPosition]       = useState({ x: 0, y: 0 })
-  const [dotPosition, setDotPosition] = useState({ x: 0, y: 0 })
+  const [position, setPosition]       = useState({ x: -100, y: -100 }) // hors écran jusqu’au premier mouvement
+  const [dotPosition, setDotPosition] = useState({ x: -100, y: -100 })
   const [isPointer, setIsPointer]     = useState(false)
 
   useEffect(() => {
@@ -114,18 +115,11 @@ const CustomCursor: React.FC = () => {
   )
 }
 
-// ── Loading screens ───────────────────────────────────────────
-const LoadingScreen: React.FC = () => (
-  <div className="flex items-center justify-center min-h-screen bg-[#0a0a0a]">
-    <div className="text-center">
-      <div className="animate-spin rounded-full h-20 w-20 border-t-2 border-b-2 border-primary mx-auto mb-4" />
-      <p className="text-xl text-gray-400 animate-pulse">Chargement...</p>
-    </div>
-  </div>
-)
-
+// ── Chargement d'une page ─────────────────────────────────────
+// Hauteur d'un écran : le pied de page reste hors de la vue pendant le chargement de la page,
+// il ne « saute » donc pas à son arrivée (décalage de mise en page évité).
 const PageLoader: React.FC = () => (
-  <div className="flex items-center justify-center min-h-[400px]">
+  <div className="flex items-center justify-center min-h-[100svh]" role="status" aria-label="Chargement de la page">
     <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto" />
   </div>
 )
@@ -203,15 +197,8 @@ const AnimatedRoutes: React.FC = () => {
 }
 
 // ── App root ──────────────────────────────────────────────────
+// Pas d'écran d'attente artificiel : la première page s'affiche dès que son code est prêt.
 function App() {
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    setTimeout(() => setLoading(false), 2000)
-  }, [])
-
-  if (loading) return <LoadingScreen />
-
   return (
     <Router>
       <div className="app-container">

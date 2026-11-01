@@ -119,8 +119,13 @@ const ToolsDropdown: React.FC<{ isAnyToolActive: boolean }> = ({ isAnyToolActive
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('keydown', onKey)
+    }
   }, [])
 
   // Close on route change
@@ -131,8 +136,11 @@ const ToolsDropdown: React.FC<{ isAnyToolActive: boolean }> = ({ isAnyToolActive
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <motion.button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="true"
         onClick={() => setOpen(p => !p)}
-        className={`px-4 py-2.5 rounded-full flex items-center gap-2 font-medium transition-all ${
+        className={`px-3 xl:px-4 py-2.5 rounded-full flex items-center gap-2 whitespace-nowrap font-medium transition-all text-sm xl:text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300 ${
           isAnyToolActive
             ? 'bg-gradient-to-r from-primary to-secondary text-white'
             : 'text-gray-300 hover:text-white hover:bg-white/10'
@@ -140,7 +148,7 @@ const ToolsDropdown: React.FC<{ isAnyToolActive: boolean }> = ({ isAnyToolActive
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
       >
-        <Wrench size={17} />
+        <Wrench size={17} className="hidden xl:block" aria-hidden="true" />
         <span>Outils</span>
         <motion.div
           animate={{ rotate: open ? 180 : 0 }}
@@ -258,7 +266,23 @@ const Navigation: React.FC = () => {
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
   const location = useLocation()
+
+  // Menu mobile : Échap le ferme, la page derrière ne défile plus, le focus revient au bouton
+  useEffect(() => {
+    if (!isMobileMenuOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setIsMobileMenuOpen(false) }
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.addEventListener('keydown', onKey)
+    const button = menuButtonRef.current
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = previousOverflow
+      button?.focus({ preventScroll: true })
+    }
+  }, [isMobileMenuOpen])
 
   const toolPaths = toolItems.map(t => t.href)
   const isAnyToolActive = toolPaths.some(p => location.pathname === p || location.pathname.startsWith(p + '/'))
@@ -290,7 +314,7 @@ const Navigation: React.FC = () => {
           <div className="flex items-center justify-between h-20">
 
             {/* ── Logo ── */}
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} tabIndex={-1}>
               <Link to="/" className="flex items-center space-x-3">
                 <motion.div
                   className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center"
@@ -304,7 +328,7 @@ const Navigation: React.FC = () => {
             </motion.div>
 
             {/* ── Desktop Menu ── */}
-            <div className="hidden lg:flex items-center space-x-1">
+            <div className="hidden lg:flex items-center gap-0.5 xl:gap-1">
               {mainNavItems.map((item, index) => (
                 <motion.div
                   key={item.name}
@@ -312,19 +336,24 @@ const Navigation: React.FC = () => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.07 }}
                 >
-                  <Link to={item.href}>
-                    <motion.button
-                      className={`px-4 py-2.5 rounded-full flex items-center gap-2 font-medium transition-all text-sm ${
+                  <Link
+                    to={item.href}
+                    aria-current={isActive(item.href) ? 'page' : undefined}
+                    className="block rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
+                  >
+                    <motion.span
+                      className={`px-3 xl:px-4 py-2.5 rounded-full flex items-center gap-2 whitespace-nowrap font-medium transition-all text-sm ${
                         isActive(item.href)
                           ? 'bg-gradient-to-r from-primary to-secondary text-white'
                           : 'text-gray-300 hover:text-white hover:bg-white/10'
                       }`}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
+                      tabIndex={-1}
                     >
-                      <item.icon size={16} />
+                      <item.icon size={16} className="hidden xl:block" aria-hidden="true" />
                       <span>{item.name}</span>
-                    </motion.button>
+                    </motion.span>
                   </Link>
                 </motion.div>
               ))}
@@ -341,12 +370,17 @@ const Navigation: React.FC = () => {
 
             {/* ── Mobile Menu Button ── */}
             <motion.button
-              className="lg:hidden p-2 rounded-lg glass-effect"
+              ref={menuButtonRef}
+              type="button"
+              className="lg:hidden p-2.5 rounded-lg glass-effect focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
               onClick={() => setIsMobileMenuOpen(p => !p)}
+              aria-label={isMobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+              aria-expanded={isMobileMenuOpen}
+              aria-controls="mobile-menu"
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
             >
-              {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+              {isMobileMenuOpen ? <X size={24} aria-hidden="true" /> : <Menu size={24} aria-hidden="true" />}
             </motion.button>
           </div>
         </div>
@@ -360,6 +394,8 @@ const Navigation: React.FC = () => {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: '100%' }}
             transition={{ type: 'spring', damping: 26, stiffness: 220 }}
+            id="mobile-menu"
+            aria-label="Menu principal"
             className="fixed inset-0 z-40 lg:hidden"
           >
             {/* Backdrop */}
@@ -375,19 +411,25 @@ const Navigation: React.FC = () => {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.07 }}
                 >
-                  <Link to={item.href} onClick={() => setIsMobileMenuOpen(false)}>
-                    <motion.button
-                      className={`w-full px-6 py-4 mb-2 rounded-2xl flex items-center gap-4 font-medium transition-all ${
+                  <Link
+                    to={item.href}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    aria-current={isActive(item.href) ? 'page' : undefined}
+                    className="block mb-2 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
+                  >
+                    <motion.span
+                      className={`w-full px-6 py-4 rounded-2xl flex items-center gap-4 font-medium transition-all ${
                         isActive(item.href)
                           ? 'bg-gradient-to-r from-primary to-secondary text-white'
                           : 'text-gray-300 hover:text-white hover:bg-white/10'
                       }`}
                       whileHover={{ scale: 1.02, x: 8 }}
                       whileTap={{ scale: 0.98 }}
+                      tabIndex={-1}
                     >
-                      <item.icon size={22} />
+                      <item.icon size={22} aria-hidden="true" />
                       <span className="text-base">{item.name}</span>
-                    </motion.button>
+                    </motion.span>
                   </Link>
                 </motion.div>
               ))}
@@ -401,6 +443,8 @@ const Navigation: React.FC = () => {
               >
                 {/* Accordion toggle */}
                 <button
+                  type="button"
+                  aria-expanded={mobileToolsOpen}
                   onClick={() => setMobileToolsOpen(p => !p)}
                   style={{
                     width: '100%', padding: '14px 24px',
@@ -508,22 +552,28 @@ const Navigation: React.FC = () => {
                 transition={{ delay: 0.5 }}
               >
                 <motion.a
-                  href="https://github.com"
+                  href="https://github.com/Adjoum"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="GitHub"
                   className="w-12 h-12 glass-effect rounded-full flex items-center justify-center"
                   whileHover={{ scale: 1.2, rotate: 360 }}
                   whileTap={{ scale: 0.9 }}
                 >
-                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
                   </svg>
                 </motion.a>
                 <motion.a
-                  href="https://linkedin.com"
+                  href="https://www.linkedin.com/in/koffi-wilfried-adjoumani/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="LinkedIn"
                   className="w-12 h-12 glass-effect rounded-full flex items-center justify-center"
                   whileHover={{ scale: 1.2, rotate: 360 }}
                   whileTap={{ scale: 0.9 }}
                 >
-                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
                   </svg>
                 </motion.a>

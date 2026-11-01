@@ -307,12 +307,13 @@ const ProjectsGallery: React.FC<ProjectsGalleryProps> = ({
                       )}
 
                       {/* Actions rapides - Visible sur hover desktop, toujours visible mobile */}
-                      <div className="absolute top-3 sm:top-4 right-3 sm:right-4 flex gap-2 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                      <div className="absolute top-3 sm:top-4 right-3 sm:right-4 flex gap-2 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
                         {project.githuburl && (
                           <motion.a
                             href={project.githuburl}
                             target="_blank"
                             rel="noopener noreferrer"
+                            aria-label={`Code source de ${project.title}`}
                             className="w-8 h-8 sm:w-10 sm:h-10 glass-effect rounded-full flex items-center justify-center hover:scale-110 transition-transform"
                             whileHover={{ rotate: 360 }}
                             onClick={(e) => e.stopPropagation()}
@@ -325,6 +326,7 @@ const ProjectsGallery: React.FC<ProjectsGalleryProps> = ({
                             href={project.liveurl}
                             target="_blank"
                             rel="noopener noreferrer"
+                            aria-label={`Voir ${project.title} en ligne`}
                             className="w-8 h-8 sm:w-10 sm:h-10 glass-effect rounded-full flex items-center justify-center hover:scale-110 transition-transform"
                             whileHover={{ rotate: 360 }}
                             onClick={(e) => e.stopPropagation()}
