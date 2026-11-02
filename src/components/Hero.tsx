@@ -7,6 +7,7 @@ import { SiGithub, SiLinkedin, SiFacebook, SiX } from 'react-icons/si'
 import { fetchActiveCv } from '../lib/cvDocument'
 import HeroBubbles from './home/HeroBubbles'
 import HomeNavCards from './home/HomeNavCards'
+import { useGreeting } from './home/useGreeting'
 import './home/home.css'
 
 const ROLES = [
@@ -62,6 +63,7 @@ function DownloadCvButton() {
 
 const Hero: React.FC = () => {
   const reduceMotion = useReducedMotion()
+  const greeting = useGreeting()
 
   return (
     <section className="hp-hero" aria-labelledby="hero-title">
@@ -75,7 +77,7 @@ const Hero: React.FC = () => {
           </p>
 
           <h1 id="hero-title" className="mb-5 text-[2.35rem] font-extrabold leading-[1.08] tracking-tight text-white min-[380px]:text-[2.6rem] sm:text-6xl xl:text-7xl">
-            Bonjour, je suis <span className="gradient-text">Adjoumani</span>
+            <span key={greeting.text} className={greeting.changed ? 'hp-greeting-in' : undefined}>{greeting.text}</span>, je suis <span className="gradient-text">Adjoumani</span>
           </h1>
 
           <p className="hp-typed mb-5 text-lg font-semibold text-indigo-200 sm:text-2xl">

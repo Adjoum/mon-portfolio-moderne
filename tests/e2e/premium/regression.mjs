@@ -10,7 +10,7 @@ import { seedGenerator } from './cvFixture.mjs';
 
 /** Routes et repère attendu (texte présent une fois la page rendue) */
 const ROUTES = [
-  ['/', /Bonjour, je suis/], ['/about', /./], ['/projects', /./], ['/skills', /./], ['/cv', /Curriculum Vitae/],
+  ['/', /(Bonjour|Bon après-midi|Bonsoir|Bonne nuit), je suis/], ['/about', /./], ['/projects', /./], ['/skills', /./], ['/cv', /Curriculum Vitae/],
   ['/ai-lab', /./], ['/contact', /./], ['/blog', /./], ['/tools', /./], ['/workspace', /./], ['/tools/pomodoro', /./],
   ['/tools/snippets', /./], ['/tools/novamind', /./], ['/adjoumani-whiteboard', /./], ['/playground', /./],
   ['/cv-generator', /CV Generator Pro/], ['/latex-cv-editor', /./], ['/sitemap', /./], ['/terms', /./], ['/privacy', /./],

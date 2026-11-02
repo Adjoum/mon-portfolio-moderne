@@ -209,6 +209,9 @@
 }
 @media (min-width: 640px) { .hp-typed { min-height: 1.5em; } }
 
+/* Salutation : léger fondu seulement si le créneau change alors que la page est ouverte */
+.hp-greeting-in { animation: hp-greeting-in 0.6s ease both; }
+
 /* ── Cartes de navigation ──────────────────────────────────── */
 .hp-card {
   position: relative;
@@ -254,6 +257,7 @@
 }
 
 /* ── Animations (transform uniquement, sauf le contour de repli) ── */
+@keyframes hp-greeting-in { from { opacity: 0; } }
 @keyframes hb-float {
   0%, 100% { transform: translate3d(0, 0, 0); }
   50%      { transform: translate3d(4px, -10px, 0); }
@@ -275,6 +279,7 @@
   .hb-orb,
   .hb-orb-ring,
   .hb-badge,
+  .hp-greeting-in,
   .hb-morph .hb-shape {
     animation: none !important;
   }

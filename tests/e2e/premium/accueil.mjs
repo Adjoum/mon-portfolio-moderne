@@ -11,7 +11,7 @@ export async function accueil(browser, engine) {
   console.log(`\n▶ P1 / P7.1 — Accueil premium (${engine})`);
   for (const width of [...new Set([...WIDTHS, 375])].sort((a, b) => a - b)) {
     const { context, page, errors } = await open(browser, '/', { width });
-    const h1 = page.getByRole('heading', { level: 1, name: 'Bonjour, je suis Adjoumani' });
+    const h1 = page.getByRole('heading', { level: 1, name: /^(Bonjour|Bon après-midi|Bonsoir|Bonne nuit), je suis Adjoumani$/ });
     await h1.waitFor({ timeout: 20_000 });
     const img = page.getByRole('img', { name: 'Portrait de Koffi Wilfried Adjoumani' });
     await img.waitFor();
