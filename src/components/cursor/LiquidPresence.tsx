@@ -107,7 +107,9 @@ function Presence() {
     window.addEventListener('blur', onLeave)
     document.documentElement.addEventListener('pointerleave', onLeave)
     document.addEventListener('selectionchange', onSelection)
+    root.dataset.ready = 'true' // écouteurs posés (recette navigateur)
     return () => {
+      root.dataset.ready = 'false'
       cancelAnimationFrame(raf)
       window.clearTimeout(idleTimer)
       window.removeEventListener('pointermove', onMove)
