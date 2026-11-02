@@ -7,6 +7,7 @@ import Navigation from './components/Navigation'
 import { useVisitTracker } from './hooks/useVisitTracker'
 import Footer from './components/Footer'
 import AdminSessionProvider from './components/admin/AdminSessionProvider'
+import { ADMIN_SEGMENT_RE, firstSegment, matchAdminSegment } from './lib/adminRoute'
 
 // ✅ Pages existantes — lazy loading
 // Accueil inclus dans le bundle principal : un aller-retour réseau de moins avant le premier affichage de /
@@ -17,7 +18,7 @@ const SkillsPage      = lazy(() => import('./pages/SkillsPage'))
 const CVPage          = lazy(() => import('./pages/CVPage'))
 const AILabPage       = lazy(() => import('./pages/AILabPage'))
 const ContactPage     = lazy(() => import('./pages/ContactPage'))
-const AdminDashboard  = lazy(() => import('./hooks/AdminDashboard'))
+const AdminArea       = lazy(() => import('./components/admin/AdminArea'))
 const NotFoundPage    = lazy(() => import('./pages/NotFoundPage'))
 const TermsPage       = lazy(() => import('./pages/TermsPage'))
 const PrivacyPage     = lazy(() => import('./pages/PrivacyPage'))
@@ -34,8 +35,6 @@ const NovaMindPage = lazy(() => import('./pages/NovaMindPage'))
 const BlogPage = lazy(() => import('./pages/BlogPage'))
 const BlogPostPage = lazy(() => import('./pages/BlogPostPage'))
 const AdminBlogPage = lazy(() => import('./pages/AdminBlogPage'))
-const AdminLoginPage = lazy(() => import('./pages/AdminLoginPage'))
-const KnowledgeAdmin = lazy(() => import('./pages/KnowledgeAdmin'))
 const LaTeXCVEditor = lazy(() => import('./pages/CVBuilder/LaTeXEditor'))
 const CVGenerator = lazy(() => import('./pages/CVBuilder/CVGenerator'))
 const SitePlanPage = lazy(() => import('./pages/SitePlanPage'))
@@ -125,6 +124,25 @@ const PageLoader: React.FC = () => (
   </div>
 )
 
+// ── Adresse inconnue : administration (segment reconnu par son empreinte) ou 404 ──
+// Aucune adresse d'administration n'est écrite dans le bundle (src/lib/adminRoute.ts).
+const AdminOrNotFound: React.FC = () => {
+  const { pathname } = useLocation()
+  const segment = firstSegment(pathname)
+  const [match, setMatch] = useState<{ segment: string; ok: boolean } | null>(null)
+
+  useEffect(() => {
+    if (!ADMIN_SEGMENT_RE.test(segment)) return
+    let alive = true
+    void matchAdminSegment(segment).then(ok => { if (alive) setMatch({ segment, ok }) })
+    return () => { alive = false }
+  }, [segment])
+
+  if (!ADMIN_SEGMENT_RE.test(segment)) return <NotFoundPage />
+  if (!match || match.segment !== segment) return <PageLoader />
+  return match.ok ? <AdminArea base={`/${segment}`} /> : <NotFoundPage />
+}
+
 // ── Scroll to top ─────────────────────────────────────────────
 const ScrollToTop: React.FC = () => {
   const { pathname } = useLocation()
@@ -161,8 +179,6 @@ const AnimatedRoutes: React.FC = () => {
             <Route path="/adjoumani-whiteboard"   element={<WhiteboardPage />} />
             <Route path="/playground"             element={<PlaygroundPage />} />
             <Route path="/contact"                element={<ContactPage />} />
-            <Route path="/admin"                  element={<AdminDashboard />} />
-            <Route path="/admin/knowledge"        element={<KnowledgeAdmin />} />
             <Route path="/terms"                  element={<TermsPage />} />
             <Route path="/privacy"                element={<PrivacyPage />} />
             <Route path="/sitemap"                element={<SitePlanPage />} />
@@ -174,8 +190,7 @@ const AnimatedRoutes: React.FC = () => {
             <Route path="/tools/snippets"         element={<CodeVaultPage />} />
             <Route path="/tools/novamind"         element={<NovaMindPage />} />
 
-            {/*Bog*/}
-            <Route path="/blog-admin"                  element={<AdminLoginPage />} />
+            {/* Blog (connexion de l'éditeur : zone d'administration) */}
             <Route path="/blog/new"               element={<AdminBlogPage />} />
             <Route path="/blog/edit/:id"          element={<AdminBlogPage />} />
             <Route path="/blog/:slug"             element={<BlogPostPage />} />
@@ -185,8 +200,8 @@ const AnimatedRoutes: React.FC = () => {
             <Route path="/cv-generator"           element={<CVGenerator onGoHome={() => navigate('/')} />} />
             <Route path="/file-converter"         element={<FileConverter />} />
 
-            {/* ── 404 ── */}
-            <Route path="*"                       element={<NotFoundPage />} />
+            {/* ── Administration ou 404 ── */}
+            <Route path="*"                       element={<AdminOrNotFound />} />
 
           </Routes>
         </Suspense>

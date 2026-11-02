@@ -1,9 +1,10 @@
 // src/pages/AdminBlogPage.tsx — Code Forge Editor with MarkdownRenderer
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import { apiFetch, getTags, getArticleById } from '../lib/api';
 import type { Tag, Article } from '../types/blog';
+import { useNoIndex } from '../hooks/useNoIndex';
 
 function toSlug(t: string) {
   return t.toLowerCase().replace(/[éèêë]/g,'e').replace(/[àâä]/g,'a').replace(/[ùûü]/g,'u').replace(/[ôö]/g,'o').replace(/[îï]/g,'i').replace(/[^a-z0-9\s-]/g,'').trim().replace(/\s+/g,'-').replace(/-+/g,'-');
@@ -18,7 +19,7 @@ const Btn: React.FC<{ label: string; title: string; onClick: () => void }> = ({ 
   >{label}</button>
 );
 
-const AdminBlogPage: React.FC = () => {
+const AdminBlogEditor: React.FC = () => {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const isEdit = !!id;
@@ -50,10 +51,10 @@ const AdminBlogPage: React.FC = () => {
   useEffect(() => {
     const token = localStorage.getItem('blog_token');
     const user  = JSON.parse(localStorage.getItem('blog_user') || '{}');
-    if (!token || user?.role !== 'admin') navigate('/blog-admin');
+    if (!token || user?.role !== 'admin') navigate('/blog');
   }, [navigate]);
 
-  const handleLogout = () => { localStorage.removeItem('blog_token'); localStorage.removeItem('blog_user'); navigate('/blog-admin'); };
+  const handleLogout = () => { localStorage.removeItem('blog_token'); localStorage.removeItem('blog_user'); navigate('/blog'); };
 
   useEffect(() => { getTags().then((t: Tag[]) => setAllTags(t)).catch(() => {}); }, []);
 
@@ -388,6 +389,17 @@ const AdminBlogPage: React.FC = () => {
       </div>
     </>
   );
+};
+
+// Éditeur réservé à l'administrateur du blog (jeton vérifié aussi par blog-api) : sans session,
+// retour au blog avant tout affichage, jamais vers une page de connexion.
+const AdminBlogPage: React.FC = () => {
+  useNoIndex();
+  const token = localStorage.getItem('blog_token');
+  let role: unknown;
+  try { role = JSON.parse(localStorage.getItem('blog_user') || '{}')?.role; } catch { role = undefined; }
+  if (!token || role !== 'admin') return <Navigate to="/blog" replace />;
+  return <AdminBlogEditor />;
 };
 
 export default AdminBlogPage;

@@ -8,10 +8,24 @@
 //   jamais .env ni .env.local, qui contiennent des valeurs de production. La recette locale
 //   (npm run dev:recette) ne peut donc pas viser Supabase Production par inadvertance.
 
-export const PUBLIC_ENV = ['VITE_API_URL', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']
+// - VITE_ADMIN_ROUTE_HASH : empreinte SHA-256 du chemin d'administration, jamais le chemin
+//   lui-même (src/lib/adminRoute.ts, scripts/admin-route.mjs).
+
+export const PUBLIC_ENV = ['VITE_API_URL', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'VITE_ADMIN_ROUTE_HASH']
 
 export function envDirFor(mode: string): string {
   return mode === 'development' || mode === 'production' ? '.' : `env/${mode}`
+}
+
+/**
+ * Empreinte du chemin d'administration : absente (dashboard inaccessible, refus par défaut),
+ * valide (64 caractères hexadécimaux) ou invalide. Une valeur invalide est le plus souvent le
+ * chemin lui-même, collé par erreur : il finirait dans le bundle public, le build est refusé.
+ */
+export function adminRouteHashStatus(env: Record<string, string>): 'absent' | 'valide' | 'invalide' {
+  const value = (env.VITE_ADMIN_ROUTE_HASH ?? '').trim()
+  if (!value) return 'absent'
+  return /^[0-9a-f]{64}$/i.test(value) ? 'valide' : 'invalide'
 }
 
 /** Variables publiques dont la valeur ressemble à une clé privée : refus */

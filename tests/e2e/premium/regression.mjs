@@ -5,7 +5,7 @@
 //   AXE_CORE_PATH=<chemin de axe.min.js> (facultatif : sans lui, contrôles d'accessibilité ignorés)
 import fs from 'node:fs';
 import path from 'node:path';
-import { ROOT, WEB, WIDTHS, check, layoutIssues, neutralize, open, shot } from './harness.mjs';
+import { ADMIN, ROOT, WEB, WIDTHS, check, layoutIssues, neutralize, open, redact, shot } from './harness.mjs';
 import { seedGenerator } from './cvFixture.mjs';
 
 /** Routes et repère attendu (texte présent une fois la page rendue) */
@@ -14,7 +14,7 @@ const ROUTES = [
   ['/ai-lab', /./], ['/contact', /./], ['/blog', /./], ['/tools', /./], ['/workspace', /./], ['/tools/pomodoro', /./],
   ['/tools/snippets', /./], ['/tools/novamind', /./], ['/adjoumani-whiteboard', /./], ['/playground', /./],
   ['/cv-generator', /CV Generator Pro/], ['/latex-cv-editor', /./], ['/sitemap', /./], ['/terms', /./], ['/privacy', /./],
-  ['/file-converter', /./], ['/admin', /Administration/], ['/admin/knowledge', /Administration/], ['/blog-admin', /./],
+  ['/file-converter', /./], [ADMIN, /Administration/], [`${ADMIN}/knowledge`, /Administration/], [`${ADMIN}/blog`, /./],
   ['/page-qui-n-existe-pas', /./],
 ];
 const PUBLIC_MAIN = new Set(['/', '/about', '/projects', '/skills', '/cv', '/ai-lab', '/contact']);
@@ -44,10 +44,56 @@ export async function regression(browser, engine) {
       if (layout.clipped.length && !CANVAS_APPS.has(route)) issues.push(`${width}px : coupés [${layout.clipped.slice(0, 2).join(' | ')}]`);
       if (real.length) issues.push(`${width}px : ${real.slice(0, 2).join(' | ').slice(0, 220)}`);
       if (adminCalls.length) issues.push(`${width}px : requêtes d’administration pour un visiteur (${adminCalls.length})`);
-      if (width === 390 || width === 1440) await shot(page, `p5-${engine}-${route.replace(/\W+/g, '_') || 'accueil'}-${width}`);
+      if (width === 390 || width === 1440) await shot(page, `p5-${engine}-${redact(route).replace(/\W+/g, '_') || 'accueil'}-${width}`);
       await context.close();
     }
     check(`${engine} ${route} : rendu, aucune erreur JS, aucun débordement (${widths.length} largeur(s))`, !issues.length, issues.join(' ; '));
+  }
+
+  // P7.3 — Anciennes adresses d'administration : page 404, aucun formulaire de connexion, aucune
+  // redirection, aucune requête d'administration ; nouvelle adresse : connexion, hors indexation
+  for (const route of ['/admin', '/admin/knowledge', '/blog-admin', '/admin/', `/${'x'.repeat(32)}`]) {
+    const { context, page } = await open(browser, route, { width: 1366 });
+    const adminCalls = [];
+    page.on('request', r => { if (/rpc\/admin_session|\/api\/admin\/|auth\/v1\/token/.test(r.url())) adminCalls.push(r.url()); });
+    await page.waitForTimeout(1500);
+    const state = await page.evaluate(() => ({
+      text: document.body.innerText,
+      forms: document.querySelectorAll('input[type="password"], input[type="email"], #admin-totp-code').length,
+      robots: [...document.querySelectorAll('meta[name="robots"]')].map(m => m.content).join(','),
+      path: location.pathname,
+    }));
+    check(`${engine} ${route} : page 404, aucun formulaire de connexion ni redirection, noindex`,
+      /Page Introuvable/i.test(state.text) && state.forms === 0 && state.path === route && /noindex/.test(state.robots) && !adminCalls.length,
+      `formulaires ${state.forms}, adresse ${state.path}, robots « ${state.robots} », requêtes admin ${adminCalls.length}`);
+    await context.close();
+  }
+  for (const [route, marker] of [[ADMIN, /Administration/], [`${ADMIN}/knowledge`, /Administration/], [`${ADMIN}/blog`, /./]]) {
+    const { context, page } = await open(browser, route, { width: 1366 });
+    await page.waitForTimeout(1500);
+    const state = await page.evaluate(() => ({
+      text: document.body.innerText,
+      login: document.querySelectorAll('input[type="password"]').length,
+      robots: [...document.querySelectorAll('meta[name="robots"]')].map(m => m.content).join(','),
+      referrer: document.querySelector('meta[name="referrer"]')?.getAttribute('content') ?? '',
+      ga: Object.keys(window).filter(k => k.startsWith('ga-disable-')).map(k => window[k]),
+    }));
+    check(`${engine} ${route} : connexion affichée, noindex, sans Referer, mesure d’audience coupée`,
+      marker.test(state.text) && state.login === 1 && /noindex/.test(state.robots) && state.referrer === 'no-referrer' && state.ga.length > 0 && state.ga.every(Boolean),
+      `connexion ${state.login}, robots « ${state.robots} », referrer « ${state.referrer} », ga-disable ${JSON.stringify(state.ga)}`);
+    await context.close();
+  }
+  {
+    const { context, page } = await open(browser, '/', { width: 1366 });
+    await page.waitForTimeout(800);
+    const state = await page.evaluate(() => ({
+      robots: document.querySelectorAll('meta[name="robots"]').length,
+      ga: Object.keys(window).filter(k => k.startsWith('ga-disable-')).length,
+      title: document.title,
+    }));
+    check(`${engine} / : indexable, mesure d’audience active, titre SEO du propriétaire`,
+      state.robots === 0 && state.ga === 0 && state.title.startsWith('Adjoumani Koffi Wilfried'), JSON.stringify(state));
+    await context.close();
   }
 
   // Formulaire de contact : envoi intercepté (aucune écriture, même en recette)
@@ -76,7 +122,7 @@ export async function regression(browser, engine) {
       ['/', 'main, section[aria-labelledby="hero-title"], nav[aria-label="Accès rapides"]', null],
       ['/cv', 'section[aria-labelledby="cv-title"], section[aria-label="Aperçu du CV"]', null],
       ['/cv-generator', '.gp-root', 'generator'],
-      ['/admin', 'form', null],
+      [ADMIN, 'form', null],
     ];
     for (const [route, include, mode] of targets) {
       for (const width of [390, 1366]) {
@@ -106,7 +152,7 @@ export async function regression(browser, engine) {
     const vercel = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
     const csp = vercel.headers[0].headers.find(h => /Content-Security-Policy/.test(h.key)).value
       .replace("connect-src 'self'", "connect-src 'self' http://localhost:58521 http://localhost:5000 ws://localhost:5173");
-    for (const [route, setup] of [['/', null], ['/cv', null], ['/cv-generator', 'generator'], ['/admin', null], ['/contact', null], ['/latex-cv-editor', null]]) {
+    for (const [route, setup] of [['/', null], ['/cv', null], ['/cv-generator', 'generator'], [ADMIN, null], ['/contact', null], ['/latex-cv-editor', null]]) {
       const context = await browser.newContext({ viewport: { width: 1366, height: 900 } });
       await neutralize(context);
       if (setup === 'generator') await seedGenerator(context);

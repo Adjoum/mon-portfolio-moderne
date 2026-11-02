@@ -1,7 +1,7 @@
 // Recette P2 — session administrateur : verrouillage après 10 minutes d'inactivité (horloge simulée
 // de Playwright dans le navigateur, état réel de la base de recette et de l'API), deux onglets,
 // brouillon, déconnexion, mise en page du dashboard et du centre IA.
-import { API, GATEWAY, WEB, accessToken, check, layoutIssues, loginUi, neutralize, shot, sql, tempAdmin } from './harness.mjs';
+import { ADMIN, API, GATEWAY, WEB, accessToken, check, layoutIssues, loginUi, neutralize, shot, sql, tempAdmin } from './harness.mjs';
 
 export async function session(browser, engine) {
   console.log(`\n▶ P2 — Session administrateur, verrouillage d'inactivité (${engine})`);
@@ -14,7 +14,7 @@ export async function session(browser, engine) {
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     await page.clock.install();
-    await page.goto(`${WEB}/admin`);
+    await page.goto(`${WEB}${ADMIN}`);
     await page.getByLabel('E-mail').waitFor({ timeout: 20_000 });
     check(`${engine} : connexion — champs nommés, verrouillage annoncé`, await page.getByText('verrouillage automatique après').isVisible());
     await shot(page, `p2-connexion-${engine}`);
@@ -34,7 +34,7 @@ export async function session(browser, engine) {
 
     // Second onglet du même navigateur
     const page2 = await context.newPage();
-    await page2.goto(`${WEB}/admin`);
+    await page2.goto(`${WEB}${ADMIN}`);
     await page2.getByRole('heading', { name: 'Dashboard Admin' }).waitFor({ timeout: 20_000 });
 
     // Formulaire en cours : doit être conservé en brouillon au verrouillage
@@ -74,7 +74,7 @@ export async function session(browser, engine) {
     await page.getByLabel('E-mail').waitFor({ timeout: 15_000 });
     await page2.getByLabel('E-mail').waitFor({ timeout: 15_000 });
     const notice = await page.getByRole('status').filter({ hasText: 'Session verrouillée après 10 minutes' }).count();
-    check(`${engine} : 10 min → administration verrouillée, connexion avec message`, notice > 0 && new URL(page.url()).pathname === '/admin');
+    check(`${engine} : 10 min → administration verrouillée, connexion avec message`, notice > 0 && new URL(page.url()).pathname === ADMIN);
     check(`${engine} : verrouillage propagé à l’autre onglet`, await page2.getByLabel('E-mail').isVisible());
     check(`${engine} : plus aucun contenu d’administration à l’écran`, !(await page.getByRole('heading', { name: 'Dashboard Admin' }).count()));
     check(`${engine} : jetons retirés du navigateur`, (await accessToken(page)) === null);
@@ -112,7 +112,7 @@ export async function session(browser, engine) {
       const ctx = await browser.newContext({ viewport: { width, height: 900 }, isMobile: width < 768, hasTouch: width < 768 });
       await neutralize(ctx);
       const p = await ctx.newPage();
-      await p.goto(`${WEB}/admin`);
+      await p.goto(`${WEB}${ADMIN}`);
       await p.getByLabel('E-mail').waitFor({ timeout: 20_000 });
       await loginUi(p, admin);
       await p.getByRole('heading', { name: 'Dashboard Admin' }).waitFor({ timeout: 20_000 });

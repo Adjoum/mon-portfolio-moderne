@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { Home, ArrowLeft, Search, Zap } from 'lucide-react'
+import { useNoIndex } from '../hooks/useNoIndex'
 
 const NotFoundPage: React.FC = () => {
+  useNoIndex()
   const navigate = useNavigate()
   const [glitchText, setGlitchText] = useState('404')
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })

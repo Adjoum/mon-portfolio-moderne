@@ -1,6 +1,7 @@
 // src/pages/AdminLoginPage.tsx
 // Page de connexion admin — aesthetic "Ghost Terminal"
-// Invisible au public — accessible via /admin uniquement
+// Zone d'administration uniquement (/<segment>/blog, src/components/admin/AdminArea.tsx) :
+// aucune adresse publique, l'ancienne /blog-admin affiche la page 404.
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login } from '../lib/api';

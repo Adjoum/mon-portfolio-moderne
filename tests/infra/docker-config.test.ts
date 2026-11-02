@@ -2,12 +2,13 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
+import { PUBLIC_ENV } from '../../vite-plugins/publicEnv'
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
 
-/** Seules variables VITE_* autorisées : publiques par nature */
-const PUBLIC_VITE = ['VITE_API_URL', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']
+/** Seules variables VITE_* autorisées : publiques par nature (liste de vite-plugins/publicEnv.ts) */
+const PUBLIC_VITE = ['VITE_API_URL', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'VITE_ADMIN_ROUTE_HASH']
 const SECRET_NAME = /KEY|SECRET|TOKEN|PASSWORD|PRIVATE/i
 
 describe('docker-compose.yml', () => {
@@ -68,6 +69,10 @@ describe('variables attendues documentées', () => {
       expect(read(file), file).not.toMatch(/^\s*-?\s*(OPENAI|GROQ|XAI|GEMINI|OPENROUTER|ANTHROPIC)_API_KEY\s*[=:]/m)
     }
     expect(read('.env.docker.example')).toMatch(/^AI_DATABASE_URL=$/m)
+  })
+
+  it('liste identique à celle transmise par Vite', () => {
+    expect([...PUBLIC_VITE].sort()).toEqual([...PUBLIC_ENV].sort())
   })
 
   it('.env.example frontend : variables publiques uniquement', () => {

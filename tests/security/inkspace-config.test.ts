@@ -104,15 +104,16 @@ describe('InkSpace (application statique)', () => {
 })
 
 describe('variables transmises par Vite', () => {
-  it('seules les trois variables publiques sont exposées', () => {
+  it('seules les variables publiques sont exposées (adresses, clé anonyme, empreinte du chemin admin)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vite-env-'))
     fs.writeFileSync(path.join(dir, '.env'), [
       'VITE_API_URL=http://localhost:5000/api', 'VITE_SUPABASE_URL=https://test.supabase.co', 'VITE_SUPABASE_ANON_KEY=anon',
+      `VITE_ADMIN_ROUTE_HASH=${'a'.repeat(64)}`, 'VITE_ADMIN_PATH=ne-doit-pas-sortir', 'ADMIN_ROUTE=x',
       'VITE_OPENAI_API_KEY=sk-test-ne-doit-pas-sortir', 'VITE_GROQ_API_KEY=gsk_ne_doit_pas_sortir', 'OPENAI_API_KEY=x',
     ].join('\n'))
     const env = loadEnv('production', dir, PUBLIC_ENV)
     fs.rmSync(dir, { recursive: true, force: true })
-    expect(Object.keys(env).sort()).toEqual(['VITE_API_URL', 'VITE_SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL'])
+    expect(Object.keys(env).sort()).toEqual(['VITE_ADMIN_ROUTE_HASH', 'VITE_API_URL', 'VITE_SUPABASE_ANON_KEY', 'VITE_SUPABASE_URL'])
   })
 
   it('vite.config.ts applique cette liste et isole les modes de recette', () => {

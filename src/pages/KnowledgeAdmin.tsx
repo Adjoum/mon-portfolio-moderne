@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 
 import AdminGate from '../components/admin/AdminGate';
+import { useAdminPath } from '../components/admin/adminBase';
 import { adminFetch, describeAdminApiError } from '../lib/adminAuth';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -84,6 +85,7 @@ export default function KnowledgeAdmin() {
 
 function KnowledgeAdminContent() {
   const navigate = useNavigate();
+  const dashboardPath = useAdminPath();
   const fileRef  = useRef<HTMLInputElement>(null);
 
   // ── State ──────────────────────────────────────────────────
@@ -235,7 +237,7 @@ function KnowledgeAdminContent() {
       {/* ── Header ──────────────────────────────────────────── */}
       <div className="ka-header">
         <motion.button
-          onClick={() => navigate('/admin')}
+          onClick={() => navigate(dashboardPath)}
           whileHover={{ x: -4 }}
           className="ka-back-btn"
         >

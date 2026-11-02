@@ -150,6 +150,7 @@ services:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:5000/api}
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
         VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+        VITE_ADMIN_ROUTE_HASH: ${VITE_ADMIN_ROUTE_HASH:-}
         # Aucune clé privée en argument de build : les clés IA restent dans Supabase Vault
     container_name: blog-frontend
     restart: unless-stopped

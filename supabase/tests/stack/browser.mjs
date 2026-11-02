@@ -2,6 +2,7 @@
 // Bundle compilé avec des URL locales ; tout hôte externe est bloqué par le navigateur.
 // playwright-core n'est pas une dépendance du projet : PLAYWRIGHT_CORE_DIR désigne son dossier.
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -11,6 +12,9 @@ import { spawnSync } from 'node:child_process';
 import { runAiDashboardScenarios } from './browserAi.mjs';
 
 const WEB = 'http://127.0.0.1:5173';
+// Chemin d'administration jetable du banc (src/lib/adminRoute.ts) : seule son empreinte entre dans le bundle
+const ADMIN_SEGMENT = crypto.randomBytes(24).toString('base64url');
+const ADMIN_HASH = crypto.createHash('sha256').update(ADMIN_SEGMENT).digest('hex');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.pdf': 'application/pdf', '.wasm': 'application/wasm' };
 
 export async function runBrowserScenarios(ctx) {
@@ -21,7 +25,7 @@ export async function runBrowserScenarios(ctx) {
   const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'p0cv-web-'));
   const build = spawnSync(process.execPath, [path.join(ROOT, 'node_modules/vite/bin/vite.js'), 'build', '--mode', 'banc', '--outDir', dist, '--emptyOutDir'], {
     cwd: ROOT, encoding: 'utf8',
-    env: { ...process.env, VITE_API_URL: `${API}/api`, VITE_SUPABASE_URL: GATEWAY, VITE_SUPABASE_ANON_KEY: ANON_KEY },
+    env: { ...process.env, VITE_API_URL: `${API}/api`, VITE_SUPABASE_URL: GATEWAY, VITE_SUPABASE_ANON_KEY: ANON_KEY, VITE_ADMIN_ROUTE_HASH: ADMIN_HASH },
   });
   if (build.status !== 0) throw new Error(`build : ${build.stdout.slice(-400)}`);
 
@@ -135,7 +139,7 @@ export async function runBrowserScenarios(ctx) {
     console.log('▶ Parcours administrateur (connexion, MFA, remplacement, restauration)');
     const admin = await newVisitor();
     admin.on('dialog', d => d.accept());
-    await admin.goto(`${WEB}/admin`);
+    await admin.goto(`${WEB}/${ADMIN_SEGMENT}`);
     await admin.getByPlaceholder('Email').fill('admin@example.test', { timeout: 20000 });
     await admin.getByPlaceholder('Password').fill('Banc-Test-Admin-1!');
     await admin.getByRole('button', { name: 'Se connecter' }).click();

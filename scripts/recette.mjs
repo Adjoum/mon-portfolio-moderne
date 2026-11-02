@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { adminUrl, ensureSegment, envHash, hashSegment, readSegment } from './lib/admin-route.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SECRETS = path.join(ROOT, 'secrets', 'recette');
@@ -148,6 +149,12 @@ ${envFile({
       VITE_SUPABASE_ANON_KEY: stack.RECETTE_ANON_KEY,
     })}`);
   }
+  // Chemin d'administration propre à la recette (secrets/admin-route/recette.txt) : empreinte seule
+  const { hash: adminHash } = ensureSegment('recette');
+  if (envHash(WEB_ENV) !== adminHash) {
+    const lines = fs.readFileSync(WEB_ENV, 'utf8').split(/\r?\n/).filter(l => l && !/^\s*VITE_ADMIN_ROUTE_HASH\s*=/.test(l));
+    fs.writeFileSync(WEB_ENV, `${[...lines, `VITE_ADMIN_ROUTE_HASH=${adminHash}`].join('\n')}\n`);
+  }
   ensureCertificates();
   // Clé racine de Vault, 64 caractères hexadécimaux : voir env/recette/compose.yml
   if (!fs.existsSync(VAULT_KEY)) fs.writeFileSync(VAULT_KEY, random());
@@ -246,7 +253,7 @@ async function ensureAdmin(stack) {
     const user = await authAdmin('/admin/users', stack, { method: 'POST', body: JSON.stringify({ email: ADMIN_EMAIL, password, email_confirm: true }) });
     psql('supabase_admin', `insert into public.admin_users (user_id, email) values ('${user.id}', '${ADMIN_EMAIL}');`);
   }
-  fs.writeFileSync(ADMIN_FILE, `Compte de recette, base locale uniquement\nURL : ${WEB}/admin\nE-mail : ${ADMIN_EMAIL}\nMot de passe : ${password}\n`);
+  fs.writeFileSync(ADMIN_FILE, `Compte de recette, base locale uniquement\nURL : ${adminUrl('recette', WEB)}\nE-mail : ${ADMIN_EMAIL}\nMot de passe : ${password}\n`);
 }
 
 // ── Vite : détaché, survit à la fin de cette commande ───────
@@ -305,7 +312,7 @@ async function up() {
   await startVite();
   console.log(`
 Recette prête
-  Dashboard : ${WEB}/admin
+  Dashboard : adresse dans ${path.relative(ROOT, ADMIN_FILE)} (non affichée)
   Compte    : ${path.relative(ROOT, ADMIN_FILE)}
   Contrôle  : node scripts/recette.mjs verify`);
 }
@@ -393,8 +400,10 @@ async function verify() {
   info('facteurs TOTP de ce compte (0 : à enrôler dans le dashboard)',
     sqlValue(`select count(*) from public.admin_users a join auth.mfa_factors f on f.user_id = a.user_id where a.email = '${ADMIN_EMAIL}' and f.status = 'verified';`));
 
-  const web = await fetch(`${WEB}/admin`).then(r => r.status).catch(() => 0);
-  check('frontend : /admin servi par Vite', web === 200, `HTTP ${web}`);
+  const web = await fetch(`${WEB}/`).then(r => r.status).catch(() => 0);
+  check('frontend : servi par Vite', web === 200, `HTTP ${web}`);
+  const adminSegment = readSegment('recette');
+  check('frontend : chemin d’administration de la recette configuré (empreinte seule)', !!adminSegment && envHash(WEB_ENV) === hashSegment(adminSegment));
   const client = await fetch(`${WEB}/src/lib/supabase.ts`).then(r => r.text()).catch(() => '');
   check('frontend : relié au Supabase local, pas à la production', client.includes(PUBLIC_SUPABASE) && (!productionHost || !client.includes(productionHost)));
   const inkspace = await fetch(`${WEB}/inkspace/config.js`).then(r => r.text()).catch(() => '');

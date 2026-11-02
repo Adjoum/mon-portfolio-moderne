@@ -1,6 +1,6 @@
 // Outil de diagnostic : éléments qui dépassent la largeur de l'écran sur une page d'administration.
 //   PLAYWRIGHT_CORE_DIR=… node tests/e2e/premium/debug-overflow.mjs <largeur> [onglet] [rubrique IA]
-import { WEB, loginUi, neutralize, pw, tempAdmin } from './harness.mjs';
+import { ADMIN, WEB, loginUi, neutralize, pw, tempAdmin } from './harness.mjs';
 
 const [width = '390', tab = 'Intelligence artificielle', section = 'Assistants et affectations'] = process.argv.slice(2);
 const admin = await tempAdmin('debug');
@@ -9,7 +9,7 @@ try {
   const ctx = await browser.newContext({ viewport: { width: Number(width), height: 900 }, isMobile: true, hasTouch: true });
   await neutralize(ctx);
   const p = await ctx.newPage();
-  await p.goto(`${WEB}/admin`);
+  await p.goto(`${WEB}${ADMIN}`);
   await p.getByLabel('E-mail').waitFor();
   await loginUi(p, admin);
   await p.getByRole('heading', { name: 'Dashboard Admin' }).waitFor({ timeout: 20_000 });

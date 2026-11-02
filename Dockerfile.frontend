@@ -21,6 +21,9 @@ ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
 ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+# Empreinte du chemin d'administration (jamais le chemin lui-même) : voir scripts/admin-route.mjs
+ARG VITE_ADMIN_ROUTE_HASH
+ENV VITE_ADMIN_ROUTE_HASH=$VITE_ADMIN_ROUTE_HASH
 
 # Builder le projet Vite
 RUN npm run build

@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { readSegment } from '../../../scripts/lib/admin-route.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 export const WEB = process.env.RECETTE_WEB || 'http://localhost:5173';
@@ -23,10 +24,18 @@ export const pw = createRequire(path.join(process.env.PLAYWRIGHT_CORE_DIR, 'noop
 export const WIDTHS = [320, 360, 375, 390, 430, 768, 1024, 1366, 1440, 1920];
 const HEIGHT = w => (w < 768 ? 800 : w < 1366 ? 1000 : 900);
 
+// Chemin d'administration de la recette (secrets/admin-route/recette.txt, généré par recette.mjs up) :
+// jamais écrit dans les scénarios ni affiché ; « /<admin> » le remplace dans les sorties.
+const ADMIN_SEGMENT = readSegment('recette');
+export const ADMIN = ADMIN_SEGMENT ? `/${ADMIN_SEGMENT}` : '/chemin-admin-absent';
+export const redact = text => (ADMIN_SEGMENT ? String(text).split(ADMIN_SEGMENT).join('<admin>') : String(text));
+
 export const results = { failures: 0, report: [] };
 export function check(label, ok, detail = '') {
   if (!ok) results.failures++;
-  results.report.push({ label, ok: !!ok, detail: String(detail) });
+  label = redact(label);
+  detail = redact(detail);
+  results.report.push({ label, ok: !!ok, detail });
   console.log(`${ok ? '✔' : '✗'} ${label}${detail !== '' ? ` — ${detail}` : ''}`);
 }
 

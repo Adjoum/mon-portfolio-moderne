@@ -8,6 +8,7 @@
 //   2. les hôtes d'API des fournisseurs IA (le navigateur ne doit appeler que blog-api)
 //   3. les jetons JWT Supabase de rôle service_role
 //   4. la VALEUR exacte de chaque secret des fichiers .env locaux (hors variables publiques)
+//   5. les chemins d'administration de secrets/admin-route/ (seule leur empreinte est publique)
 // N'affiche jamais une valeur : uniquement le type de problème, le fichier et le NOM de variable.
 // Code de sortie 1 si au moins un problème est trouvé.
 
@@ -34,6 +35,19 @@ export function loadLocalSecretValues(root = ROOT) {
       if (CONFIG.publicEnvAllowlist.includes(name) || !SECRET_NAME.test(name) || value.length < 12) continue;
       values.set(`${rel}:${name}`, value);
     }
+  }
+  return values;
+}
+
+/** Chemins d'administration locaux (secrets/admin-route/*.txt), jamais affichés */
+export function loadAdminRouteSegments(root = ROOT) {
+  const values = new Map();
+  const dir = path.join(root, 'secrets', 'admin-route');
+  if (!fs.existsSync(dir)) return values;
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith('.txt')) continue;
+    const segment = fs.readFileSync(path.join(dir, name), 'utf8').trim();
+    if (/^[A-Za-z0-9_-]{32,128}$/.test(segment)) values.set(`admin-route:${name.slice(0, -4)}`, segment);
   }
   return values;
 }
@@ -88,9 +102,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     console.error(`Dossier introuvable : ${dir} (lancer d'abord le build)`);
     process.exit(2);
   }
-  const secretValues = loadLocalSecretValues();
+  const secretValues = new Map([...loadLocalSecretValues(), ...loadAdminRouteSegments()]);
   const findings = scanDirectory(dir, { secretValues });
-  console.log(`Analyse de ${dir} — ${secretValues.size} valeur(s) secrète(s) locale(s) comparée(s) (non affichées)`);
+  console.log(`Analyse de ${dir} — ${secretValues.size} valeur(s) secrète(s) locale(s) comparée(s), chemins d'administration compris (non affichées)`);
   if (findings.length === 0) {
     console.log('✔ Aucun secret ni appel direct à un fournisseur IA dans le bundle');
     process.exit(0);

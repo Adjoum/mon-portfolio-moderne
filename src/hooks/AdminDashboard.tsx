@@ -12,6 +12,7 @@ import VisitorStats from '../components/VisitorStats'
 import AILabManager from '../components/AILabManager'
 import { formatRemaining, useAdminSession } from '../components/admin/adminSessionContext'
 import { BEFORE_LOCK_EVENT, DRAFT_PREFIX } from '../lib/adminSession'
+import { useAdminPath } from '../components/admin/adminBase'
 
 // Centre IA chargé à la demande : il n'alourdit pas le reste du dashboard
 const AiAdminPanel = lazy(() => import('../features/ai-admin/AiAdminPanel'))
@@ -122,6 +123,7 @@ const AdminDashboardContent: React.FC = () => {
   const [projectImagePreview, setProjectImagePreview] = useState<string>("");
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const navigate = useNavigate()
+  const knowledgePath = useAdminPath('knowledge')
   const session = useAdminSession()
   const tabRefs = useRef<Partial<Record<TabType, HTMLButtonElement | null>>>({})
   const [drafts, setDrafts] = useState(() => ({
@@ -515,7 +517,7 @@ const uploadProjectImage = async (file: File) => {
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
-                onClick={() => navigate('/admin/knowledge')}
+                onClick={() => navigate(knowledgePath)}
                 className="inline-flex min-h-[44px] items-center gap-2 rounded-xl border border-indigo-400/40 bg-indigo-500/15 px-4 py-2 text-sm font-semibold text-indigo-200 transition-colors hover:bg-indigo-500/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-300"
               >
                 <Brain size={18} aria-hidden="true" />
