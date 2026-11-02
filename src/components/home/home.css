@@ -109,13 +109,8 @@
   user-select: none;
   -webkit-user-drag: none;
 }
-/* Verre fumé : teinte bleutée sur la photo, fumée bleu nuit → violet plus dense vers les bords */
-.hb-tint {
-  position: absolute;
-  inset: 0;
-  background: rgb(189, 196, 242);
-  mix-blend-mode: multiply;
-}
+/* Verre fumé : la teinte bleutée est intégrée à la photo (adjoumani-glass-*, aucun calque de
+   fusion à peindre) ; fumée bleu nuit → violet plus dense vers les bords */
 .hb-smoke {
   position: absolute;
   inset: 0;

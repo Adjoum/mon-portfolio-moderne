@@ -87,7 +87,9 @@ describe('géométrie et cadrage', () => {
   it('mouvement réduit, économie de données, WebGL absent : version statique, aucun canevas animé', () => {
     const hero = read('src/components/home/HeroBubbles.tsx')
     expect(hero).toMatch(/if \(reduceMotion \|\| saveData\(\)\) return/)
-    expect(hero).toMatch(/if \(!webglAvailable\(\)\) \{\s*setMode\('morph'\)/)
+    // Sans WebGL (contexte refusé) : contour CSS ; aucun contexte créé au montage (premier affichage)
+    expect(hero).toMatch(/if \(!controller\) setMode\('morph'\)/)
+    expect(hero).not.toMatch(/getContext\(/)
     expect(read('src/components/home/home.css')).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none !important/)
   })
 })

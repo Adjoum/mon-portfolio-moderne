@@ -24,15 +24,6 @@ const BADGES = [
 
 type Mode = 'static' | 'morph' | 'live'
 
-function webglAvailable(): boolean {
-  try {
-    const canvas = document.createElement('canvas')
-    return !!(canvas.getContext('webgl', { failIfMajorPerformanceCaveat: true }))
-  } catch {
-    return false
-  }
-}
-
 const saveData = () => (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true
 
 export default function HeroBubbles({ reduceMotion }: { reduceMotion: boolean }) {
@@ -42,10 +33,8 @@ export default function HeroBubbles({ reduceMotion }: { reduceMotion: boolean })
 
   useEffect(() => {
     if (reduceMotion || saveData()) return
-    if (!webglAvailable()) {
-      setMode('morph') // contour animé en CSS, photo intacte
-      return
-    }
+    // Aucun test WebGL au montage : créer un contexte retarderait le premier affichage.
+    // Tout se décide au repos du navigateur ; sans WebGL, contour animé en CSS (photo intacte).
     let cancelled = false
     let controller: { destroy(): void } | null = null
     const start = async () => {
@@ -54,7 +43,7 @@ export default function HeroBubbles({ reduceMotion }: { reduceMotion: boolean })
       const { startElasticBubble } = await import('./elasticBubble')
       if (cancelled) return
       const small = window.matchMedia('(max-width: 1023px)').matches
-      controller = startElasticBubble(canvas, {
+      const started = await startElasticBubble(canvas, {
         // Même fichier que la version statique : déjà en cache, aucun octet de plus
         photoUrl: imgRef.current?.currentSrc || glass640,
         focus: PHOTO_FOCUS,
@@ -64,6 +53,8 @@ export default function HeroBubbles({ reduceMotion }: { reduceMotion: boolean })
         onReady: () => { if (!cancelled) setMode('live') },
         onFail: () => { if (!cancelled) setMode('morph') },
       })
+      if (cancelled) return started?.destroy()
+      controller = started
       if (!controller) setMode('morph')
     }
     // Après le chargement de la page, au repos du navigateur : le premier affichage n'attend pas
@@ -108,7 +99,6 @@ export default function HeroBubbles({ reduceMotion }: { reduceMotion: boolean })
               draggable={false}
             />
           </picture>
-          <span className="hb-tint" aria-hidden="true" />
           <span className="hb-smoke" aria-hidden="true" />
           <span className="hb-rim" aria-hidden="true" />
         </div>

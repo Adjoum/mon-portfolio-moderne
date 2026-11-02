@@ -119,7 +119,8 @@ void main() {
   // Verre fumé bleu nuit → violet : léger au centre (visage lisible), dense vers les bords
   vec3 smoke = mix(vec3(0.02, 0.03, 0.09), vec3(0.12, 0.06, 0.25), clamp(0.55 + d.y * 0.9 - d.x * 0.3, 0.0, 1.0));
   float density = mix(0.2, 0.86, smoothstep(0.25, 1.0, r));
-  vec3 col = mix(photo * vec3(0.74, 0.77, 0.95), smoke, max(density, 1.0 - edge.x * edge.y));
+  // Teinte bleutée déjà appliquée à la photo (adjoumani-glass-*) : aucun calque de fusion
+  vec3 col = mix(photo, smoke, max(density, 1.0 - edge.x * edge.y));
   // Reflet courbe discret en haut à gauche (verre), loin du visage
   float arc = smoothstep(0.035, 0.0, abs(length(d - vec2(0.1, -0.1)) - 0.46)) * smoothstep(0.05, -0.35, d.x - d.y);
   col += vec3(0.75, 0.78, 1.0) * arc * 0.10;
@@ -171,40 +172,52 @@ function modelView(angle: number, scale: number, cameraZ: number): Float32Array 
   return new Float32Array([c, 0, -s, 0, 0, scale, 0, 0, s, 0, c, 0, 0, 0, -cameraZ, 1])
 }
 
-function compile(gl: WebGLRenderingContext, type: number, source: string): WebGLShader {
-  const shader = gl.createShader(type)
-  if (!shader) throw new Error('shader')
-  gl.shaderSource(shader, source)
-  gl.compileShader(shader)
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS) && !gl.isContextLost()) {
-    throw new Error(`compilation : ${gl.getShaderInfoLog(shader) ?? ''}`)
-  }
-  return shader
+function shader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader {
+  const s = gl.createShader(type)
+  if (!s) throw new Error('shader')
+  gl.shaderSource(s, source)
+  gl.compileShader(s) // état lu après la liaison : aucune attente ici
+  return s
 }
+
+const nextFrame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
 
 /**
  * Démarre la bulle dans le canevas ; null si le WebGL est indisponible (repli CSS par l'appelant).
+ * Mise en place étalée sur plusieurs images (compilation des shaders sans attente quand le
+ * navigateur le permet, maillage, photo décodée hors du fil principal) : aucune tâche longue.
  * L'animation s'arrête hors écran et dans un onglet masqué.
  */
-export function startElasticBubble(canvas: HTMLCanvasElement, options: BubbleOptions): BubbleController | null {
+export async function startElasticBubble(canvas: HTMLCanvasElement, options: BubbleOptions): Promise<BubbleController | null> {
   const gl = canvas.getContext('webgl', {
     alpha: true, premultipliedAlpha: true, antialias: true, depth: true,
     powerPreference: 'low-power', failIfMajorPerformanceCaveat: true,
   })
   if (!gl) return null
 
-  let program: WebGLProgram
-  try {
-    program = gl.createProgram()!
-    gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERTEX))
-    gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, FRAGMENT))
-    gl.linkProgram(program)
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? 'liaison')
-  } catch (err) {
-    options.onFail?.((err as Error).message)
+  const program = gl.createProgram()
+  if (!program) return null
+  const vs = shader(gl, gl.VERTEX_SHADER, VERTEX)
+  const fs = shader(gl, gl.FRAGMENT_SHADER, FRAGMENT)
+  gl.attachShader(program, vs)
+  gl.attachShader(program, fs)
+  gl.linkProgram(program)
+  // Compilation par le GPU en parallèle : le fil principal reste libre pendant ce temps
+  const parallel = gl.getExtension('KHR_parallel_shader_compile') as { COMPLETION_STATUS_KHR: number } | null
+  if (parallel) {
+    while (!gl.getProgramParameter(program, parallel.COMPLETION_STATUS_KHR)) {
+      await nextFrame()
+      if (gl.isContextLost()) return null
+    }
+  }
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    if (!gl.isContextLost()) options.onFail?.(`shaders : ${gl.getShaderInfoLog(vs) || gl.getShaderInfoLog(fs) || gl.getProgramInfoLog(program) || 'liaison'}`)
     return null
   }
+  gl.deleteShader(vs)
+  gl.deleteShader(fs)
   gl.useProgram(program)
+  await nextFrame() // maillage dans une autre tâche
 
   const vbo = gl.createBuffer()
   const ibo = gl.createBuffer()
@@ -252,7 +265,9 @@ export function startElasticBubble(canvas: HTMLCanvasElement, options: BubbleOpt
   const texture = gl.createTexture()
   const photo = new Image()
   photo.decoding = 'async'
-  photo.onload = () => {
+  photo.src = options.photoUrl
+  // Décodage hors du fil principal, puis envoi au GPU dans une image suivante
+  photo.decode().then(nextFrame).then(() => {
     if (destroyed) return
     gl.bindTexture(gl.TEXTURE_2D, texture)
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
@@ -263,9 +278,7 @@ export function startElasticBubble(canvas: HTMLCanvasElement, options: BubbleOpt
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
     textureReady = true
     schedule()
-  }
-  photo.onerror = () => fail('photo')
-  photo.src = options.photoUrl
+  }).catch(() => fail('photo'))
 
   const resize = () => {
     if (destroyed) return
@@ -362,8 +375,6 @@ export function startElasticBubble(canvas: HTMLCanvasElement, options: BubbleOpt
     intersection.disconnect()
     document.removeEventListener('visibilitychange', onVisibility)
     canvas.removeEventListener('webglcontextlost', onLost)
-    photo.onload = null
-    photo.onerror = null
     canvas.dataset.state = 'stopped'
     if (gl.isContextLost()) return
     gl.deleteBuffer(vbo)
