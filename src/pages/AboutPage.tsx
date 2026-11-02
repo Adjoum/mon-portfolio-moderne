@@ -1,7 +1,7 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { Award, Briefcase, Code, GraduationCap, Heart, Lightbulb, Rocket, Users } from 'lucide-react'
-import adjoumaniPhoto from "../assets/adjoumani1.jpg"
+import adjoumaniPhoto from "../assets/adjoumani1.jpeg"
 import AnimatedPhotoFrame from "../components/AnimatedPhotoFrame"
 
 const AboutPage: React.FC = () => {
