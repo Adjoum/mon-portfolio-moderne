@@ -5,7 +5,7 @@ import { ReactTyped } from 'react-typed'
 import { ArrowRight, Download, Mail, Sparkles } from 'lucide-react'
 import { SiGithub, SiLinkedin, SiFacebook, SiX } from 'react-icons/si'
 import { fetchActiveCv } from '../lib/cvDocument'
-import OrganicPortrait from './home/OrganicPortrait'
+import HeroBubbles from './home/HeroBubbles'
 import HomeNavCards from './home/HomeNavCards'
 import './home/home.css'
 
@@ -67,13 +67,8 @@ const Hero: React.FC = () => {
     <section className="hp-hero" aria-labelledby="hero-title">
       <div className="hp-backdrop" aria-hidden="true" />
 
-      <div className="container mx-auto grid items-center gap-10 px-5 pb-14 pt-28 sm:px-6 sm:pt-32 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] lg:gap-6 lg:pb-20 lg:pt-36">
-        {/* Portrait : à droite sur desktop, centré au-dessus du texte sur mobile */}
-        <div className="lg:order-2 lg:py-6">
-          <OrganicPortrait />
-        </div>
-
-        <div className="text-center lg:order-1 lg:text-left">
+      <div className="container mx-auto grid items-center gap-8 px-5 pb-14 pt-28 sm:px-6 sm:pt-32 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:gap-6 lg:pb-20 lg:pt-36">
+        <div className="hp-content text-center lg:order-1 lg:text-left">
           <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm font-medium text-slate-200 backdrop-blur">
             <Sparkles size={15} className="text-violet-300" aria-hidden="true" />
             Bienvenue sur mon portfolio
@@ -125,6 +120,12 @@ const Hero: React.FC = () => {
               )
             })}
           </ul>
+        </div>
+
+        {/* Bulles : décor derrière les textes ; à droite sur desktop, au-dessus du texte sur mobile.
+            Après le texte dans le document (lecture et référencement), affichées en premier sur mobile. */}
+        <div className="order-first lg:order-2 lg:py-10">
+          <HeroBubbles reduceMotion={!!reduceMotion} />
         </div>
       </div>
 

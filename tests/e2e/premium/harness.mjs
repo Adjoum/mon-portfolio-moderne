@@ -163,3 +163,31 @@ export const accessToken = page => page.evaluate(() => {
   const key = Object.keys(localStorage).find(k => /^sb-.*-auth-token$/.test(k));
   return key ? JSON.parse(localStorage.getItem(key)).access_token : null;
 });
+
+/**
+ * Écart moyen (0-255, par canal) entre deux captures PNG de même taille, décodées dans la page :
+ * aucune dépendance de décodage d'image dans le projet.
+ */
+export async function pixelDiff(page, pngA, pngB) {
+  return page.evaluate(async ([a, b]) => {
+    const pixels = async b64 => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${b64}`;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0);
+      return ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    };
+    const [pa, pb] = await Promise.all([pixels(a), pixels(b)]);
+    if (pa.length !== pb.length) return 255;
+    let sum = 0, n = 0;
+    for (let i = 0; i < pa.length; i += 4) {
+      sum += Math.abs(pa[i] - pb[i]) + Math.abs(pa[i + 1] - pb[i + 1]) + Math.abs(pa[i + 2] - pb[i + 2]);
+      n += 3;
+    }
+    return sum / n;
+  }, [pngA.toString('base64'), pngB.toString('base64')]);
+}

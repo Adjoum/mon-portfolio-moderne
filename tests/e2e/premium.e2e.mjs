@@ -26,7 +26,8 @@ export const SCENARIOS = { accueil, session, clone, cvgen, cvbaseline, cvpublic,
 const wanted = process.argv.slice(2).filter(a => !a.startsWith('--'));
 const engines = (process.env.ENGINES || 'chromium,webkit').split(',');
 for (const engine of engines) {
-  const browser = await pw[engine].launch();
+  // Chromium avec le GPU du poste (comme un visiteur) ; sans lui, rendu WebGL logiciel
+  const browser = await pw[engine].launch(engine === 'chromium' && process.env.GPU !== '0' ? { args: ['--enable-gpu', '--use-angle=d3d11', '--ignore-gpu-blocklist'] } : {});
   for (const name of wanted.length ? wanted : Object.keys(SCENARIOS)) {
     if (!SCENARIOS[name]) { console.error(`Scénario inconnu : ${name}`); process.exitCode = 2; continue; }
     try {

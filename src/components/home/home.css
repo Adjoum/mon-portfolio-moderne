@@ -1,12 +1,11 @@
 /* ═══════════════════════════════════════════════════════════════
-   Accueil premium — portrait en bulle organique, Hero et cartes
+   Accueil premium — Hero à bulles élastiques, cartes d'accès
    ───────────────────────────────────────────────────────────────
-   Coût d'animation maîtrisé :
-   - flottement, halo et reflets : transform / opacity uniquement (compositeur) ;
-   - contour : border-radius animé sur UN seul élément (repeint, jamais de recalcul de mise en
-     page) ; la photo n'est jamais transformée, le visage reste net et non déformé ;
-   - tout est suspendu hors écran (.is-paused posée par IntersectionObserver) ;
-   - prefers-reduced-motion : aucune animation, bulle statique.
+   - Grande bulle : WebGL (elasticBubble.ts), photo derrière un verre sombre ; version statique
+     équivalente en CSS (image LCP) avant le relais, ou à sa place (mouvement réduit, WebGL absent).
+   - Petite bulle circulaire à dégradé violet / rose, juste sous la grande.
+   - Les bulles sont le décor : derrière les textes, jamais cliquables (pointer-events: none).
+   - Taille fixée par la largeur disponible : aucune variation après chargement (CLS nul).
    ═══════════════════════════════════════════════════════════════ */
 
 .hp-hero {
@@ -15,7 +14,7 @@
   overflow: hidden;
 }
 
-/* Fond : dégradés fixes (aucune animation, aucun canvas) */
+/* Fond : dégradés fixes (aucune animation) */
 .hp-backdrop {
   position: absolute;
   inset: 0;
@@ -40,144 +39,173 @@
           mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 75%);
 }
 
-/* ── Portrait ──────────────────────────────────────────────── */
-.op-root {
-  /* Taille fixée par la largeur disponible : aucune variation après chargement (CLS nul) */
-  --op-size: clamp(232px, 68vw, 300px);
-  position: relative;
-  width: var(--op-size);
-  margin-inline: auto;
-}
-@media (min-width: 640px)  { .op-root { --op-size: 340px; } }
-@media (min-width: 1024px) { .op-root { --op-size: clamp(360px, 30vw, 440px); } }
+/* Textes et boutons toujours au-dessus des bulles */
+.hp-content { position: relative; z-index: 2; }
 
-.op-stage {
+/* ── Bulles ────────────────────────────────────────────────── */
+.hb-root {
+  /* --hb-d : diamètre de base de la grande bulle */
+  --hb-d: clamp(196px, 54vw, 290px);
   position: relative;
+  z-index: 1;
   width: 100%;
-  aspect-ratio: 1 / 1;
-  animation: op-float 9s ease-in-out infinite;
-  will-change: transform;
-}
-
-/* Formes successives du contour : courbes souples, jamais anguleuses */
-.op-shape {
-  border-radius: 43% 57% 62% 38% / 42% 45% 55% 58%;
-  animation: op-morph 18s ease-in-out infinite;
-}
-
-.op-glow {
-  position: absolute;
-  inset: -14%;
-  border-radius: 50%;
-  background:
-    radial-gradient(closest-side, rgba(139, 92, 246, 0.55), rgba(99, 102, 241, 0.25) 55%, transparent 75%);
-  filter: blur(18px);
-  opacity: 0.85;
-  animation: op-glow 7s ease-in-out infinite;
   pointer-events: none;
 }
+@media (min-width: 640px)  { .hb-root { --hb-d: 330px; } }
+/* Desktop : bulle décalée vers le texte, qui passe au-dessus de son bord */
+@media (min-width: 1024px) { .hb-root { --hb-d: clamp(370px, 33vw, 500px); width: var(--hb-d); margin-inline: auto; translate: -4% 0; } }
+@media (min-width: 1280px) { .hb-root { translate: -11% 0; } }
+@media (min-width: 1600px) { .hb-root { translate: -18% 0; } }
 
-/* Liseré dégradé violet → indigo → rose qui épouse le contour (mêmes rayons, même horloge) */
-.op-ring {
-  position: absolute;
-  inset: -7px;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 45%, #ec4899 100%);
-  box-shadow: 0 30px 80px -20px rgba(99, 102, 241, 0.55), 0 0 60px -10px rgba(236, 72, 153, 0.35);
+.hb-stage {
+  position: relative;
+  width: var(--hb-d);
+  margin-inline: auto;
+  aspect-ratio: 1 / 1;
+  /* Place de la petite bulle, juste sous la grande (mobile et tablette) */
+  margin-bottom: calc(var(--hb-d) * 0.16);
+}
+@media (min-width: 1024px) {
+  .hb-stage { margin-bottom: 0; }
 }
 
-.op-clip {
+/* Canevas WebGL : 1,7584 × le diamètre de base (BASE_RATIO de elasticBubble.ts), centré.
+   Il déborde volontairement derrière les textes ; les déformations y restent contenues. */
+.hb-canvas {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--hb-d) * 1.7584);
+  height: calc(var(--hb-d) * 1.7584);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 0.9s ease;
+  pointer-events: none;
+}
+.hb-live .hb-canvas { opacity: 1; }
+
+/* Version statique : même cadrage que le WebGL (PHOTO_FOCUS, PHOTO_ZOOM de HeroBubbles.tsx) */
+.hb-fallback {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: linear-gradient(160deg, #312e81, #4c1d95);
-  /* Coins arrondis découpés proprement pendant l'animation (WebKit) */
-  -webkit-mask-image: -webkit-radial-gradient(white, black);
   isolation: isolate;
+  background: #0b1023;
+  -webkit-mask-image: -webkit-radial-gradient(white, black); /* coins découpés proprement (WebKit) */
+  box-shadow: 0 40px 90px -30px rgba(76, 29, 149, 0.65), 0 0 70px -20px rgba(99, 102, 241, 0.45);
+  transition: opacity 0.9s ease 0.15s;
 }
-.op-clip img {
+.hb-live .hb-fallback { opacity: 0; }
+.hb-shape { border-radius: 47% 53% 58% 42% / 45% 48% 52% 55%; }
+.hb-fallback img {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: 50% 34%;
+  /* largeur = diamètre / zoom ; point PHOTO_FOCUS (0,5 ; 0,45) au centre */
+  width: calc(100% / 0.9);
+  height: calc(100% / 0.9);
+  max-width: none;
+  left: calc(50% - 0.5 * 100% / 0.9);
+  top: calc(50% - 0.45 * 100% / 0.9);
   display: block;
   user-select: none;
   -webkit-user-drag: none;
 }
-
-/* Reflet lumineux discret : un balayage en transform, rien d'autre */
-.op-sheen {
-  position: absolute;
-  inset: -30%;
-  background: linear-gradient(115deg, transparent 38%, rgba(255, 255, 255, 0.16) 48%, rgba(255, 255, 255, 0.04) 54%, transparent 62%);
-  transform: translateX(-60%);
-  animation: op-sheen 11s ease-in-out infinite;
-  pointer-events: none;
-  mix-blend-mode: screen;
-}
-/* Teinte violette légère en bas pour fondre la blouse dans la palette */
-.op-tint {
+/* Verre fumé : teinte bleutée sur la photo, fumée bleu nuit → violet plus dense vers les bords */
+.hb-tint {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, transparent 55%, rgba(76, 29, 149, 0.28) 100%);
-  pointer-events: none;
+  background: rgb(189, 196, 242);
+  mix-blend-mode: multiply;
 }
-
-/* Petites bulles décoratives (transform / opacity) */
-.op-dot {
+.hb-smoke {
   position: absolute;
-  border-radius: 9999px;
-  pointer-events: none;
-  animation: op-drift 10s ease-in-out infinite;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(5, 8, 23, 0.2) 0%, rgba(5, 8, 23, 0.22) 26%, rgba(5, 8, 23, 0.66) 66%, rgba(5, 8, 23, 0.88) 100%),
+    linear-gradient(165deg, rgba(31, 15, 64, 0.45), rgba(5, 8, 23, 0.3) 60%);
 }
-.op-dot-1 { width: 18px; height: 18px; top: 4%;  left: -3%;  background: #ec4899; opacity: 0.7; }
-.op-dot-2 { width: 10px; height: 10px; bottom: 9%; right: -4%; background: #8b5cf6; opacity: 0.8; animation-delay: -3s; }
-.op-dot-3 { width: 26px; height: 26px; bottom: -2%; left: 14%; background: radial-gradient(circle at 30% 30%, #a5b4fc, #6366f1); opacity: 0.55; animation-delay: -6s; }
+/* Contours lumineux subtils et reflet principal (en haut à droite, comme le WebGL) */
+.hb-rim {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px rgba(165, 180, 252, 0.22),
+    inset 0 20px 30px -20px rgba(140, 148, 255, 0.5),
+    inset 0 -22px 32px -20px rgba(236, 72, 153, 0.4);
+  background: radial-gradient(circle at 80% 16%, rgba(255, 255, 255, 0.22) 0, rgba(255, 255, 255, 0.04) 5%, transparent 10%);
+}
 
-/* ── Badges ───────────────────────────────────────────────── */
-.op-badges {
+/* WebGL indisponible (mouvement autorisé) : contour animé en CSS, photo jamais transformée */
+.hb-morph .hb-shape { animation: hb-morph 16s ease-in-out infinite; }
+
+/* Petite bulle circulaire : dégradé violet / rose de l'ancien Hero, juste sous la grande */
+.hb-orb {
+  position: absolute;
+  width: calc(var(--hb-d) * 0.3);
+  aspect-ratio: 1 / 1;
+  left: 8%;
+  bottom: calc(var(--hb-d) * -0.15);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 34%),
+    linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+  box-shadow: 0 18px 40px -12px rgba(236, 72, 153, 0.5), 0 0 40px -6px rgba(139, 92, 246, 0.55);
+  animation: hb-float 8s ease-in-out infinite;
+}
+.hb-orb-ring {
+  position: absolute;
+  inset: -14%;
+  border-radius: 50%;
+  border: 2px solid rgba(139, 92, 246, 0.32);
+  border-top-color: rgba(236, 72, 153, 0.55);
+  animation: hb-spin 20s linear infinite;
+}
+@media (min-width: 1024px) {
+  .hb-orb { width: calc(var(--hb-d) * 0.27); left: -9%; bottom: 4%; }
+}
+
+/* ── Badges discrets ───────────────────────────────────────── */
+.hb-badges {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
-  margin-top: 22px;
+  gap: 6px;
+  margin-top: 14px;
   padding: 0;
   list-style: none;
 }
-.op-badge {
+.hb-badge {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 13px;
+  gap: 5px;
+  padding: 5px 10px;
   border-radius: 9999px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: #e2e8f0;
   white-space: nowrap;
-  background: rgba(15, 23, 42, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.6);
+  background: rgba(15, 23, 42, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   -webkit-backdrop-filter: blur(10px);
           backdrop-filter: blur(10px);
 }
-.op-badge svg { flex-shrink: 0; }
+.hb-badge svg { flex-shrink: 0; }
 
-/* Desktop / tablette : badges posés autour de la bulle, loin du visage (centre) */
-@media (min-width: 640px) {
-  .op-badges { margin: 0; }
-  .op-badge {
+/* Desktop : badges posés autour de la grande bulle, loin du visage (centre) */
+@media (min-width: 1024px) {
+  .hb-badges { margin: 0; }
+  .hb-badge {
     position: absolute;
-    animation: op-badge 6s ease-in-out infinite;
+    animation: hb-badge 7s ease-in-out infinite;
   }
-  .op-badge-data     { top: 6%;    left: -16%; }
-  .op-badge-fullstack{ top: -3%;   right: -8%;  animation-delay: -1.5s; }
-  .op-badge-ai       { bottom: 15%; right: -18%; animation-delay: -3s; }
-  .op-badge-health   { bottom: -2%; left: -10%; animation-delay: -4.5s; }
+  .hb-badge-fullstack { top: 2%;    right: -6%;  }
+  .hb-badge-data      { top: 22%;   left: -14%; animation-delay: -1.8s; }
+  .hb-badge-ai        { bottom: 20%; right: -14%; animation-delay: -3.5s; }
+  .hb-badge-health    { bottom: -4%; right: 10%;  animation-delay: -5.2s; }
 }
 @media (min-width: 1024px) and (max-width: 1180px) {
-  .op-badge-data   { left: -8%; }
-  .op-badge-ai     { right: -10%; }
+  .hb-badge-data { left: -6%; }
+  .hb-badge-ai   { right: -6%; }
 }
 
 /* ── Sous-titre animé : hauteur réservée, aucun décalage ─── */
@@ -230,56 +258,33 @@
   outline-offset: 3px;
 }
 
-/* ── Animations ────────────────────────────────────────────── */
-@keyframes op-float {
+/* ── Animations (transform uniquement, sauf le contour de repli) ── */
+@keyframes hb-float {
   0%, 100% { transform: translate3d(0, 0, 0); }
-  50%      { transform: translate3d(0, -12px, 0); }
+  50%      { transform: translate3d(4px, -10px, 0); }
 }
-@keyframes op-morph {
-  0%, 100% { border-radius: 43% 57% 62% 38% / 42% 45% 55% 58%; }
-  20%      { border-radius: 56% 44% 41% 59% / 57% 38% 62% 43%; }
-  40%      { border-radius: 38% 62% 55% 45% / 46% 60% 40% 54%; }
-  60%      { border-radius: 60% 40% 46% 54% / 39% 53% 47% 61%; }
-  80%      { border-radius: 47% 53% 36% 64% / 55% 42% 58% 45%; }
-}
-@keyframes op-glow {
-  0%, 100% { opacity: 0.7;  transform: scale(0.96); }
-  50%      { opacity: 1;    transform: scale(1.04); }
-}
-@keyframes op-sheen {
-  0%, 55%  { transform: translateX(-60%); }
-  85%,100% { transform: translateX(60%); }
-}
-@keyframes op-drift {
+@keyframes hb-spin { to { transform: rotate(360deg); } }
+@keyframes hb-badge {
   0%, 100% { transform: translate3d(0, 0, 0); }
-  50%      { transform: translate3d(6px, -10px, 0); }
+  50%      { transform: translate3d(0, -5px, 0); }
 }
-@keyframes op-badge {
-  0%, 100% { transform: translate3d(0, 0, 0); }
-  50%      { transform: translate3d(0, -6px, 0); }
+@keyframes hb-morph {
+  0%, 100% { border-radius: 47% 53% 58% 42% / 45% 48% 52% 55%; }
+  25%      { border-radius: 58% 42% 44% 56% / 56% 40% 60% 44%; }
+  50%      { border-radius: 40% 60% 55% 45% / 47% 58% 42% 53%; }
+  75%      { border-radius: 55% 45% 40% 60% / 40% 52% 48% 60%; }
 }
 
-/* Hors écran : plus aucun travail d'animation */
-.is-paused .op-stage,
-.is-paused .op-shape,
-.is-paused .op-glow,
-.is-paused .op-sheen,
-.is-paused .op-dot,
-.is-paused .op-badge {
-  animation-play-state: paused;
-}
-
-/* Mouvement réduit : composition statique et élégante */
+/* Mouvement réduit : composition statique (aucune animation, aucun WebGL) */
 @media (prefers-reduced-motion: reduce) {
-  .op-stage,
-  .op-shape,
-  .op-glow,
-  .op-sheen,
-  .op-dot,
-  .op-badge {
+  .hb-orb,
+  .hb-orb-ring,
+  .hb-badge,
+  .hb-morph .hb-shape {
     animation: none !important;
   }
-  .op-sheen { display: none; }
+  .hb-canvas,
+  .hb-fallback { transition: none; }
   .hp-card,
   .hp-card-arrow { transition: none; }
   .hp-card:hover { transform: none; }
