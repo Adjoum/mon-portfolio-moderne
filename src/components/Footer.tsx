@@ -20,13 +20,6 @@ const Footer: React.FC = () => {
     window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' })
   }
 
-  /*const socialLinks = [
-    { icon: Github, href: 'https://github.com/Adjoum', label: 'GitHub' },
-    { icon: Linkedin, href: 'https://www.linkedin.com/in/koffi-wilfried-adjoumani/', label: 'LinkedIn' },
-    {icon: Facebook, href: "https://web.facebook.com/profile.php?id=100084939496635", label: 'Facebook'},
-    { icon: X, href: 'https://x.com/home', label: 'X' },
-    { icon: Mail, href: 'mailto:contact@adjoumani-koffi.com', label: 'Email' },
-  ]  */
 
   const socialLinks = [
     {
@@ -172,8 +165,7 @@ const Footer: React.FC = () => {
               transition={{ duration: 0.6 }}
               className="text-gray-400 text-sm flex items-center gap-2"
             >
-              © {new Date().getFullYear()} Adjoumani . Fait avec  passion {' '}
-              {/*<Heart size={16} className="text-red-500 animate-pulse" fill="currentColor" /> */}
+              © {new Date().getFullYear()} Adjoumani Koffi Wilfried
               - Côte d'Ivoire
             </motion.p>
             <motion.div
