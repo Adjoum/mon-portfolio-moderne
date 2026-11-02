@@ -48,6 +48,8 @@ export async function runBrowserScenarios(ctx) {
   const diagnostics = [];
   let lastPage = null;
   const blocked = new Set();
+  /** Fichiers publics de Storage téléchargés par chaque page (version du CV affichée) */
+  const pdfRequests = new WeakMap();
 
   async function newVisitor(initScript) {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
@@ -65,16 +67,23 @@ export async function runBrowserScenarios(ctx) {
     page.on('console', m => { if (m.type() === 'error') diagnostics.push(`console: ${m.text().slice(0, 160)}`); });
     page.on('requestfailed', r => diagnostics.push(`échec: ${r.method()} ${r.url().slice(0, 120)} ${r.failure()?.errorText}`));
     page.on('response', r => { if (r.status() >= 400) diagnostics.push(`HTTP ${r.status()}: ${r.request().method()} ${r.url().slice(0, 120)}`); });
+    const fetched = [];
+    pdfRequests.set(page, fetched);
+    page.on('request', r => { if (/\/storage\/v1\/object\/public\/[^?]+$/.test(r.url())) fetched.push(r.url()); });
     return page;
   }
 
+  // /cv (depuis P4) : la page télécharge la version active depuis Storage, l'affiche avec pdf.js (plus
+  // d'iframe) et « Voir en grand » ouvre toutes les pages dans un dialogue. Version affichée = dernier
+  // fichier public téléchargé par la page, une fois ses pages réellement rendues.
   const cvFrameSrc = async page => {
-    const open = page.getByRole('button', { name: 'Voir le CV en grand' });
+    const open = page.getByRole('button', { name: 'Voir en grand' });
     await open.waitFor({ timeout: 20000 });
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(b => b.textContent.includes('Voir en grand') && !b.disabled), null, { timeout: 20000 });
     await open.click();
-    const src = await page.locator('iframe[title="CV PDF"]').getAttribute('src');
+    await page.getByRole('dialog').locator('img[alt^="Page "]').first().waitFor({ timeout: 20000 });
     await page.keyboard.press('Escape');
-    return src;
+    return pdfRequests.get(page)?.at(-1) ?? null;
   };
 
   try {
@@ -140,15 +149,15 @@ export async function runBrowserScenarios(ctx) {
     const admin = await newVisitor();
     admin.on('dialog', d => d.accept());
     await admin.goto(`${WEB}/${ADMIN_SEGMENT}`);
-    await admin.getByPlaceholder('Email').fill('admin@example.test', { timeout: 20000 });
-    await admin.getByPlaceholder('Password').fill('Banc-Test-Admin-1!');
+    await admin.getByLabel('E-mail').fill('admin@example.test', { timeout: 20000 });
+    await admin.getByLabel('Mot de passe').fill('Banc-Test-Admin-1!');
     await admin.getByRole('button', { name: 'Se connecter' }).click();
     await admin.locator('#admin-totp-code').waitFor({ timeout: 15000 });
     check('connexion par mot de passe seul : défi MFA exigé', !(await admin.getByText('Dashboard Admin').isVisible()));
     await admin.locator('#admin-totp-code').fill(totp(adminTotp));
     await admin.getByRole('button', { name: 'Valider' }).click();
     await admin.getByText('Dashboard Admin').waitFor({ timeout: 15000 });
-    await admin.getByRole('button', { name: 'CV PDF' }).click();
+    await admin.getByRole('tab', { name: 'CV PDF' }).click();
     await admin.getByText('CV actuellement en ligne').waitFor({ timeout: 10000 });
     await admin.getByTestId('cv-active-date').waitFor({ timeout: 10000 });
     check('dashboard : CV actif et date de remplacement affichés', /Remplacé le/.test(await admin.getByTestId('cv-active-date').innerText()));
@@ -175,7 +184,7 @@ export async function runBrowserScenarios(ctx) {
     check('fichier identique ou invalide : message clair, version active inchangée', (await active()).id === published.id);
 
     await admin.reload();
-    await admin.getByRole('button', { name: 'CV PDF' }).click({ timeout: 20000 });
+    await admin.getByRole('tab', { name: 'CV PDF' }).click({ timeout: 20000 });
     await admin.getByText(/CV-nouveau\.pdf/).first().waitFor({ timeout: 10000 });
     check('rechargement du dashboard : session MFA conservée, version toujours active', (await active()).id === published.id);
 
@@ -215,7 +224,7 @@ export async function runBrowserScenarios(ctx) {
   } catch (err) {
     console.log('--- diagnostics navigateur ---');
     console.log(diagnostics.filter(d => !/googletagmanager|ipapi|fonts\./.test(d)).slice(-14).join('\n'));
-    console.log('texte visible :', (await lastPage?.locator('body').innerText().catch(() => ''))?.replace(/\s+/g, ' ').slice(0, 300));
+    console.log('texte visible :', (await lastPage?.locator('body').innerText().catch(() => ''))?.replace(/\s+/g, ' ').slice(0, 1200));
     await lastPage?.screenshot({ path: path.join(process.env.E2E_SHOTS ?? os.tmpdir(), 'echec.png') }).catch(() => {});
     throw err;
   } finally {

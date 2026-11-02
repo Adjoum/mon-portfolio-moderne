@@ -10,7 +10,8 @@ const GEMINI_KEY = 'CANARY-gemini-key-browser-0001';
 export async function runAiDashboardScenarios(admin, ctx) {
   const { check, API, WEB, fakes, sqlValue } = ctx;
   const shots = process.env.E2E_SHOTS ?? os.tmpdir();
-  const tab = name => admin.getByRole('button', { name, exact: true }).click();
+  // Onglets du dashboard (role="tab" depuis P2) et rubriques du centre IA (boutons)
+  const tab = name => admin.getByRole('tab', { name, exact: true }).or(admin.getByRole('button', { name, exact: true })).first().click();
   const seen = text => admin.getByText(text).first().waitFor({ timeout: 20000 });
   const featureCard = label => admin.locator('section', { has: admin.getByRole('heading', { name: label, exact: true }) });
 
