@@ -1,0 +1,150 @@
+/* Réponses du Clone IA : Markdown lisible sur fond sombre, sans jamais déborder de la fenêtre.
+   Le texte reste clair (#e2e8f0) ; les blocs larges (code, tableaux) défilent dans la bulle. */
+
+.ai-md {
+  min-width: 0;
+  max-width: 100%;
+  color: #e2e8f0;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.ai-md > :first-child { margin-top: 0; }
+.ai-md > :last-child { margin-bottom: 0; }
+
+.ai-md p { margin: 0 0 0.6em; }
+.ai-md strong { color: #fff; font-weight: 700; }
+.ai-md em { color: #e0e7ff; }
+.ai-md del { color: #94a3b8; }
+
+/* Titres hiérarchisés, compacts pour une bulle de conversation */
+.ai-md-h { margin: 0.9em 0 0.4em; color: #fff; font-weight: 700; line-height: 1.3; }
+.ai-md-h3 { font-size: 15px; }
+.ai-md-h4 { font-size: 14px; color: #e0e7ff; }
+.ai-md-h5 { font-size: 13.5px; color: #c7d2fe; }
+.ai-md-h6 { font-size: 13px; color: #c7d2fe; text-transform: none; }
+
+.ai-md ul,
+.ai-md ol { margin: 0.2em 0 0.7em; padding-left: 1.3em; }
+.ai-md ul { list-style: disc; }
+.ai-md ol { list-style: decimal; }
+.ai-md li { margin: 0.2em 0; }
+.ai-md li::marker { color: #a5b4fc; }
+.ai-md ul.contains-task-list { list-style: none; padding-left: 0.2em; }
+.ai-md .task-list-item input { margin-right: 0.45em; accent-color: #8b5cf6; vertical-align: -1px; }
+
+.ai-md a {
+  color: #a5b4fc;
+  text-decoration: underline;
+  text-decoration-color: rgba(165, 180, 252, 0.45);
+  text-underline-offset: 2px;
+}
+.ai-md a:hover { color: #c7d2fe; text-decoration-color: currentColor; }
+.ai-md a:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 2px; border-radius: 3px; }
+.ai-md-ext { display: inline; margin-left: 2px; vertical-align: -1px; opacity: 0.8; }
+.ai-md-link-off { color: #cbd5e1; }
+.ai-md-img { display: inline-flex; align-items: center; gap: 4px; color: #a5b4fc; }
+
+.ai-md blockquote {
+  margin: 0.4em 0 0.7em;
+  padding: 0.35em 0.8em;
+  border-left: 3px solid #8b5cf6;
+  background: rgba(139, 92, 246, 0.1);
+  border-radius: 0 8px 8px 0;
+  color: #cbd5e1;
+}
+.ai-md hr { border: 0; border-top: 1px solid rgba(165, 180, 252, 0.25); margin: 0.8em 0; }
+
+/* Code en ligne */
+.ai-md :not(pre) > code {
+  padding: 0.1em 0.4em;
+  border-radius: 5px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(165, 180, 252, 0.2);
+  color: #f0abfc;
+  font-family: 'JetBrains Mono', 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+/* Blocs de code : contraste élevé, défilement horizontal dans la bulle */
+.ai-md-code {
+  margin: 0.4em 0 0.8em;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(165, 180, 252, 0.22);
+  background: #0b1020;
+  max-width: 100%;
+}
+.ai-md-code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  background: rgba(99, 102, 241, 0.14);
+  border-bottom: 1px solid rgba(165, 180, 252, 0.16);
+}
+.ai-md-code-lang {
+  color: #c7d2fe;
+  font: 600 11px/1.4 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  text-transform: lowercase;
+}
+.ai-md-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 2px 9px;
+  border-radius: 7px;
+  border: 1px solid rgba(165, 180, 252, 0.3);
+  background: rgba(15, 23, 42, 0.6);
+  color: #e0e7ff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ai-md-copy:hover { background: rgba(99, 102, 241, 0.3); }
+.ai-md-copy:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 2px; }
+.ai-md pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  max-width: 100%;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  color: #e2e8f0;
+  font: 12px/1.55 'JetBrains Mono', 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(165, 180, 252, 0.35) transparent;
+}
+.ai-md pre:focus-visible { outline: 2px solid #a5b4fc; outline-offset: -2px; }
+.ai-md pre code { font: inherit; color: inherit; background: none; border: 0; padding: 0; }
+
+/* Tableaux : défilables horizontalement, jamais plus larges que la bulle */
+.ai-md-table {
+  margin: 0.4em 0 0.8em;
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(165, 180, 252, 0.22);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(165, 180, 252, 0.35) transparent;
+}
+.ai-md-table:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 2px; }
+/* Mots jamais coupés dans une cellule : le tableau s'élargit et défile plutôt */
+.ai-md table { border-collapse: collapse; min-width: 100%; font-size: 12px; word-break: normal; overflow-wrap: normal; }
+.ai-md th,
+.ai-md td {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(165, 180, 252, 0.14);
+  text-align: left;
+  white-space: nowrap;
+}
+.ai-md td { white-space: normal; min-width: 8ch; max-width: 28ch; }
+.ai-md th { background: rgba(99, 102, 241, 0.16); color: #fff; font-weight: 700; }
+.ai-md tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.025); }
+.ai-md tbody tr:last-child td { border-bottom: 0; }
+
+.ai-md-truncated { margin-top: 0.6em; color: #94a3b8; font-size: 11.5px; font-style: italic; }

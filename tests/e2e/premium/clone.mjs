@@ -136,6 +136,101 @@ export async function clone(browser, engine) {
   await dialog(page).waitFor();
   await shot(page, `p3-clone-${engine}-desktop`);
   await context.close();
+
+  await markdown(browser, engine);
+}
+
+// P7.2 — Réponses Markdown : mise en forme lisible, contenu malveillant inerte, aucun débordement
+const MARKDOWN_REPLY = [
+  '### Compétences principales', '', 'Adjoumani maîtrise **React**, *TypeScript* et l’IA :', '',
+  '1. Front-end : React, Tailwind', '2. Back-end : Node.js, Supabase', '',
+  `| Projet | Stack | Statut | ${Array.from({ length: 6 }, (_, i) => `Colonne ${i}`).join(' | ')} |`,
+  `|:--|:--|--:|${' --- |'.repeat(6)}`,
+  ...Array.from({ length: 30 }, (_, r) => `| Projet ${r} | React, Canvas, WebSocket | En ligne | ${Array.from({ length: 6 }, () => 'valeur').join(' | ')} |`),
+  '', '```ts', `const portfolio = await fetch('/api/projects').then(r => r.json()) // ${'commentaire '.repeat(12)}`, '```', '',
+  '> Disponible pour des projets.', '',
+  'Voir [ses projets](/projects) ou [GitHub](https://github.com/Adjoum).', '',
+  '<script>window.__xss = 1</script> <img src=x onerror="window.__xss=2"> <svg onload="window.__xss=3"></svg>',
+  '[piège](javascript:window.__xss=4) [piège 2](JaVaScRiPt:window.__xss=5) ![pixel](https://tracker.example/p.png)',
+  '<a href="javascript:window.__xss=6">lien html</a> <iframe src="javascript:window.__xss=7"></iframe>', '',
+  'Paragraphe final. '.repeat(200),
+].join('\n');
+
+async function markdown(browser, engine) {
+  for (const [width, label] of [[1440, 'desktop'], [390, 'mobile']]) {
+    const external = [];
+    const { context, page, errors } = await open(browser, '/about', {
+      width,
+      beforeGoto: async p => {
+        await p.route('**/api/agent/chat', r => r.fulfill({ json: { reply: MARKDOWN_REPLY } }));
+        await p.route(/tracker\.example/, r => { external.push(r.request().url()); return r.fulfill({ status: 204, body: '' }); });
+        p.on('dialog', d => { errors.push(`dialogue ouvert : ${d.message()}`); void d.dismiss(); });
+      },
+    });
+    if (engine === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: WEB });
+    const press = loc => (width < 1024 ? loc.tap() : loc.click());
+    await press(page.getByRole('button', { name: LAUNCHER }));
+    await dialog(page).waitFor();
+    await page.getByLabel("Votre question pour l'assistant").fill('Tes compétences ?');
+    await page.keyboard.press('Enter');
+    await dialog(page).locator('.ai-md table').waitFor({ timeout: 15_000 });
+    await page.waitForTimeout(500);
+
+    const state = await page.evaluate(() => {
+      const pop = document.querySelector('.ai-chat-popup').getBoundingClientRect();
+      const md = [...document.querySelectorAll('.ai-msg-rich .ai-md')].at(-1); // la réponse, pas l’accueil
+      const outside = [...document.querySelectorAll('.ai-chat-popup *')]
+        .filter(e => !e.closest('.ai-md-table, .ai-md pre'))
+        .filter(e => { const r = e.getBoundingClientRect(); return r.width && (r.right > pop.right + 1 || r.left < pop.left - 1); }).length;
+      const table = document.querySelector('.ai-md-table');
+      const pre = document.querySelector('.ai-md pre');
+      return {
+        xss: window.__xss ?? null,
+        outside,
+        pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        tableScrolls: table.scrollWidth > table.clientWidth && table.tabIndex === 0 && table.getAttribute('role') === 'region',
+        preScrolls: pre.scrollWidth > pre.clientWidth,
+        heading: md.querySelector('.ai-md-h')?.textContent,
+        bold: md.querySelector('strong')?.textContent,
+        rawMarkdown: /\*\*|###|\|:--/.test(md.innerText),
+        dangerous: md.querySelectorAll('script, iframe, img, svg:not(.lucide), [onerror], [onload], a[href^="javascript" i]').length,
+        internal: md.querySelector('a[href="/projects"]')?.getAttribute('target') ?? 'même onglet',
+        externalRel: md.querySelector('a[href="https://github.com/Adjoum"]')?.getAttribute('rel'),
+        textColor: getComputedStyle(md).color,
+      };
+    });
+    check(`${engine} ${label} : Markdown mis en forme (titre, gras, liste, tableau, code, citation), plus aucun symbole brut`,
+      state.heading === 'Compétences principales' && state.bold === 'React' && !state.rawMarkdown, JSON.stringify({ heading: state.heading, bold: state.bold, raw: state.rawMarkdown }));
+    check(`${engine} ${label} : contenu malveillant inerte (script, onerror, svg, javascript:, iframe), aucune image distante chargée`,
+      state.xss === null && state.dangerous === 0 && !external.length, `xss=${state.xss}, éléments dangereux ${state.dangerous}, requêtes externes ${external.length}`);
+    check(`${engine} ${label} : aucun débordement de la fenêtre ; tableau et code défilent dans la bulle`,
+      state.outside === 0 && state.pageOverflow <= 0 && state.tableScrolls && state.preScrolls, JSON.stringify({ outside: state.outside, page: state.pageOverflow, table: state.tableScrolls, pre: state.preScrolls }));
+    check(`${engine} ${label} : liens — interne dans le site, externe en nouvel onglet sans transmission d’accès`,
+      state.internal === 'même onglet' && state.externalRel === 'noopener noreferrer nofollow ugc', `${state.internal} / ${state.externalRel}`);
+
+    // Bouton Copier : texte exact du bloc (presse-papiers lisible sous Chromium uniquement)
+    const copy = dialog(page).getByRole('button', { name: 'Copier le code' });
+    await copy.scrollIntoViewIfNeeded();
+    await press(copy);
+    await page.waitForTimeout(300);
+    const copiedLabel = await dialog(page).locator('.ai-md-copy').first().getAttribute('aria-label');
+    const clip = engine === 'chromium' ? await page.evaluate(() => navigator.clipboard.readText()).catch(() => null) : null;
+    check(`${engine} ${label} : bouton Copier — confirmation annoncée${engine === 'chromium' ? ', texte copié exact' : ''}`,
+      copiedLabel === 'Code copié' && (engine !== 'chromium' || clip?.startsWith("const portfolio = await fetch('/api/projects')")), `${copiedLabel} | ${clip?.slice(0, 40)}`);
+
+    // Lien interne : navigation dans le site, conversation conservée, croix toujours opérante
+    await press(dialog(page).getByRole('link', { name: 'ses projets' }));
+    await page.waitForURL(/\/projects$/);
+    await dialog(page).locator('.ai-md table').waitFor({ timeout: 5000 }).catch(() => {});
+    const keptAfterNav = await dialog(page).locator('.ai-md table').count();
+    await press(page.getByRole('button', { name: CLOSE }));
+    await dialog(page).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
+    check(`${engine} ${label} : lien interne suivi dans le site, conversation conservée, croix opérante`, keptAfterNav === 1 && !(await dialog(page).count()));
+    await shot(page, `p7-markdown-${engine}-${width}`);
+    const real = errors.filter(e => !/Failed to load resource|ERR_|status of 40/i.test(e));
+    check(`${engine} ${label} : aucune erreur ni dialogue pendant le rendu Markdown`, !real.length, real.slice(0, 2).join(' | '));
+    await context.close();
+  }
 }
 
 // Pour les rapports : URL de la page testée

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useSyncExternalStore } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useSyncExternalStore, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, GripHorizontal } from 'lucide-react';
 
@@ -6,6 +6,12 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 // Version légère de la vidéo (200 × 200, sans son, 40 Ko) ; l'original reste dans public/videos
 const AI_AVATAR_VIDEO = '/videos/ai-avatar-200.mp4';
 const AI_AVATAR_POSTER = '/videos/ai-avatar-poster.webp';
+
+// Rendu Markdown sécurisé des réponses, chargé à la demande : le bundle de chaque page n'en paie
+// pas le coût. Préchargé au survol ou au focus du bouton, et à l'ouverture.
+const loadChatMarkdown = () => import('./chat/ChatMarkdown');
+const ChatMarkdown = lazy(loadChatMarkdown);
+const preloadChatMarkdown = () => { void loadChatMarkdown(); };
 
 interface Message {
   role: 'user' | 'assistant';
@@ -279,7 +285,9 @@ export const AIAgent: React.FC = () => {
             aria-label="Ouvrir l'assistant Adjoumani AI"
             aria-haspopup="dialog"
             aria-expanded={false}
-            onClick={() => setOpen(true)}
+            onClick={() => { preloadChatMarkdown(); setOpen(true); }}
+            onPointerEnter={preloadChatMarkdown}
+            onFocus={preloadChatMarkdown}
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
@@ -356,7 +364,16 @@ export const AIAgent: React.FC = () => {
                     <span className="ai-msg-icon" aria-hidden="true">🤖</span>
                   )}
 
-                  <div className="ai-msg-bubble">{msg.content}</div>
+                  {msg.role === 'assistant' ? (
+                    // Réponse du fournisseur IA : donnée non fiable, Markdown filtré (chat/ChatMarkdown)
+                    <div className="ai-msg-bubble ai-msg-rich">
+                      <Suspense fallback={<span className="ai-msg-plain">{msg.content}</span>}>
+                        <ChatMarkdown content={msg.content} />
+                      </Suspense>
+                    </div>
+                  ) : (
+                    <div className="ai-msg-bubble ai-msg-plain">{msg.content}</div>
+                  )}
                 </motion.div>
               ))}
 
@@ -732,6 +749,18 @@ export const AIAgent: React.FC = () => {
           color: #e2e8f0;
           word-break: break-word;
           overflow-wrap: anywhere;
+        }
+
+        /* Texte saisi et repli avant le rendu Markdown : retours à la ligne conservés */
+        .ai-msg-plain {
+          white-space: pre-wrap;
+        }
+
+        /* Réponses mises en forme : toute la largeur disponible, blocs larges défilants */
+        .ai-msg-rich {
+          min-width: 0;
+          max-width: calc(100% - 26px);
+          overflow: hidden;
         }
 
         .ai-msg-assistant .ai-msg-bubble {
