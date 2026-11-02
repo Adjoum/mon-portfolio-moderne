@@ -158,7 +158,7 @@ function PhotoCropWidget({
           onTouchStart={photo ? onTouchStart : undefined}
         >
           {photo ? (
-            <img src={photo} className="pcw-img"
+            <img src={photo} className="pcw-img" alt="Photo du CV : aperçu du cadrage"
               style={{ objectPosition: `${photoX}% ${photoY}%` }}
               draggable={false} />
           ) : (
@@ -1052,7 +1052,7 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
           display:flex; align-items:center; justify-content:center; transition:all .15s;
         }
         .gp-nav-btn:hover { border-color:#6366f1; color:#e6edf3; }
-        .gp-logo { font-size:16px; font-weight:800; color:#6366f1; }
+        .gp-logo { font-size:16px; font-weight:800; color:#818cf8; }
         .gp-logo-sub { font-size:10px; color:#8b949e; }
         .gp-header-right { display:flex; align-items:center; gap:12px; }
         .gp-cv-name { font-size:12px; color:#8b949e; font-weight:600; }
@@ -1267,7 +1267,7 @@ export default function CVGeneratorPro({ onGoHome }: { onGoHome?: () => void }) 
         .ep-tabs { display:flex; flex-wrap:wrap; border-bottom:1px solid #30363d; flex-shrink:0; }
         .ep-tab { padding:7px 10px; background:none; border:none; border-bottom:2px solid transparent; color:#8b949e; font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap; }
         .ep-tab:hover { color:#e6edf3; }
-        .ep-tab-active { color:#6366f1 !important; border-bottom-color:#6366f1 !important; }
+        .ep-tab-active { color:#a5b4fc !important; border-bottom-color:#6366f1 !important; }
         .ep-body { flex:1; overflow-y:auto; padding:14px; }
         .ep-section { display:flex; flex-direction:column; gap:10px; }
         .ep-card { background:#21262d; border:1px solid #30363d; border-radius:8px; padding:12px; }

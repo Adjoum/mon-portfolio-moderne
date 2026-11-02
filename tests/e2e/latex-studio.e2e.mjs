@@ -879,6 +879,8 @@ async function cursorTo(page, line) {
 const lineOf = (code, re) => code.split('\n').findIndex(l => re.test(l)) + 1;
 /** Centre de la première zone surlignée dans l'aperçu (amenée à l'écran) */
 async function highlightBox(page) {
+  // Aperçu stable d'abord : pendant un nouveau rendu des pages, les surlignages sont recréés
+  await page.locator('[data-preview][aria-busy="false"]').waitFor({ timeout: 15_000 });
   const h = page.locator('[data-sync-highlight]').first();
   await h.waitFor({ timeout: 10_000 });
   await h.scrollIntoViewIfNeeded();

@@ -41,9 +41,17 @@ create table if not exists public.admin_session_activity (
 );
 create index if not exists admin_session_activity_user on public.admin_session_activity (user_id, last_activity_at desc);
 
--- Aucun accès direct : uniquement par les fonctions ci-dessous
+-- Aucun accès direct : uniquement par les fonctions ci-dessous (même garde que admin_users)
 alter table public.admin_session_activity enable row level security;
 revoke all on table public.admin_session_activity from public, anon, authenticated;
+drop policy if exists p2_admin_session_no_client_access on public.admin_session_activity;
+create policy p2_admin_session_no_client_access
+  on public.admin_session_activity
+  as restrictive
+  for all
+  to anon, authenticated
+  using (false)
+  with check (false);
 
 -- ── 3. Session courante (claims signés du JWT, jamais une valeur envoyée par le client) ──
 create or replace function public.admin_current_session_id()

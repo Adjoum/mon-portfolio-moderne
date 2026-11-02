@@ -91,6 +91,12 @@ describe('comparaison de l’inventaire avec les migrations', () => {
     expect(r.blocking).toMatch(/public\.admin_users existe déjà SANS les colonnes/)
   })
 
+  it.each(['cv_documents', 'admin_session_activity'])('collision avec une table des migrations récentes (%s) : blocage', name => {
+    const r = compare(inventory(inv => { inv.tables.push({ schema: 'public', name, rls: false, force_rls: false, rows: 0 }) }))
+    expect(r.status).toBe(1)
+    expect(r.blocking).toMatch(new RegExp(`${name} existe déjà`))
+  })
+
   it('collision avec une table du centre IA : blocage', () => {
     const r = compare(inventory(inv => { inv.tables.push({ schema: 'public', name: 'ai_providers', rls: false, force_rls: false, rows: 0 }) }))
     expect(r.status).toBe(1)

@@ -64,15 +64,15 @@ echo "▶ Retour arrière : définition P0.A1 rétablie"
 apply_as_postgres "$RB/$SESSION_MIG.down.sql"
 LEFT="$(psql_as supabase_admin -At -c "select count(*) from pg_proc where proname like 'admin\_session\_%' or proname in ('admin_idle_timeout', 'admin_current_session_id')")"
 DEF="$(psql_as supabase_admin -At -c "select position('admin_session_active' in prosrc) from pg_proc where proname = 'is_portfolio_admin_mfa'")"
-KEPT="$(psql_as supabase_admin -At -c "select count(*) from public.admin_session_activity")"
-if [ "$LEFT" != "0" ] || [ "$DEF" != "0" ]; then echo "✗ Retour arrière incomplet ($LEFT fonction(s), condition de session présente : $DEF)"; exit 1; fi
+TABLE="$(psql_as supabase_admin -At -c "select count(*) from pg_class where relname = 'admin_session_activity'")"
+if [ "$LEFT" != "0" ] || [ "$DEF" != "0" ] || [ "$TABLE" != "0" ]; then echo "✗ Retour arrière incomplet ($LEFT fonction(s), condition de session : $DEF, table : $TABLE)"; exit 1; fi
 # Après retour arrière : admin MFA retrouve ses droits sans condition de session (comportement P0.A1)
 AFTER_RB="$(psql_as supabase_admin -At -c "
   select set_config('request.jwt.claims', '{\"sub\":\"11111111-1111-4111-8111-111111111111\",\"role\":\"authenticated\",\"aal\":\"aal2\"}', true);
   set local role authenticated;
   select public.is_portfolio_admin_mfa();" | tail -1)"
 if [ "$AFTER_RB" != "t" ]; then echo "✗ Après retour arrière, is_portfolio_admin_mfa devrait être vrai pour un admin MFA ($AFTER_RB)"; exit 1; fi
-echo "  fonctions retirées, is_portfolio_admin_mfa = admin + aal2, $KEPT ligne(s) d'activité conservée(s)"
+echo "  fonctions et table retirées, is_portfolio_admin_mfa = admin + aal2 (état d'avant la migration)"
 
 echo "▶ Réapplication après retour arrière"
 apply_as_postgres "$MIG/$SESSION_MIG.sql"

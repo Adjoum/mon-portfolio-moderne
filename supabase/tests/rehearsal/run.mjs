@@ -36,14 +36,18 @@ const MIGRATIONS = [
   '20261030150000_cv_public_document', '20261030150100_project_images_no_public_listing',
   '20261030170000_ai_control_center_schema', '20261030170100_ai_admin_functions',
   '20261030170200_ai_runtime_functions', '20261030170300_ai_initial_catalog',
+  '20261101100000_cv_private_history', '20261101120000_ai_probe_details', '20261102100000_admin_session_idle',
+  '20261102100100_cv_documents_quota_privileges',
 ];
 const ROLLBACKS = [
+  '20261102100100_cv_documents_quota_privileges', '20261102100000_admin_session_idle',
+  '20261101120000_ai_probe_details', '20261101100000_cv_private_history',
   '20261030170000_ai_control_center', '20261030150100_project_images_no_public_listing',
   '20261030150000_cv_public_document', '20261030120200_p0a1_security_advisor',
   '20261030120100_p0a1_storage_access_control', '20261030120000_p0a1_admin_access_control',
 ];
 /** Fonctions SECURITY DEFINER appelées volontairement par le site (contrôles internes) */
-const RPC_ALLOWED = /^(is_portfolio_admin|visit_count|cv_active|cv_publish_version|cv_restore_version|ai_admin_\w+)$/;
+const RPC_ALLOWED = /^(is_portfolio_admin|visit_count|cv_active|cv_publish_version|cv_restore_version|cv_history_allowed|ai_admin_\w+|admin_session_\w+)$/;
 
 const option = name => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : null);
 const FROM_BACKUP = option('--from-backup');
@@ -267,6 +271,9 @@ rollback;`, ['-At']);
 
   console.log('▶ 6. Retour arrière : scripts down puis restauration générée depuis l’inventaire');
   for (const r of ROLLBACKS) psql('postgres', `set client_min_messages = warning;\n${sqlFile(`supabase/rollback/${r}.down.sql`)}`, ['--single-transaction']);
+  // Étape manuelle documentée du retour arrière de « Mes CV » : Supabase interdit la suppression SQL
+  // d'un bucket ; le propriétaire vide puis supprime cv-private par l'API Storage. Simulée ici.
+  psql('supabase_admin', "delete from storage.buckets b where b.id = 'cv-private' and not exists (select 1 from storage.objects o where o.bucket_id = b.id);");
   const restore = restoreSql(before);
   fs.writeFileSync(path.join(WORK, 'restauration.sql'), restore);
   psql('postgres', `set client_min_messages = warning;\n${restore}`);

@@ -123,11 +123,11 @@ export function PdfPreview({ pdf, url, dimmed, onDownload, pageSizes, highlights
         <button type="button" className={`${btnGhost} px-2`} onClick={() => setZoom(ZOOMS[Math.min(ZOOMS.length - 1, index + 1)])} disabled={index >= ZOOMS.length - 1} aria-label="Zoom avant" title="Zoom avant">+</button>
         <button type="button" className={`${btnGhost} px-2`} onClick={() => setZoom(1)} disabled={zoom === 1} aria-label="Ajuster à la largeur" title="Ajuster à la largeur">↔</button>
         {navigation}
-        <span className="ml-auto shrink-0 px-1 text-xs text-gray-500">{pages.length ? `${pages.length} p.` : ''}<span className="sr-only">{pages.length > 1 ? 'pages' : 'page'}</span></span>
+        <span className="ml-auto shrink-0 px-1 text-xs text-gray-400">{pages.length ? `${pages.length} p.` : ''}<span className="sr-only">{pages.length > 1 ? 'pages' : 'page'}</span></span>
         <a className={`${btnGhost} shrink-0 px-2`} href={url} target="_blank" rel="noopener noreferrer" title="Ouvrir le PDF dans un nouvel onglet">↗ Ouvrir</a>
         {onDownload && <button type="button" className={`${btn} shrink-0`} onClick={onDownload}>⬇ PDF</button>}
       </div>
-      <div ref={box} data-preview aria-busy={painting} className={`relative min-h-0 flex-1 overflow-auto bg-[#1c2129] p-3 transition-opacity ${dimmed ? 'opacity-50' : ''}`}>
+      <div ref={box} data-preview aria-busy={painting} tabIndex={0} role="region" aria-label="Pages du PDF, défilables au clavier" className={`relative min-h-0 flex-1 overflow-auto bg-[#1c2129] p-3 transition-opacity ${dimmed ? 'opacity-50' : ''}`}>
         {/* Indicateur superposé, sans hauteur : les pages ne bougent pas pendant leur mise à jour (un clic reste à sa place) */}
         {painting && pages.length > 0 && (
           <div className="pointer-events-none sticky top-0 z-20 flex h-0 justify-end">

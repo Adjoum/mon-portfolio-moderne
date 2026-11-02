@@ -49,9 +49,9 @@ export default function CvPreview({ html, title = 'Aperçu du CV' }: { html: str
           className={`inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-xs font-semibold ${zoom === 'fit' ? 'border-indigo-400 text-indigo-100' : 'border-[#30363d] text-gray-300 hover:text-white'}`}>
           <Maximize2 size={13} aria-hidden="true" /> Ajuster
         </button>
-        <span className="ml-2 hidden text-[11px] text-gray-500 sm:inline">≈ {Math.max(1, Math.ceil((height - 4) / A4_HEIGHT))} page(s) A4</span>
+        <span className="ml-2 hidden text-[11px] text-gray-400 sm:inline">≈ {Math.max(1, Math.ceil((height - 4) / A4_HEIGHT))} page(s) A4</span>
       </div>
-      <div ref={scroller} className="min-h-0 flex-1 overflow-auto bg-[#2a2d3e] p-3 [touch-action:pan-x_pan-y]" tabIndex={0} aria-label="Aperçu du CV, défilable">
+      <div ref={scroller} className="min-h-0 flex-1 overflow-auto bg-[#2a2d3e] p-3 [touch-action:pan-x_pan-y]" tabIndex={0} role="region" aria-label="Aperçu du CV, défilable">
         <div className="mx-auto" style={{ width: A4_WIDTH * scale, height: height * scale }}>
           <iframe
             title={title}

@@ -112,6 +112,10 @@ for (const name of replaced) {
 for (const name of ['ai_providers', 'ai_features', 'ai_models', 'ai_feature_assignments', 'ai_config_audit']) {
   if (tables.has(`public.${name}`)) add('blocking', `public.${name} existe déjà : collision avec le centre IA`);
 }
+// Tables créées par « Mes CV » (20261101100000) et les sessions administrateur (20261102100000)
+for (const [name, origin] of [['cv_documents', 'l’historique privé des CV'], ['admin_session_activity', 'les sessions administrateur']]) {
+  if (tables.has(`public.${name}`)) add('blocking', `public.${name} existe déjà : collision avec ${origin}`);
+}
 if (inv.schemas.includes('ai_private')) add('warning', 'Le schéma ai_private existe déjà');
 if (inv.schemas.includes('portfolio_private')) add('warning', 'Le schéma portfolio_private existe déjà (20261030150000 y crée cv_object_is_referenced)');
 if (inv.roles.some(r => r.name === 'ai_backend')) add('warning', 'Le rôle ai_backend existe déjà (il ne sera pas recréé ; vérifiez ses droits)');
@@ -144,7 +148,7 @@ for (const p of listing) {
 // ── Propriété : politiques, RLS et remplacement de fonctions exigent d'agir en propriétaire ──
 const touchedTables = ['admin_users', 'projects', 'skills', 'ailab_projects', 'ailab_capabilities', 'ailab_project_capabilities', 'visits', 'contacts'];
 // Tables de production inconnues du projet : les migrations n'y touchent pas, elles sont à connaître
-for (const t of inv.tables.filter(t => t.schema === 'public' && !touchedTables.includes(t.name) && t.name !== 'cv_versions' && !t.name.startsWith('ai_'))) {
+for (const t of inv.tables.filter(t => t.schema === 'public' && !touchedTables.includes(t.name) && !['cv_versions', 'cv_documents', 'admin_session_activity'].includes(t.name) && !t.name.startsWith('ai_'))) {
   const own = policies.filter(p => p.schema === 'public' && p.table === t.name);
   add('info', `public.${t.name} : table inconnue du projet, non modifiée par les migrations (${t.rows} ligne(s), RLS ${t.rls ? 'activée' : 'désactivée'}, ${own.length} politique(s) : ${own.map(p => `${p.name} [${p.cmd}, ${p.roles.join(',')}]`).join(' ; ') || 'aucune'})`);
 }

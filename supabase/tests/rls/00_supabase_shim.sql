@@ -57,3 +57,16 @@ alter table storage.objects owner to supabase_storage_admin;
 alter table storage.buckets enable row level security;
 alter table storage.objects enable row level security;
 grant all on storage.buckets, storage.objects to postgres, anon, authenticated, service_role;
+
+-- storage.foldername(name) : dossiers d'un chemin d'objet (migration publique du service Storage),
+-- utilisée par les politiques de cv-private (20261101100000)
+create or replace function storage.foldername(name text) returns text[] language plpgsql immutable as $$
+declare
+  _parts text[];
+begin
+  select string_to_array(name, '/') into _parts;
+  return _parts[1:array_length(_parts, 1) - 1];
+end
+$$;
+alter function storage.foldername(text) owner to supabase_storage_admin;
+grant execute on function storage.foldername(text) to postgres, anon, authenticated, service_role;

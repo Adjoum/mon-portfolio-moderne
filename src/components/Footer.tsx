@@ -104,7 +104,7 @@ const Footer: React.FC = () => {
                   whileTap={{ scale: 0.9 }}
                   className="w-12 h-12 glass-effect rounded-full flex items-center justify-center text-gray-400 hover:text-white transition-colors"
                 >
-                  <social.icon size={20} />
+                  <social.icon size={20} aria-hidden="true" />
                 </motion.a>
               ))}
             </div>

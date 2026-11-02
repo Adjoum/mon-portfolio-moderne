@@ -66,8 +66,11 @@ export async function layoutIssues(page) {
       const r = el.getBoundingClientRect();
       const style = getComputedStyle(el);
       if (!r.width || style.visibility === 'hidden' || style.display === 'none') continue;
-      // Éléments d'une zone défilable horizontalement (onglets) : coupure voulue
-      if (el.closest('[role="tablist"], .gp-tpl-scroll, [data-scroll-x]')) continue;
+      // Éléments d'une zone défilable horizontalement (onglets, filtres en carrousel) : coupure voulue,
+      // l'élément reste atteignable par glissement et au clavier
+      let scroller = el.parentElement;
+      while (scroller && !['auto', 'scroll'].includes(getComputedStyle(scroller).overflowX)) scroller = scroller.parentElement;
+      if (scroller && scroller !== document.documentElement && scroller !== document.body) continue;
       if (r.right > vw + 1 || r.left < -1) clipped.push(`${el.tagName.toLowerCase()} « ${(el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 30)} » ${Math.round(r.left)}→${Math.round(r.right)}`);
     }
     return { overflowX, clipped };

@@ -31,7 +31,7 @@ function Section({ title, children, defaultOpen = false }: { title: string; chil
     <details open={defaultOpen} className="group border-b border-[#21262d] py-1">
       <summary className="flex min-h-[40px] cursor-pointer list-none items-center justify-between rounded-md px-1 text-[12.5px] font-bold text-gray-100 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-300 [&::-webkit-details-marker]:hidden">
         {title}
-        <span className="text-gray-500 transition-transform group-open:rotate-90" aria-hidden="true">›</span>
+        <span className="text-gray-400 transition-transform group-open:rotate-90" aria-hidden="true">›</span>
       </summary>
       <div className="space-y-3 px-1 pb-3 pt-1">{children}</div>
     </details>
@@ -147,7 +147,7 @@ export default function CvDesignPanel({ design: d, templateId, templateName, onC
         <button type="button" className={btn} onClick={onRedo} disabled={!canRedo} aria-label="Rétablir" title="Rétablir (Ctrl+Maj+Z)"><Redo2 size={15} aria-hidden="true" /></button>
         <button type="button" className={btn} onClick={onResetAll}><RotateCcw size={14} aria-hidden="true" /> Tout réinitialiser</button>
       </div>
-      <p className="mb-1 text-[11px] text-gray-500">Modèle : <span className="text-gray-300">{templateName}</span> · aperçu et export PDF identiques</p>
+      <p className="mb-1 text-[11px] text-gray-400">Modèle : <span className="text-gray-300">{templateName}</span> · aperçu et export PDF identiques</p>
 
       <Section title="Couleurs et palettes" defaultOpen>
         <div>
@@ -191,7 +191,7 @@ export default function CvDesignPanel({ design: d, templateId, templateName, onC
 
       <Section title="Typographie" defaultOpen>
         <Row label="Police" changed={changed('fontFamily')} onReset={() => reset('fontFamily')} htmlFor={id('font')}
-          note={<p className="mt-1 text-[10.5px] text-gray-500">Polices présentes sur tous les systèmes : l’export PDF utilise la même.</p>}>
+          note={<p className="mt-1 text-[10.5px] text-gray-400">Polices présentes sur tous les systèmes : l’export PDF utilise la même.</p>}>
           <select id={id('font')} value={d.fontFamily} onChange={e => set({ fontFamily: e.target.value }, 'fontFamily')}
             className="min-h-[36px] w-full rounded-md border border-[#30363d] bg-[#0d1117] px-2 text-xs text-gray-100">
             {FONT_CHOICES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
@@ -332,7 +332,7 @@ export default function CvDesignPanel({ design: d, templateId, templateName, onC
           <button type="submit" className={btn} disabled={!presetName.trim()}><Save size={14} aria-hidden="true" /> Enregistrer</button>
         </form>
         {presetMsg && <p role="status" className="text-[11px] text-emerald-300">{presetMsg}</p>}
-        {presets.length === 0 && <p className="text-[11px] text-gray-500">Aucun preset enregistré.</p>}
+        {presets.length === 0 && <p className="text-[11px] text-gray-400">Aucun preset enregistré.</p>}
         <ul className="space-y-1">
           {presets.map(p => (
             <li key={p.id} className="flex items-center gap-1.5 rounded-md border border-[#21262d] bg-[#0d1117] px-2 py-1">
