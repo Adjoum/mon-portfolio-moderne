@@ -68,7 +68,6 @@ const FULLSCREEN_ROUTES = [
   '/adjoumani-whiteboard',
   '/playground',
   '/tools/novamind',   // NovaMind occupe tout l'écran (canvas infini)
-  '/cv-builder',       // CV Builder a sa propre nav interne
   '/cv-generator',     // CV Generator a sa propre nav interne
   '/latex-cv-editor',   // LaTeX CV Editor a sa propre nav interne
 ]

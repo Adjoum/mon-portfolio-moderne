@@ -6,8 +6,8 @@ import path from 'node:path'
 const ROOT = path.resolve(__dirname, '..', '..')
 const CONFIG = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'secret-patterns.json'), 'utf8'))
 
-/** Code mort non routé (décision D12 en attente) : vérifié non importé ci-dessous */
-const DEAD_FILES = ['src/pages/CVBuilder/LaTeXEditor1.tsx']
+/** Code mort retiré en P7.5 (décision D12) : ne doit ni revenir ni être importé */
+const DEAD_FILES = ['src/pages/CVBuilder/LaTeXEditor1.tsx', 'src/pages/CVBuilder/LaTeXViewer.tsx', 'src/pages/CVBuilder/CVLiveEditor.tsx']
 
 function walk(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap(e =>
@@ -31,7 +31,8 @@ describe('sources servies au navigateur', () => {
     expect(code).not.toMatch(/['"`]gpt-\d|gpt-oss|llama-\d/)
   })
 
-  it.each(DEAD_FILES)('%s (code mort) n’est importé nulle part', (dead) => {
+  it.each(DEAD_FILES)('%s (code mort retiré) absent et importé nulle part', (dead) => {
+    expect(fs.existsSync(path.join(ROOT, dead))).toBe(false)
     const base = path.basename(dead).replace(/\.tsx?$/, '')
     const importers = browserFiles.filter(f => f !== dead &&
       new RegExp(`from\\s+['"][^'"]*/${base}['"]|import\\(['"][^'"]*/${base}['"]\\)`).test(fs.readFileSync(path.join(ROOT, f), 'utf8')))

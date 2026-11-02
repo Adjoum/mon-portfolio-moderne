@@ -2,7 +2,7 @@
 import { looksLikeAdminPath } from '../../lib/adminRoute'
 
 /** Éditeurs, canevas et outils plein écran : leurs propres contrôles priment */
-export const OFF_ROUTES = ['/latex-cv-editor', '/cv-generator', '/cv-builder', '/playground', '/adjoumani-whiteboard', '/tools/novamind', '/blog/new', '/blog/edit', '/file-converter']
+export const OFF_ROUTES = ['/latex-cv-editor', '/cv-generator', '/playground', '/adjoumani-whiteboard', '/tools/novamind', '/blog/new', '/blog/edit', '/file-converter']
 
 /** Pointeur fin capable de survol (souris, pavé tactile, stylet), mouvement autorisé */
 export const PRESENCE_MEDIA = '(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)'

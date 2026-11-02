@@ -99,7 +99,7 @@ describe('activation', () => {
     expect(css).toMatch(/\.lp-root \{[\s\S]*?pointer-events: none;/)
     expect(css).not.toMatch(/mix-blend-mode/)
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.lp-root \{ display: none; \}/)
-    for (const file of ['src/index.css', 'src/App.css', 'src/App.tsx']) {
+    for (const file of ['src/index.css', 'src/App.tsx']) {
       const code = fs.readFileSync(file, 'utf8')
       expect(code, file).not.toMatch(/custom-cursor|CustomCursor|cursor:\s*none/)
     }

@@ -130,8 +130,8 @@ describe('export et autres points d’injection', () => {
     expect(read('public/inkspace/js/ui.js')).not.toMatch(/innerHTML\s*=\s*`[^`]*\$\{msg\}/)
   })
 
-  it('l’erreur LaTeX n’est pas interprétée comme du HTML', () => {
-    expect(read('src/pages/CVBuilder/LaTeXViewer.tsx')).not.toContain('${err.message}')
+  it('l’ancien visualiseur LaTeX (erreur insérée comme HTML) est retiré, code mort P7.5', () => {
+    expect(fs.existsSync(path.join(ROOT, 'src/pages/CVBuilder/LaTeXViewer.tsx'))).toBe(false)
   })
 
   it('pdf.js est en version corrigée (GHSA-hq66-cqwq-w95j), sans évaluation dynamique', () => {
