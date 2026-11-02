@@ -1,0 +1,62 @@
+/* « Adaptive Liquid Presence » (LiquidPresence.tsx) : halo discret, jamais cliquable.
+   Position et étirement : transform du conteneur, écrit à chaque image par la boucle d'animation.
+   Survol, pression, repos : transitions CSS sur le halo (transform et opacity seulement). */
+
+.lp-root {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 9998;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+  will-change: transform;
+}
+
+/* Effacée : hors de la fenêtre, sur un champ, une fenêtre de dialogue, pendant une sélection */
+.lp-root.is-hidden,
+.lp-root.is-native,
+.lp-root.is-selecting {
+  opacity: 0;
+}
+
+.lp-core {
+  position: absolute;
+  left: -14px;
+  top: -14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(199, 210, 254, 0.5) 0, rgba(139, 92, 246, 0.3) 34%, rgba(99, 102, 241, 0.1) 58%, rgba(99, 102, 241, 0) 72%);
+  opacity: 0.85;
+  transition: transform 0.45s cubic-bezier(0.2, 0.9, 0.25, 1.25), opacity 0.6s ease;
+}
+
+/* Anneau du survol : apparaît en fondu (les dégradés ne s'interpolent pas) */
+.lp-core::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  border: 1px solid rgba(196, 181, 253, 0.45);
+  background: radial-gradient(circle, rgba(244, 114, 182, 0.16) 0, rgba(244, 114, 182, 0) 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* Immobile : forme stable, plus discrète */
+.lp-root.is-idle .lp-core { opacity: 0.3; transform: scale(0.85); }
+
+/* Élément interactif : halo élargi et anneau (attraction vers le centre : LiquidPresence.tsx) */
+.lp-root.is-hover .lp-core { opacity: 0.8; transform: scale(1.7); }
+.lp-root.is-hover .lp-core::after { opacity: 1; }
+
+/* Pression : contraction liquide, rebond au relâchement */
+.lp-root.is-pressed .lp-core { transform: scale(0.72); transition-duration: 0.12s; }
+.lp-root.is-hover.is-pressed .lp-core { transform: scale(1.3); }
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-root { display: none; }
+}

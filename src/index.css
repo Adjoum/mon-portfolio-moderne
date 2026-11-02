@@ -63,30 +63,6 @@ body:has(.whiteboard-page) {
   scrollbar-width: none;
 }
 
-/* Curseur personnalisé */
-.custom-cursor {
-  width: 40px;
-  height: 40px;
-  border: 2px solid var(--primary);
-  border-radius: 50%;
-  position: fixed;
-  pointer-events: none;
-  z-index: 9999;
-  transition: all 0.1s ease;
-  mix-blend-mode: difference;
-}
-
-.custom-cursor-dot {
-  width: 8px;
-  height: 8px;
-  background: var(--accent);
-  border-radius: 50%;
-  position: fixed;
-  pointer-events: none;
-  z-index: 10000;
-  transition: all 0.05s ease;
-}
-
 /* Effets de texte */
 .gradient-text {
   background: linear-gradient(135deg, var(--primary), var(--secondary), var(--accent));
@@ -263,13 +239,6 @@ body:has(.whiteboard-page) {
   80% { clip-path: inset(20% 0 50% 0); transform: translate(-2px, -2px); }
 }
 
-/* Responsive utilities */
-@media (max-width: 768px) {
-  .custom-cursor,
-  .custom-cursor-dot {
-    display: none;
-  }
-}
 
 /* Empêche le scroll sur la page playground */
 body:has(.playground-page) {

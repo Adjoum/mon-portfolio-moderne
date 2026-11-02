@@ -20,8 +20,9 @@ import { clone } from './premium/clone.mjs';
 import { cvgen, cvbaseline } from './premium/cvgen.mjs';
 import { cvpublic } from './premium/cvpublic.mjs';
 import { regression } from './premium/regression.mjs';
+import { curseur } from './premium/curseur.mjs';
 
-export const SCENARIOS = { accueil, session, clone, cvgen, cvbaseline, cvpublic, regression };
+export const SCENARIOS = { accueil, session, clone, cvgen, cvbaseline, cvpublic, regression, curseur };
 
 const wanted = process.argv.slice(2).filter(a => !a.startsWith('--'));
 const engines = (process.env.ENGINES || 'chromium,webkit').split(',');

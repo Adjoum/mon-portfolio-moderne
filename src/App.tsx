@@ -7,6 +7,7 @@ import Navigation from './components/Navigation'
 import { useVisitTracker } from './hooks/useVisitTracker'
 import Footer from './components/Footer'
 import AdminSessionProvider from './components/admin/AdminSessionProvider'
+import LiquidPresence from './components/cursor/LiquidPresence'
 import { ADMIN_SEGMENT_RE, firstSegment, matchAdminSegment } from './lib/adminRoute'
 
 // ✅ Pages existantes — lazy loading
@@ -71,49 +72,6 @@ const FULLSCREEN_ROUTES = [
   '/cv-generator',     // CV Generator a sa propre nav interne
   '/latex-cv-editor',   // LaTeX CV Editor a sa propre nav interne
 ]
-
-// ── Custom cursor ─────────────────────────────────────────────
-const CustomCursor: React.FC = () => {
-  const [position, setPosition]       = useState({ x: -100, y: -100 }) // hors écran jusqu’au premier mouvement
-  const [dotPosition, setDotPosition] = useState({ x: -100, y: -100 })
-  const [isPointer, setIsPointer]     = useState(false)
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      setPosition({ x: e.clientX, y: e.clientY })
-      setTimeout(() => setDotPosition({ x: e.clientX, y: e.clientY }), 100)
-
-      const target = e.target as HTMLElement
-      setIsPointer(
-        window.getComputedStyle(target).cursor === 'pointer' ||
-        target.tagName === 'BUTTON' ||
-        target.tagName === 'A'
-      )
-    }
-    window.addEventListener('mousemove', handleMouseMove)
-    return () => window.removeEventListener('mousemove', handleMouseMove)
-  }, [])
-
-  return (
-    <>
-      <div
-        className="custom-cursor"
-        style={{
-          left: `${position.x}px`,
-          top: `${position.y}px`,
-          transform: isPointer ? 'translate(-50%, -50%) scale(1.5)' : 'translate(-50%, -50%)',
-        }}
-      />
-      <div
-        className="custom-cursor-dot"
-        style={{
-          left: `${dotPosition.x}px`,
-          top: `${dotPosition.y}px`,
-        }}
-      />
-    </>
-  )
-}
 
 // ── Chargement d'une page ─────────────────────────────────────
 // Hauteur d'un écran : le pied de page reste hors de la vue pendant le chargement de la page,
@@ -218,7 +176,8 @@ function App() {
   return (
     <Router>
       <div className="app-container">
-        <CustomCursor />
+        {/* Présence lumineuse discrète autour du curseur système (pointeur fin uniquement) */}
+        <LiquidPresence />
         {/* Session administrateur : suivie sur tout le site et dans tous les onglets */}
         <AdminSessionProvider>
           <AnimatedRoutes />
