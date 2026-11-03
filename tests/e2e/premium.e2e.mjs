@@ -21,8 +21,9 @@ import { cvgen, cvbaseline } from './premium/cvgen.mjs';
 import { cvpublic } from './premium/cvpublic.mjs';
 import { regression } from './premium/regression.mjs';
 import { curseur } from './premium/curseur.mjs';
+import { p8 } from './premium/p8.mjs';
 
-export const SCENARIOS = { accueil, session, clone, cvgen, cvbaseline, cvpublic, regression, curseur };
+export const SCENARIOS = { accueil, session, clone, cvgen, cvbaseline, cvpublic, regression, curseur, p8 };
 
 const wanted = process.argv.slice(2).filter(a => !a.startsWith('--'));
 const engines = (process.env.ENGINES || 'chromium,webkit').split(',');

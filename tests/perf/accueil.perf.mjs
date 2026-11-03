@@ -86,5 +86,5 @@ async function profile(label, url) {
   for (const [k, v] of Object.entries(out)) console.log(`${k.padEnd(32)} ${JSON.stringify(v)}`);
 }
 
-await profile('Référence avant P7 (c7e5e59)', base);
+await profile(process.env.BASE_LABEL || 'Référence', base);
 await profile('Version courante', cur);

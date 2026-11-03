@@ -46,7 +46,7 @@ export async function neutralize(target) {
 }
 
 /** Nouveau contexte : services tiers neutralisés, erreurs de console relevées */
-export async function open(browser, route, { width = 1366, height, reducedMotion, mobile, beforeGoto } = {}) {
+export async function open(browser, route, { width = 1366, height, reducedMotion, mobile, timezoneId, beforeGoto } = {}) {
   const isMobile = mobile ?? width < 768;
   const context = await browser.newContext({
     viewport: { width, height: height ?? HEIGHT(width) },
@@ -54,6 +54,7 @@ export async function open(browser, route, { width = 1366, height, reducedMotion
     isMobile: isMobile && browser.browserType().name() !== 'firefox',
     deviceScaleFactor: 1,
     reducedMotion: reducedMotion ? 'reduce' : 'no-preference',
+    ...(timezoneId ? { timezoneId } : {}),
   });
   const page = await context.newPage();
   await neutralize(page);
