@@ -224,6 +224,7 @@ node scripts/admin-route.mjs check --env <fichier> --name production
 | `bash supabase/tests/ai/run.sh` | centre IA en SQL | Docker |
 | `bash supabase/tests/session/run.sh` | sessions administrateur et verrouillage d'inactivité | Docker |
 | `node supabase/tests/rehearsal/run.mjs` | répétition complète de la mise en production, dans l'ordre réel des migrations, retour arrière compris | Docker |
+| `sh tests/oracle/sauvegarde-mongo.bench.sh` | sauvegarde MongoDB de `deploy/oracle/next.sh` : trois fichiers garantis, format antérieur, archives altérées, restauration sans réseau, secrets, nettoyage | Docker Desktop |
 | `npm run test:stack` | pile Supabase locale réelle, TOTP réel, blog-api démarrée | Docker, `PLAYWRIGHT_CORE_DIR` pour le parcours navigateur |
 | `npm run recette:latex`, `recette:modeles`, `recette:mes-cv`, `recette:studio` | aperçu PDF, modèles LaTeX, droits de « Mes CV », parcours du studio | recette démarrée |
 | `node tests/e2e/premium.e2e.mjs [scénario…]` | `accueil`, `session`, `clone`, `cvgen`, `cvbaseline`, `cvpublic`, `regression`, `curseur`, `p8` ; Chromium et WebKit, IA simulée | recette démarrée, `PLAYWRIGHT_CORE_DIR` |
