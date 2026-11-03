@@ -1,18 +1,38 @@
 import React from 'react'
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { ArrowRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { Variants } from 'framer-motion'
 import Hero from '../components/Hero'
+import { useViewport } from '../components/home/useScene3d'
 
-// Sections sous la ligne de flottaison : chargées après le Hero, hauteur réservée en attendant
+// Sections sous la ligne de flottaison : chargées après le Hero, hauteur réservée en attendant.
+// Hauteurs mesurées par palier (P8.4) : 520 et 800 px fixes faisaient grandir la page de 700 à 3 000 px
+// à l'arrivée de ces sections, et sauter le bas de page pour qui y était déjà.
 const ProjectsGallery = lazy(() => import('../components/ProjectsGallery'))
 const Skills          = lazy(() => import('../components/Skills'))
 const GlobeSection    = lazy(() => import('../components/home/GlobeSection'))
-const SectionPlaceholder: React.FC<{ minHeight: number }> = ({ minHeight }) => (
-  <div style={{ minHeight }} aria-hidden="true" />
+const GALLERY_SLOT = 'min-h-[1250px] sm:min-h-[1050px] md:min-h-[1170px] lg:min-h-[650px] 2xl:min-h-[616px]'
+const SKILLS_SLOT  = 'min-h-[3700px] sm:min-h-[3420px] md:min-h-[3400px] lg:min-h-[2062px] xl:min-h-[1612px]'
+const SectionPlaceholder: React.FC<{ className: string }> = ({ className }) => (
+  <div className={className} aria-hidden="true" />
 )
+
+// Globe : monté à l'approche de l'écran seulement. Chargé dès l'arrivée, il ajoutait environ 27 ms de
+// blocage au chargement mobile (banc alterné, CPU ×4) pour une section tout en bas de page.
+// Emplacement à sa hauteur mesurée : le remplacement se fait hors de la vue.
+const GLOBE_SLOT = 'min-h-[818px] sm:min-h-[942px] lg:min-h-[700px] xl:min-h-[820px]'
+const GlobeSlot: React.FC = () => {
+  const ref = useRef<HTMLDivElement>(null)
+  const { near } = useViewport(ref, '1000px')
+  if (!near) return <div ref={ref} className={GLOBE_SLOT} aria-hidden="true" />
+  return (
+    <Suspense fallback={<SectionPlaceholder className={GLOBE_SLOT} />}>
+      <GlobeSection />
+    </Suspense>
+  )
+}
 
 import { supabase } from '../lib/supabase'
 
@@ -160,7 +180,7 @@ useEffect(() => {
             whileInView="visible"
             viewport={{ once: true, margin: '-60px' }}
           >
-            <Suspense fallback={<SectionPlaceholder minHeight={520} />}>
+            <Suspense fallback={<SectionPlaceholder className={GALLERY_SLOT} />}>
               <ProjectsGallery limit={3} showFilters={false} showHeader={false} />
             </Suspense>
           </motion.div>
@@ -204,7 +224,7 @@ useEffect(() => {
         variants={fadeIn}
         viewport={{ once: true, margin: '-100px' }}
       >
-        <Suspense fallback={<SectionPlaceholder minHeight={800} />}>
+        <Suspense fallback={<SectionPlaceholder className={SKILLS_SLOT} />}>
           <Skills />
         </Suspense>
       </motion.div>
@@ -365,9 +385,7 @@ useEffect(() => {
       </section>
 
       {/* ── Globe : dernière section, juste avant le pied de page ── */}
-      <Suspense fallback={<SectionPlaceholder minHeight={760} />}>
-        <GlobeSection />
-      </Suspense>
+      <GlobeSlot />
     </motion.div>
   )
 }

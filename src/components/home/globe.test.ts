@@ -184,9 +184,10 @@ describe('intégration dans l’accueil', () => {
   const home = read('src/pages/HomePage.tsx')
 
   it('le globe est la dernière section : juste avant le pied de page', () => {
-    const globe = home.indexOf('<GlobeSection />')
+    const globe = home.indexOf('<GlobeSlot />')
     expect(globe).toBeGreaterThan(home.indexOf('Prêt à collaborer'))
     expect(home.slice(globe)).not.toMatch(/<section/)
+    expect(home).toMatch(/const GlobeSlot[\s\S]*<GlobeSection \/>/)
   })
 
   it('three.js n’est jamais importé directement par le chargement initial', () => {

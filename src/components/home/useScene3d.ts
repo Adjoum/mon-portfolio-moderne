@@ -62,9 +62,11 @@ export function useIdleStart(enabled: boolean): boolean {
     let handle: number | undefined
     const start = () => setStarted(true)
     const schedule = () => {
+      // Délai compté depuis la fin du chargement : plus tard dans la visite, aucune attente inutile
+      const loaded = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.loadEventEnd || performance.now()
       timer = window.setTimeout(() => {
         handle = hasIdle ? window.requestIdleCallback(start, { timeout: 2500 }) : window.setTimeout(start, 200)
-      }, SETTLE_AFTER_LOAD_MS)
+      }, Math.max(0, SETTLE_AFTER_LOAD_MS - (performance.now() - loaded)))
     }
     if (document.readyState === 'complete') schedule()
     else window.addEventListener('load', schedule, { once: true })
