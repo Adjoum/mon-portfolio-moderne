@@ -1,0 +1,226 @@
+/* ═══════════════════════════════════════════════════════════════
+   Globe de l'accueil — dernière section, juste avant le pied de page
+   ───────────────────────────────────────────────────────────────
+   Le disque a une taille fixée par la largeur disponible : aucun décalage quand la 3D arrive.
+   ═══════════════════════════════════════════════════════════════ */
+
+.gl-section {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding-block: 56px 72px;
+}
+@media (min-width: 1024px) { .gl-section { padding-block: 72px 88px; } }
+
+.gl-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(46% 62% at 68% 50%, rgba(99, 102, 241, 0.16), transparent 72%),
+    linear-gradient(180deg, transparent, rgba(11, 16, 35, 0.75) 45%, rgba(15, 23, 42, 0));
+}
+
+.gl-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'text' 'stage' 'panel';
+  gap: 20px;
+  align-items: center;
+  justify-items: center;
+  text-align: center;
+}
+@media (min-width: 1024px) {
+  .gl-grid {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    grid-template-rows: 1fr auto auto 1fr;
+    grid-template-areas: '. stage' 'text stage' 'panel stage' '. stage';
+    column-gap: 40px;
+    row-gap: 24px;
+    justify-items: start;
+    text-align: left;
+  }
+}
+
+.gl-text { grid-area: text; max-width: 34rem; }
+.gl-eyebrow {
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #fdba74;
+}
+.gl-lead {
+  margin-top: 14px;
+  font-size: 16px;
+  line-height: 1.65;
+  color: #cbd5e1;
+}
+
+/* ── Disque ────────────────────────────────────────────────── */
+.gl-stage {
+  grid-area: stage;
+  position: relative;
+  width: min(100%, 460px);
+  aspect-ratio: 1 / 1;
+}
+@media (min-width: 640px) { .gl-stage { width: min(100%, 560px); } }
+@media (min-width: 1024px) { .gl-stage { width: min(100%, 660px); justify-self: center; } }
+
+.gl-poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  -webkit-user-drag: none;
+  transition: opacity 0.8s ease;
+}
+.gl-section[data-mode='live'] .h3d-host { opacity: 1; }
+.gl-section[data-mode='live'] .gl-poster { opacity: 0; }
+
+/* ── Libellés : posés par la scène (position et opacité), sous le canevas pour la lecture */
+.gl-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+}
+.gl-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  white-space: nowrap;
+  color: #e2e8f0;
+  text-shadow: 0 1px 2px rgba(2, 6, 23, 0.9);
+  will-change: transform, opacity;
+}
+/* Décalage du texte par rapport au point qu'il désigne */
+.gl-label-country,
+.gl-label-home {
+  font-size: 11px;
+  font-weight: 500;
+  padding-left: 9px;
+  margin-top: -8px;
+}
+.gl-label-home {
+  font-size: 12.5px;
+  font-weight: 700;
+  padding-left: 13px;
+  margin-top: -9px;
+  color: #fed7aa;
+}
+.gl-label-continent {
+  margin-left: -40px;
+  margin-top: -7px;
+  width: 80px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: normal;
+  line-height: 1.25;
+  color: rgba(226, 232, 240, 0.82);
+}
+/* Petit écran : seuls les grands repères, pour rester lisible */
+@media (max-width: 767.98px) {
+  .gl-label[data-major='false'] { display: none; }
+}
+.gl-section[data-mode='static'] .gl-labels { display: none; }
+
+/* ── Commande de vitesse ───────────────────────────────────── */
+.gl-section[data-failed] .gl-panel { visibility: hidden; }
+.gl-panel {
+  grid-area: panel;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 10px 12px;
+}
+@media (min-width: 1024px) { .gl-panel { justify-content: flex-start; } }
+
+.gl-speeds {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.gl-speeds legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+@media (max-width: 1023.98px) { .gl-speeds legend { margin-inline: auto; } }
+
+.gl-speed-row {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.6);
+}
+.gl-speed { position: relative; cursor: pointer; }
+.gl-speed input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.gl-speed span {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 13px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #cbd5e1;
+  white-space: nowrap;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+@media (max-width: 379.98px) { .gl-speed span { padding: 0 9px; font-size: 12px; } }
+.gl-speed:hover span { color: #fff; }
+.gl-speed input:checked + span {
+  color: #fff;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+}
+.gl-speed input:focus-visible + span {
+  outline: 3px solid #a5b4fc;
+  outline-offset: 2px;
+}
+.gl-pause {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 0 18px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.6);
+  font-size: 13px;
+  font-weight: 500;
+  color: #e2e8f0;
+  transition: border-color 0.2s ease;
+}
+.gl-pause:hover { border-color: rgba(165, 180, 252, 0.5); }
+.gl-pause:focus-visible {
+  outline: 3px solid #a5b4fc;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gl-speed span,
+  .gl-poster,
+  .gl-pause { transition: none; }
+}

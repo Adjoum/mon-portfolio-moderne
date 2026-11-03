@@ -9,6 +9,7 @@ import Hero from '../components/Hero'
 // Sections sous la ligne de flottaison : chargées après le Hero, hauteur réservée en attendant
 const ProjectsGallery = lazy(() => import('../components/ProjectsGallery'))
 const Skills          = lazy(() => import('../components/Skills'))
+const GlobeSection    = lazy(() => import('../components/home/GlobeSection'))
 const SectionPlaceholder: React.FC<{ minHeight: number }> = ({ minHeight }) => (
   <div style={{ minHeight }} aria-hidden="true" />
 )
@@ -362,6 +363,11 @@ useEffect(() => {
           </motion.div>
         </div>
       </section>
+
+      {/* ── Globe : dernière section, juste avant le pied de page ── */}
+      <Suspense fallback={<SectionPlaceholder minHeight={760} />}>
+        <GlobeSection />
+      </Suspense>
     </motion.div>
   )
 }
