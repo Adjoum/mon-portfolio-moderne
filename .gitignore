@@ -4,24 +4,28 @@ node_modules/
 .pnp.js
 
 # Testing
-/coverage
+coverage/
 
-# Production
+# Production (frontend à la racine, blog-api/dist pour l'API)
 /build
-/dist
+dist/
 dist-ssr
 *.local
 
-# Environment variables
+# Environment variables : tous les fichiers .env sont ignorés, sauf les modèles sans valeur
+# (.env.example, .env.docker.example, blog-api/.env.example, env/recette/.env.recette.example)
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
+!.env.*.example
+# Fichiers secrets de docker compose, cités explicitement (tests/infra/docker-config.test.ts)
 .env.docker
 .env.docker.test
+# Fichiers d'environnement nommés autrement (api.env de la VM, stack.env des bancs…)
+*.env
 
 # Logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -41,6 +45,8 @@ lerna-debug.log*
 
 # Vite
 *.tsbuildinfo
+# Fichiers temporaires de vite.config.ts, laissés en cas d'arrêt brutal
+*.timestamp-*.mjs
 
 # Optional npm cache directory
 .npm
@@ -59,18 +65,45 @@ ehthumbs.db
 *.stackdump
 [Dd]esktop.ini
 
-# Supabase
+# Vercel : liaison du CLI au projet (identifiants du compte et du projet)
+.vercel/
+
+# Supabase (CLI : référence du projet lié, adresse du pooler)
 .supabase/
+supabase/.temp/
+supabase/.branches/
 
 # Archive files
+*.tar
 *.tar.gz
 *.zip
 *.7z
+
+# Secrets : chemins d'administration, recette locale, copies des .env (scripts/admin-route.mjs, scripts/recette.mjs)
 secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Docker : surcharges propres à une machine
 docker-compose.override.yml
+docker-compose.override.yaml
+compose.override.yml
+compose.override.yaml
+
+# Fichiers téléversés en local par blog-api (npm run dev)
+blog-api/public/uploads/
 
 # Inventaires et sauvegardes de la base de production : jamais dans Git
 # (la sauvegarde contient les comptes, empreintes de mots de passe et secrets TOTP)
 supabase/checks/results/
+supabase/checks/releves.json
 supabase/backup/out/
 *.dump
+# Inventaires de la VM Oracle (deploy/oracle/discover.sh, deploy/oracle/next.sh inventaire)
+vm-*inventaire*.txt
+
+# Rapports internes d'audit et de mise en production (état de la production, failles corrigées,
+# procédures) : conservés en local, jamais publiés (le dépôt GitHub est public)
+/docs/cv-generator-audit/

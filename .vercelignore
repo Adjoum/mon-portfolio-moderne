@@ -1,1 +1,17 @@
 blog-api
+
+# Le CLI Vercel (vercel deploy) ignore .gitignore : sans ces lignes, il enverrait les fichiers
+# locaux suivants. Les variables du build viennent uniquement du dashboard Vercel.
+.env
+.env.*
+*.env
+*.local
+*.pem
+*.key
+*.dump
+secrets
+vm-*inventaire*.txt
+/docs
+/dist
+/supabase/checks/results
+/supabase/backup/out
