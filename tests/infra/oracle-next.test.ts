@@ -148,6 +148,10 @@ describe('documentation alignée sur les fichiers produits', () => {
   it('archive sans conversion de fins de ligne', () => {
     expect(readme).toMatch(/git (-C \S+ )?-c core\.autocrlf=false archive/)
     expect(readme).not.toMatch(/\bgit archive\b/)
+    // Avec git -C, un -o relatif écrirait l'archive dans le dépôt
+    for (const command of readme.match(/git -C [\s\S]*?\barchive\b[\s\S]*?-o "([^"]+)"/g) ?? []) {
+      expect(/-o "([^"]+)"/.exec(command)?.[1], command).toMatch(/^(\/|\$PWD\/|[A-Z]:)/)
+    }
   })
 })
 

@@ -121,9 +121,10 @@ La nouvelle API démarre à côté, injoignable depuis Internet :
 # Poste : archive du commit validé, avec son identifiant et son empreinte ; aucun push.
 # core.autocrlf=false : sous Windows, l'archive aurait sinon des fins de ligne CRLF (Dockerfile compris),
 # que « next.sh verifier » refuse.
+# Chemin de sortie absolu : avec git -C, un chemin relatif serait résolu depuis le dépôt.
 cd /d/portfolio-sauvegardes
 git -C /d/adjoumani-portfolio -c core.autocrlf=false archive --format=tar.gz --prefix="portfolio-next-$c/" \
-  --add-virtual-file="portfolio-next-$c/.next-commit:$c" -o "portfolio-next-$c.tar.gz" "$c" \
+  --add-virtual-file="portfolio-next-$c/.next-commit:$c" -o "$PWD/portfolio-next-$c.tar.gz" "$c" \
   blog-api latex-runner cv-extractor deploy/oracle
 sha256sum "portfolio-next-$c.tar.gz" > "portfolio-next-$c.tar.gz.sha256"
 scp "portfolio-next-$c.tar.gz" "portfolio-next-$c.tar.gz.sha256" "$V":
