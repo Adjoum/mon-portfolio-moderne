@@ -5,6 +5,8 @@
 //   node supabase/tests/rehearsal/run.mjs                       état « production » simulé
 //   node supabase/tests/rehearsal/run.mjs --from-backup <dossier> COPIE de votre base, restaurée
 //                                                                 depuis votre sauvegarde (backup.sh)
+//   … --ordre-noms                                                migrations dans l'ordre des noms de
+//                                                                 fichiers (par défaut : ordre du plan)
 //
 // Enchaîne exactement les étapes du plan : inventaire → comparaison → sauvegarde (backup.sh,
 // client postgres:17-alpine) → vérification de la sauvegarde → migrations → contrôles →
@@ -30,22 +32,24 @@ const DB = `rehearsal-db-${id}`;
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'rehearsal-'));
 const env = { ...process.env, MSYS_NO_PATHCONV: '1' };
 
-const MIGRATIONS = [
+// Ordre du plan de production (supabase/README.md) : la migration de session suit directement
+// P0.A1 et le CV public (phase 3) ; le centre IA, « Mes CV » et la 13 viennent en phase 4.
+// --ordre-noms rejoue l'ordre alphabétique des fichiers, celui de la recette locale.
+const PRODUCTION_ORDER = [
   '20261030120000_p0a1_admin_access_control', '20261030120100_p0a1_storage_access_control',
   '20261030120200_p0a1_security_advisor',
   '20261030150000_cv_public_document', '20261030150100_project_images_no_public_listing',
+  '20261102100000_admin_session_idle',
   '20261030170000_ai_control_center_schema', '20261030170100_ai_admin_functions',
   '20261030170200_ai_runtime_functions', '20261030170300_ai_initial_catalog',
-  '20261101100000_cv_private_history', '20261101120000_ai_probe_details', '20261102100000_admin_session_idle',
+  '20261101100000_cv_private_history', '20261101120000_ai_probe_details',
   '20261102100100_cv_documents_quota_privileges',
 ];
-const ROLLBACKS = [
-  '20261102100100_cv_documents_quota_privileges', '20261102100000_admin_session_idle',
-  '20261101120000_ai_probe_details', '20261101100000_cv_private_history',
-  '20261030170000_ai_control_center', '20261030150100_project_images_no_public_listing',
-  '20261030150000_cv_public_document', '20261030120200_p0a1_security_advisor',
-  '20261030120100_p0a1_storage_access_control', '20261030120000_p0a1_admin_access_control',
-];
+const MIGRATIONS = process.argv.includes('--ordre-noms') ? [...PRODUCTION_ORDER].sort() : PRODUCTION_ORDER;
+// Retour arrière dans l'ordre exactement inverse ; un seul script pour les quatre migrations du centre IA
+const ROLLBACKS = [...MIGRATIONS].reverse()
+  .map(m => (/^20261030170[0-3]00_/.test(m) ? '20261030170000_ai_control_center' : m))
+  .filter((m, i, all) => all.indexOf(m) === i);
 /** Fonctions SECURITY DEFINER appelées volontairement par le site (contrôles internes) */
 const RPC_ALLOWED = /^(is_portfolio_admin|visit_count|cv_active|cv_publish_version|cv_restore_version|cv_history_allowed|ai_admin_\w+|admin_session_\w+)$/;
 
@@ -188,7 +192,8 @@ try {
   check('sauvegarde vérifiée : empreintes, comptes, restauration, nombres de lignes', verify.status === 0);
   }
 
-  console.log('▶ 5. Migrations (rôle postgres, une transaction chacune)');
+  console.log(`▶ 5. Migrations (rôle postgres, une transaction chacune), ordre ${MIGRATIONS === PRODUCTION_ORDER ? 'du plan de production' : 'des noms'}`);
+  console.log(`   ${MIGRATIONS.map(m => m.slice(0, 14)).join(' → ')}`);
   for (const m of MIGRATIONS) psql('postgres', `set client_min_messages = warning;\n${sqlFile(`supabase/migrations/${m}.sql`)}`, ['--single-transaction']);
   const after = inventory('apres');
   check(`les ${MIGRATIONS.length} migrations s’appliquent`, after.tables.some(t => t.name === 'ai_providers') && after.tables.some(t => t.name === 'cv_versions'));
