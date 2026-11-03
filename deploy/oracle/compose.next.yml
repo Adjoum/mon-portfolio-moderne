@@ -1,0 +1,156 @@
+# deploy/oracle/compose.next.yml — nouvelle API du portfolio, EN PARALLÈLE de l'actuelle, sur la VM Oracle
+#
+# Fichier autonome : il ne décrit que les trois services du portfolio. Même une commande sans liste
+# de services (up, down, ps) ne peut donc viser qu'eux, jamais un autre projet de la VM.
+# Toujours lancé par deploy/oracle/next.sh, qui vérifie d'abord noms, port, disque et mémoire.
+#
+#   NEXT_TAG=<commit> docker compose -p portfolio-next -f deploy/oracle/compose.next.yml <commande>
+#
+# Rien de commun avec le conteneur blog-api actuel (créé hors Compose, port 5000) :
+#   - noms de conteneurs : blog-api-next, portfolio-latex-runner, portfolio-cv-extractor ;
+#   - images : portfolio-next/* (l'image de l'API actuelle n'est ni reconstruite ni réétiquetée) ;
+#   - port : 127.0.0.1:5001 uniquement (NEXT_PORT pour un autre), jamais exposé par nginx à ce stade ;
+#   - réseaux propres au projet (portfolio-next_*) ; aucun volume.
+# Secrets : uniquement dans NEXT_ENV_FILE (hors dépôt, root, chmod 600), jamais en argument.
+
+name: portfolio-next
+
+x-logs: &logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+
+  # ── Nouvelle API ────────────────────────────────────────────
+  blog-api-next:
+    build:
+      context: ../../blog-api
+      dockerfile: Dockerfile
+    image: portfolio-next/blog-api:${NEXT_TAG:?NEXT_TAG requis (commit déployé)}
+    container_name: blog-api-next
+    restart: unless-stopped
+    env_file: ${NEXT_ENV_FILE:-/etc/portfolio-next/api.env}
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - LATEX_RUNNER_URL=http://latex-runner:3000
+      - CV_EXTRACTOR_URL=http://cv-extractor:3100
+    ports:
+      - "127.0.0.1:${NEXT_PORT:-5001}:5000"
+    # egress : seule sortie vers Internet (MongoDB, Supabase, Pinecone, Cloudinary, fournisseurs IA)
+    networks:
+      - egress
+      - latex
+      - extract
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Bornes : protègent les autres applications de la VM
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: 1.0
+    pids_limit: 256
+    logging: *logs
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      latex-runner:
+        condition: service_healthy
+      cv-extractor:
+        condition: service_healthy
+
+  # ── Compilation LaTeX isolée : même durcissement que docker-compose.yml ──
+  latex-runner:
+    build:
+      context: ../../latex-runner
+      dockerfile: Dockerfile
+    image: portfolio-next/latex-runner:${NEXT_TAG:?NEXT_TAG requis (commit déployé)}
+    container_name: portfolio-latex-runner
+    restart: unless-stopped
+    environment:
+      - LATEX_MAX_CONCURRENCY=2
+      - LATEX_TIMEOUT_MS=20000
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /work:rw,size=64m,mode=0700,uid=10001,gid=10001,noexec,nosuid,nodev
+      - /tmp:rw,size=1m,mode=1777,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    pids_limit: 64
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    ulimits:
+      nofile:
+        soft: 256
+        hard: 256
+      core: 0
+    networks:
+      - latex
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "3"
+
+  # ── Extraction isolée des CV importés ───────────────────────
+  cv-extractor:
+    build:
+      context: ../../cv-extractor
+      dockerfile: Dockerfile
+    image: portfolio-next/cv-extractor:${NEXT_TAG:?NEXT_TAG requis (commit déployé)}
+    container_name: portfolio-cv-extractor
+    restart: unless-stopped
+    environment:
+      - EXTRACT_MAX_CONCURRENCY=2
+      - EXTRACT_TIMEOUT_MS=20000
+    user: "10002:10002"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,size=1m,mode=1777,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    pids_limit: 64
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1.0
+    ulimits:
+      nofile:
+        soft: 256
+        hard: 256
+      core: 0
+    networks:
+      - extract
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "3"
+
+# Trois réseaux propres au projet, créés et supprimés avec lui :
+#   egress  : l'API seule, avec sortie Internet ;
+#   latex   : interne, API ↔ latex-runner, sans aucune route vers Internet ni vers l'hôte ;
+#   extract : interne, API ↔ cv-extractor ; latex-runner et cv-extractor ne se voient pas.
+networks:
+  egress:
+    driver: bridge
+  latex:
+    driver: bridge
+    internal: true
+  extract:
+    driver: bridge
+    internal: true
