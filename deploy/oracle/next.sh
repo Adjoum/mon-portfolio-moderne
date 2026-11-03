@@ -4,6 +4,7 @@
 #   sudo sh deploy/oracle/next.sh inventaire   LECTURE SEULE : état de la VM à transmettre avant le GO
 #   sudo sh deploy/oracle/next.sh env          crée le fichier d'environnement depuis le conteneur blog-api
 #   sudo sh deploy/oracle/next.sh sauvegarder-mongo   mongodump (lecture seule) puis restauration d'essai isolée
+#   sh deploy/oracle/next.sh verifier-archive <archive>   restauration d'essai d'une archive copiée (NEXT_BACKUP_DIR)
 #   sudo sh deploy/oracle/next.sh verifier     LECTURE SEULE : prérequis du lancement (code 1 si bloquant)
 #   sudo sh deploy/oracle/next.sh construire   construit portfolio-next/{blog-api,latex-runner,cv-extractor}:<commit>
 #   sudo sh deploy/oracle/next.sh demarrer     démarre les trois conteneurs, blog-api-next sur 127.0.0.1:5001
@@ -262,29 +263,77 @@ cmd_env() {
   done
 }
 
-# ── sauvegarder-mongo : lecture seule sur la base, puis restauration d'essai ──
-# L'adresse MongoDB (identifiants compris) arrive par l'entrée standard du conteneur : jamais en
-# argument ni en variable d'environnement, donc invisible pour ps et docker inspect.
+# ── sauvegarder-mongo : lecture seule sur la base, puis restauration d'essai isolée ──
+# Garanties :
+#   - secrets : l'adresse MongoDB (identifiants compris) arrive par l'entrée standard du conteneur
+#     de sauvegarde, jamais en argument ni en variable (invisible pour ps et docker inspect) ; elle
+#     ne passe que par un fichier en mémoire (tmpfs, 600) supprimé aussitôt ; aucun journal Docker ;
+#   - la restauration ne reçoit aucune adresse, vise 127.0.0.1 explicitement, tourne sans réseau et
+#     s'arrête si une autre interface que la boucle locale existe : Atlas est injoignable ;
+#   - Docker : un réseau et deux conteneurs temporaires, nommés et étiquetés, retirés même après une
+#     interruption ; aucun volume (ceux que déclare l'image MongoDB sont remplacés par des tmpfs) ;
+#     l'image MongoDB est retirée à la fin si elle a été téléchargée pour l'occasion ;
+#   - intégrité : empreintes SHA-256 de l'archive et des comptes, restauration complète avec
+#     contrôle des objets, puis comparaison collection par collection du nombre de documents.
+SAVE_NETWORK=portfolio-sauvegarde-net
+SAVE_CONTAINER=portfolio-sauvegarde-mongo
+CHECK_CONTAINER=portfolio-verif-sauvegarde
+SAVE_LABEL_KEY=adjoumani.portfolio
+SAVE_LABEL_VALUE=sauvegarde-mongo
+NO_VOLUMES="--tmpfs /data/db:rw,size=1m --tmpfs /data/configdb:rw,size=1m"
+HARDEN="--cap-drop ALL --security-opt no-new-privileges --pids-limit 256 --log-driver none --label $SAVE_LABEL_KEY=$SAVE_LABEL_VALUE"
+PULLED_IMAGE=0
+
 DUMP_SCRIPT='set -eu
 u=$(sed -n "s/^MONGODB_URI='"'"'\(.*\)'"'"'\$/\1/p" | head -1)
-[ -n "$u" ] || { echo "MONGODB_URI introuvable dans le fichier d environnement" >&2; exit 1; }
+[ -n "$u" ] || { echo "MONGODB_URI introuvable" >&2; exit 1; }
 umask 077
 printf "uri: '"'"'%s'"'"'\n" "$u" > /tmp/dump.yaml
+u=
 if ! mongodump --config=/tmp/dump.yaml --gzip --archive="/backup/$1" > /tmp/dump.log 2>&1; then
-  rm -f /tmp/dump.yaml "/backup/$1"; tail -3 /tmp/dump.log | sed "s#://[^@ ]*@#://<masqué>@#g" >&2; exit 1
+  rm -f /tmp/dump.yaml "/backup/$1"; tail -5 /tmp/dump.log | sed "s#://[^@ ]*@#://<masqué>@#g" >&2; exit 1
 fi
 rm -f /tmp/dump.yaml
-cd /backup && sha256sum "$1" > "$1.sha256"
+sed -n "s/.*done dumping \([^ ]*\) (\([0-9]*\) documents*).*/\1 \2/p" /tmp/dump.log | tr -d "\`" | sort > "/backup/$1.comptes"
+[ -s "/backup/$1.comptes" ] || { rm -f "/backup/$1" "/backup/$1.comptes"; echo "aucune collection sauvegardée" >&2; exit 1; }
+cd /backup && sha256sum "$1" "$1.comptes" > "$1.sha256"
 echo "archive $(stat -c %s "$1")"
-sed -n "s/.*done dumping \([^ ]*\) (\([0-9]*\) documents*).*/collection \1 \2/p" /tmp/dump.log'
+sed "s/^/collection /" "$1.comptes"'
+
 RESTORE_SCRIPT='set -eu
+for i in /sys/class/net/*; do
+  [ "${i##*/}" = lo ] || { echo "interface réseau ${i##*/} présente : restauration refusée" >&2; exit 1; }
+done
+echo "réseau : boucle locale seulement (Atlas injoignable)"
 cd /backup
-sha256sum -c "$1.sha256" >/dev/null 2>&1 || { echo "empreinte SHA-256 NON conforme" >&2; exit 1; }
-echo "empreinte SHA-256 conforme"
-mkdir -p /tmp/db
+sha256sum -c "$1.sha256" >/dev/null 2>&1 || { echo "empreintes SHA-256 NON conformes" >&2; exit 1; }
+grep -q " $1\$" "$1.sha256" && grep -q " $1.comptes\$" "$1.sha256" || { echo "fichier d’empreintes incomplet" >&2; exit 1; }
+echo "empreintes SHA-256 conformes : archive et comptes"
+L=mongodb://127.0.0.1:27017
+mkdir /tmp/db
 mongod --dbpath /tmp/db --bind_ip 127.0.0.1 --port 27017 --wiredTigerCacheSizeGB 0.25 --fork --logpath /tmp/mongod.log >/dev/null
-mongorestore --gzip --archive="/backup/$1" > /tmp/restore.log 2>&1 || { tail -3 /tmp/restore.log >&2; exit 1; }
-sed -n "s/.*[^0-9]\([0-9][0-9]*\) document(s) restored successfully\. \([0-9][0-9]*\) document(s) failed.*/restaurés \1 échecs \2/p" /tmp/restore.log'
+cat > /tmp/comptes.js <<FIN
+db.adminCommand({listDatabases: 1}).databases.forEach(function (d) {
+  if (["admin", "local", "config"].indexOf(d.name) >= 0) return;
+  var s = db.getSiblingDB(d.name);
+  s.getCollectionInfos({type: "collection"}).forEach(function (c) {
+    if (c.name.indexOf("system.") !== 0) print(d.name + "." + c.name + " " + s.getCollection(c.name).countDocuments({}));
+  });
+});
+FIN
+[ -z "$(mongosh --quiet --norc "$L" /tmp/comptes.js)" ] || { echo "MongoDB jetable non vide" >&2; exit 1; }
+mongorestore --uri="$L" --gzip --archive="/backup/$1" --objcheck --stopOnError > /tmp/restore.log 2>&1 || { tail -3 /tmp/restore.log >&2; exit 1; }
+restored=$(sed -n "s/.*[^0-9]\([0-9][0-9]*\) document(s) restored successfully\. \([0-9][0-9]*\) document(s) failed.*/\1 \2/p" /tmp/restore.log)
+expected=$(awk "{ s += \$NF } END { print s + 0 }" "$1.comptes")
+[ "$expected" -gt 0 ] || { echo "sauvegarde vide" >&2; exit 1; }
+[ "$restored" = "$expected 0" ] || { echo "documents restaurés : « $restored » pour $expected attendus" >&2; exit 1; }
+echo "documents restaurés : $expected sur $expected, aucun échec"
+sort "$1.comptes" > /tmp/attendu
+mongosh --quiet --norc "$L" /tmp/comptes.js | sort > /tmp/obtenu
+if ! cmp -s /tmp/attendu /tmp/obtenu; then
+  echo "écart entre comptes sauvegardés (<) et restaurés (>) :" >&2; diff /tmp/attendu /tmp/obtenu | sed "s/^/  /" >&2; exit 1
+fi
+echo "collections : $(grep -c . /tmp/attendu), chacune avec exactement le nombre de documents sauvegardé"'
 
 # Adresse MongoDB au format du fichier d'environnement : celui de la nouvelle API s'il existe,
 # sinon lue dans le conteneur blog-api (aucun fichier à créer pour sauvegarder)
@@ -294,29 +343,78 @@ mongo_uri() {
     v = substr($0, 13); if (index(v, q)) exit 3; printf "MONGODB_URI=%s%s%s\n", q, v, q; exit }'
 }
 
+ours()   { [ "$(docker inspect --format "{{index .Config.Labels \"$SAVE_LABEL_KEY\"}}" "$1" 2>/dev/null)" = "$SAVE_LABEL_VALUE" ]; }
+# Retire les seules ressources temporaires de la sauvegarde, reconnues par leur nom ET leur étiquette
+backup_cleanup() {
+  for c in "$SAVE_CONTAINER" "$CHECK_CONTAINER"; do
+    if ours "$c"; then docker rm -f -v "$c" >/dev/null 2>&1; fi
+  done
+  if [ "$(docker network inspect --format "{{index .Labels \"$SAVE_LABEL_KEY\"}}" "$SAVE_NETWORK" 2>/dev/null)" = "$SAVE_LABEL_VALUE" ]; then
+    docker network rm "$SAVE_NETWORK" >/dev/null 2>&1
+  fi
+  if [ "$PULLED_IMAGE" = 1 ] && docker image rm "$MONGO_IMAGE" >/dev/null 2>&1; then
+    echo "image MongoDB téléchargée pour l’occasion retirée"
+  fi
+}
+
+# Restauration d'essai de l'archive $1 du dossier $2 (chemin vu par Docker)
+restore_check() {
+  if out=$(docker run --rm --name "$CHECK_CONTAINER" --network none --memory 1g --cpus 1 $NO_VOLUMES $HARDEN \
+      -v "$2:/backup:ro" "$MONGO_IMAGE" sh -c "$RESTORE_SCRIPT" sh "$1" 2>&1); then
+    printf '%s\n' "$out" | sed 's/^/  /'
+    ok "restauration d’essai complète et conforme"
+  else
+    printf '%s\n' "$out" | sed 's/^/  /'
+    block "restauration d’essai NON conforme : cette archive n’est pas une sauvegarde fiable"
+  fi
+}
+
 cmd_sauvegarder_mongo() {
   need_root
   [ -f "$ENV_FILE" ] || docker inspect "$LEGACY" >/dev/null 2>&1 || die "ni $ENV_FILE ni conteneur $LEGACY : adresse MongoDB introuvable"
+  for c in "$SAVE_CONTAINER" "$CHECK_CONTAINER"; do
+    ! docker inspect "$c" >/dev/null 2>&1 || die "conteneur $c déjà présent (exécution interrompue ?) : le vérifier, puis sudo docker rm -f -v $c"
+  done
+  ! docker network inspect "$SAVE_NETWORK" >/dev/null 2>&1 || die "réseau $SAVE_NETWORK déjà présent : le vérifier, puis sudo docker network rm $SAVE_NETWORK"
+  free_kib=$(df -Pk "$(docker_root)" | awk 'NR == 2 { print $4 }')
+  [ "${free_kib:-0}" -ge $((3 * 1024 * 1024)) ] || die "moins de 3 Gio libres pour Docker"
+  if ! docker image inspect "$MONGO_IMAGE" >/dev/null 2>&1 && [ "${NEXT_KEEP_MONGO_IMAGE:-0}" != 1 ]; then PULLED_IMAGE=1; fi
   umask 077
   mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR" || die "création de $BACKUP_DIR impossible"
   name="mongo-$(date -u +%Y%m%dT%H%M%SZ).archive.gz"
   BLOCKERS=0
+  trap backup_cleanup EXIT
+  trap 'exit 130' INT TERM HUP
   section "Sauvegarde MongoDB (mongodump, lecture seule) → $BACKUP_DIR/$name"
   echo "adresse lue dans : $( [ -f "$ENV_FILE" ] && echo "$ENV_FILE" || echo "le conteneur $LEGACY") (jamais affichée)"
-  dump=$(mongo_uri | docker run -i --rm --network bridge --memory 512m --cpus 1 --tmpfs /tmp:rw,size=8m,mode=1777 \
-    -v "$BACKUP_DIR:/backup" "$MONGO_IMAGE" sh -c "$DUMP_SCRIPT" sh "$name") || die "échec de mongodump"
+  docker network create --driver bridge --label "$SAVE_LABEL_KEY=$SAVE_LABEL_VALUE" "$SAVE_NETWORK" >/dev/null \
+    || die "création du réseau temporaire $SAVE_NETWORK impossible"
+  dump=$(mongo_uri | docker run -i --rm --name "$SAVE_CONTAINER" --network "$SAVE_NETWORK" --memory 512m --cpus 1 \
+    --read-only --tmpfs /tmp:rw,size=8m,mode=1777 $NO_VOLUMES $HARDEN -v "$BACKUP_DIR:/backup" \
+    "$MONGO_IMAGE" sh -c "$DUMP_SCRIPT" sh "$name") || die "échec de mongodump"
+  # La restauration n'a besoin d'aucun réseau : le réseau temporaire est retiré dès maintenant
+  docker network rm "$SAVE_NETWORK" >/dev/null 2>&1 || true
   expected=$(printf '%s\n' "$dump" | awk '$1 == "collection" { s += $3 } END { print s + 0 }')
   echo "archive : $(printf '%s\n' "$dump" | awk '$1 == "archive" { print $2 }') octets ; collections : $(printf '%s\n' "$dump" | grep -c '^collection ') ; documents : $expected"
-  printf '%s\n' "$dump" | awk '$1 == "collection" { gsub(/`/, "", $2); printf "  %s : %s\n", $2, $3 }'
-  section "Restauration d'essai dans un MongoDB jetable, sans réseau"
-  out=$(docker run --rm --network none --memory 1g --cpus 1 -v "$BACKUP_DIR:/backup:ro" \
-    "$MONGO_IMAGE" sh -c "$RESTORE_SCRIPT" sh "$name") || die "échec de la restauration d'essai"
-  printf '%s\n' "$out" | grep -v '^restaurés'
-  restored=$(printf '%s\n' "$out" | sed -n 's/^restaurés \([0-9]*\) échecs \([0-9]*\)$/\1 \2/p')
-  if [ "$expected" -gt 0 ] && [ "$restored" = "$expected 0" ]; then ok "restauration complète : $expected documents, aucun échec"
-  else block "restauration : « $restored » pour $expected documents sauvegardés"; fi
-  echo "À copier hors de la VM puis garder chiffrée (comptes du blog, commentaires) : $BACKUP_DIR/$name"
-  echo "Depuis le poste : ssh <vm> 'sudo cat $BACKUP_DIR/$name' > $name ; idem pour $name.sha256 ; puis sha256sum -c $name.sha256"
+  printf '%s\n' "$dump" | awk '$1 == "collection" { printf "  %s : %s\n", $2, $3 }'
+  section "Restauration d’essai dans un MongoDB jetable, sans réseau"
+  restore_check "$name" "$BACKUP_DIR"
+  echo "Fichiers (root 600) : $BACKUP_DIR/$name, $name.comptes, $name.sha256"
+  echo "À copier hors de la VM puis garder chiffrés : comptes du blog et commentaires"
+  verdict
+}
+
+# ── verifier-archive : restauration d'essai d'une archive copiée (VM ou poste) ──
+#   NEXT_BACKUP_DIR=<dossier> sh deploy/oracle/next.sh verifier-archive <archive>
+# Sous Git Bash : MSYS_NO_PATHCONV=1 et un chemin Windows (D:/portfolio-sauvegardes).
+cmd_verifier_archive() {
+  [ -n "${1:-}" ] || die "usage : NEXT_BACKUP_DIR=<dossier> sh deploy/oracle/next.sh verifier-archive <archive>"
+  ! docker inspect "$CHECK_CONTAINER" >/dev/null 2>&1 || die "conteneur $CHECK_CONTAINER déjà présent : le vérifier, puis docker rm -f -v $CHECK_CONTAINER"
+  BLOCKERS=0
+  trap backup_cleanup EXIT
+  trap 'exit 130' INT TERM HUP
+  section "Vérification de $1 ($BACKUP_DIR) : MongoDB jetable, sans réseau"
+  restore_check "$1" "$BACKUP_DIR"
   verdict
 }
 
@@ -492,10 +590,11 @@ case "${1:-}" in
   inventaire) cmd_inventaire ;;
   env)        cmd_env ;;
   sauvegarder-mongo) cmd_sauvegarder_mongo ;;
+  verifier-archive) shift; cmd_verifier_archive "$@" ;;
   verifier)   cmd_verifier ;;
   construire) cmd_construire ;;
   demarrer)   cmd_demarrer ;;
   controler)  cmd_controler ;;
   arreter)    cmd_arreter ;;
-  *)          sed -n '3,11p' "$0"; exit 2 ;;
+  *)          sed -n '3,12p' "$0"; exit 2 ;;
 esac

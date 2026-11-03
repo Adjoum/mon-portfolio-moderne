@@ -72,14 +72,24 @@ sudo sh deploy/oracle/next.sh demarrer     # démarrage, attente de santé, puis
 sudo sh deploy/oracle/next.sh controler    # à relancer à volonté, lecture seule
 ```
 
-- `sauvegarder-mongo` lit l'adresse MongoDB dans `/etc/portfolio-next/api.env` s'il existe, sinon
-  dans le conteneur `blog-api` ; elle passe par l'entrée standard du conteneur de sauvegarde, jamais
-  en argument ni en variable. Archive et empreinte dans `/var/backups/portfolio-next` (root 700), puis
-  restauration complète dans un MongoDB jetable sans réseau (1 Gio, 1 CPU) et comparaison des nombres
-  de documents. Image MongoDB épinglée par empreinte : aucune étiquette `mongo:*` créée ni déplacée.
-  Rapatriement depuis **Git Bash** (la redirection de PowerShell 5.1 corrompt un fichier binaire) :
-  `ssh <vm> 'sudo cat /var/backups/portfolio-next/<archive>' > <archive>`, de même pour `<archive>.sha256`,
-  puis `sha256sum -c <archive>.sha256`.
+- `sauvegarder-mongo` (peut aussi se lancer sans copie du code : `ssh <vm> 'sudo sh -s sauvegarder-mongo' < deploy/oracle/next.sh`) :
+  - **secrets** : adresse MongoDB lue dans `/etc/portfolio-next/api.env` s'il existe, sinon dans le
+    conteneur `blog-api` ; transmise par l'entrée standard, jamais en argument ni en variable ; elle ne
+    touche qu'un fichier en mémoire (tmpfs, 600) supprimé aussitôt ; aucun journal Docker
+    (`--log-driver none`) ; erreurs masquées ;
+  - **Atlas jamais visé par la restauration** : conteneur sans réseau, qui ne reçoit aucune adresse,
+    restaure vers `127.0.0.1` et refuse de continuer s'il voit une autre interface que la boucle locale ;
+  - **Docker** : réseau `portfolio-sauvegarde-net` et conteneurs `portfolio-sauvegarde-mongo`,
+    `portfolio-verif-sauvegarde`, étiquetés, retirés à la fin même après une interruption ; aucun
+    volume (ceux de l'image MongoDB remplacés par des tmpfs) ; image MongoDB épinglée par empreinte,
+    retirée à la fin si elle a été téléchargée pour l'occasion ; aucune capacité, mémoire et CPU bornés ;
+  - **intégrité** : archive, comptes par collection et empreintes SHA-256 des deux dans
+    `/var/backups/portfolio-next` (root 700, fichiers 600) ; restauration complète avec `--objcheck`
+    dans un MongoDB vide, puis comparaison collection par collection du nombre de documents.
+- Rapatriement et vérification sur le poste, depuis **Git Bash** (la redirection de PowerShell 5.1
+  corrompt un fichier binaire) : `ssh <vm> 'sudo cat /var/backups/portfolio-next/<fichier>' > <fichier>`
+  pour `<archive>`, `<archive>.comptes` et `<archive>.sha256`, puis `sha256sum -c <archive>.sha256`, puis
+  `MSYS_NO_PATHCONV=1 NEXT_BACKUP_DIR='D:/portfolio-sauvegardes' sh deploy/oracle/next.sh verifier-archive <archive>`.
 - `env` reprend du conteneur `blog-api` les seules variables lues par la nouvelle API, sans jamais
   afficher une valeur, et force `ADMIN_BOOTSTRAP_ENABLED`, `KNOWLEDGE_WRITE_ENABLED` et `AI_ENABLED` à
   `false`. Les anciennes clés IA ne sont pas reprises. Une valeur contenant une apostrophe est signalée
