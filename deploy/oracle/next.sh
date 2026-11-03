@@ -18,7 +18,7 @@
 set -u
 
 PROJECT=portfolio-next
-LEGACY=blog-api
+LEGACY=${NEXT_LEGACY:-blog-api}
 LEGACY_DIR=${LEGACY_DIR:-/home/ubuntu/adjoumani-portfolio}
 CONTAINERS="blog-api-next portfolio-latex-runner portfolio-cv-extractor"
 NETWORKS="portfolio-next_egress portfolio-next_latex portfolio-next_extract"
@@ -273,7 +273,7 @@ cmd_env() {
 #   - Docker : un réseau et deux conteneurs temporaires, nommés et étiquetés, retirés même après une
 #     interruption ; aucun volume (ceux que déclare l'image MongoDB sont remplacés par des tmpfs) ;
 #     l'image MongoDB est retirée à la fin si elle a été téléchargée pour l'occasion ;
-#   - intégrité : empreintes SHA-256 de l'archive et des comptes, restauration complète avec
+#   - intégrité : empreintes SHA-256 de l'archive et des comptes, CRC de chaque collection, restauration complète avec
 #     contrôle des objets, puis comparaison collection par collection du nombre de documents.
 SAVE_NETWORK=portfolio-sauvegarde-net
 SAVE_CONTAINER=portfolio-sauvegarde-mongo
@@ -300,15 +300,37 @@ cd /backup && sha256sum "$1" "$1.comptes" > "$1.sha256"
 echo "archive $(stat -c %s "$1")"
 sed "s/^/collection /" "$1.comptes"'
 
+# Restauration d'essai. $1 : archive ; $2 : exiger-comptes (sauvegarde neuve) ou auto ; $3 : totaux
+# attendus « collections documents », facultatifs. Deux formats :
+#   complet   : <archive>, <archive>.comptes, <archive>.sha256 couvrant les deux (depuis 6c23d69) ;
+#   antérieur : <archive>, <archive>.sha256 de l'archive seule (sauvegardes faites avant 6c23d69).
+# Dans les deux cas : empreinte, gzip, CRC de chaque collection (vérifié par mongorestore), objets
+# BSON, échecs nuls, et chaque collection lue dans l'archive présente avec tous ses documents.
 RESTORE_SCRIPT='set -eu
 for i in /sys/class/net/*; do
   [ "${i##*/}" = lo ] || { echo "interface réseau ${i##*/} présente : restauration refusée" >&2; exit 1; }
 done
 echo "réseau : boucle locale seulement (Atlas injoignable)"
 cd /backup
+[ -s "$1" ] || { echo "archive absente ou vide : $1" >&2; exit 1; }
+[ -s "$1.sha256" ] || { echo "fichier d’empreintes absent ou vide : $1.sha256" >&2; exit 1; }
+grep -q " $1\$" "$1.sha256" || { echo "l’empreinte de l’archive manque dans $1.sha256" >&2; exit 1; }
+if grep -q " $1.comptes\$" "$1.sha256"; then
+  mode=complet
+  [ -s "$1.comptes" ] || { echo "sauvegarde incomplète : $1.comptes annoncé par les empreintes mais absent ou vide" >&2; exit 1; }
+else
+  mode=anterieur
+  [ "$2" != exiger-comptes ] || { echo "sauvegarde incomplète : comptes par collection absents des empreintes" >&2; exit 1; }
+fi
 sha256sum -c "$1.sha256" >/dev/null 2>&1 || { echo "empreintes SHA-256 NON conformes" >&2; exit 1; }
-grep -q " $1\$" "$1.sha256" && grep -q " $1.comptes\$" "$1.sha256" || { echo "fichier d’empreintes incomplet" >&2; exit 1; }
-echo "empreintes SHA-256 conformes : archive et comptes"
+if [ "$mode" = complet ]; then
+  echo "empreintes SHA-256 conformes : archive et comptes"
+else
+  echo "empreinte SHA-256 conforme : archive (format antérieur, sans comptes)"
+  [ ! -e "$1.comptes" ] || echo "fichier $1.comptes présent mais non couvert par les empreintes : ignoré"
+fi
+gzip -t "$1" 2>/dev/null || { echo "compression gzip corrompue" >&2; exit 1; }
+echo "compression gzip intègre"
 L=mongodb://127.0.0.1:27017
 mkdir /tmp/db
 mongod --dbpath /tmp/db --bind_ip 127.0.0.1 --port 27017 --wiredTigerCacheSizeGB 0.25 --fork --logpath /tmp/mongod.log >/dev/null
@@ -322,18 +344,41 @@ db.adminCommand({listDatabases: 1}).databases.forEach(function (d) {
 });
 FIN
 [ -z "$(mongosh --quiet --norc "$L" /tmp/comptes.js)" ] || { echo "MongoDB jetable non vide" >&2; exit 1; }
-mongorestore --uri="$L" --gzip --archive="/backup/$1" --objcheck --stopOnError > /tmp/restore.log 2>&1 || { tail -3 /tmp/restore.log >&2; exit 1; }
-restored=$(sed -n "s/.*[^0-9]\([0-9][0-9]*\) document(s) restored successfully\. \([0-9][0-9]*\) document(s) failed.*/\1 \2/p" /tmp/restore.log)
-expected=$(awk "{ s += \$NF } END { print s + 0 }" "$1.comptes")
-[ "$expected" -gt 0 ] || { echo "sauvegarde vide" >&2; exit 1; }
-[ "$restored" = "$expected 0" ] || { echo "documents restaurés : « $restored » pour $expected attendus" >&2; exit 1; }
-echo "documents restaurés : $expected sur $expected, aucun échec"
-sort "$1.comptes" > /tmp/attendu
-mongosh --quiet --norc "$L" /tmp/comptes.js | sort > /tmp/obtenu
-if ! cmp -s /tmp/attendu /tmp/obtenu; then
-  echo "écart entre comptes sauvegardés (<) et restaurés (>) :" >&2; diff /tmp/attendu /tmp/obtenu | sed "s/^/  /" >&2; exit 1
+if ! mongorestore --uri="$L" --gzip --archive="/backup/$1" --objcheck --stopOnError > /tmp/restore.log 2>&1; then
+  grep -iE "failed|error|crc" /tmp/restore.log | tail -3 | sed "s/^[^\t]*\t//" >&2
+  echo "restauration interrompue : archive corrompue ou incomplète" >&2; exit 1
 fi
-echo "collections : $(grep -c . /tmp/attendu), chacune avec exactement le nombre de documents sauvegardé"'
+echo "contrôles internes de l’archive conformes : CRC de chaque collection, objets BSON"
+sed -n "s/.*finished restoring \([^ ]*\) (\([0-9]*\) documents*, \([0-9]*\) failures*).*/\1 \2 \3/p" /tmp/restore.log | tr -d "\`" | sort > /tmp/rapport
+[ -s /tmp/rapport ] || { echo "aucune collection restaurée" >&2; exit 1; }
+awk "\$3 != 0 { bad = 1 } END { exit bad }" /tmp/rapport || { echo "échecs d’insertion signalés par mongorestore" >&2; exit 1; }
+awk "{ print \$1, \$2 }" /tmp/rapport > /tmp/lu
+total=$(awk "{ s += \$2 } END { print s + 0 }" /tmp/lu)
+[ "$total" -gt 0 ] || { echo "sauvegarde vide" >&2; exit 1; }
+restored=$(sed -n "s/.*[^0-9]\([0-9][0-9]*\) document(s) restored successfully\. \([0-9][0-9]*\) document(s) failed.*/\1 \2/p" /tmp/restore.log)
+[ "$restored" = "$total 0" ] || { echo "bilan de restauration incohérent : « $restored » pour $total documents lus" >&2; exit 1; }
+mongosh --quiet --norc "$L" /tmp/comptes.js | sort > /tmp/obtenu
+if ! cmp -s /tmp/lu /tmp/obtenu; then
+  echo "écart entre documents lus dans l’archive (<) et présents après restauration (>) :" >&2
+  diff /tmp/lu /tmp/obtenu | sed "s/^/  /" >&2; exit 1
+fi
+if [ "$mode" = complet ]; then
+  sort "$1.comptes" > /tmp/attendu
+  if ! cmp -s /tmp/attendu /tmp/obtenu; then
+    echo "écart entre comptes de la sauvegarde (<) et restaurés (>) :" >&2; diff /tmp/attendu /tmp/obtenu | sed "s/^/  /" >&2; exit 1
+  fi
+fi
+n=$(grep -c . /tmp/obtenu)
+if [ -n "${3:-}" ]; then
+  [ "$3" = "$n $total" ] || { echo "totaux attendus « $3 » (collections documents), obtenus « $n $total »" >&2; exit 1; }
+  echo "totaux attendus confirmés : $n collections, $total documents"
+fi
+echo "documents restaurés : $total, aucun échec ; collections : $n, chacune complète"
+sed "s/^/  /" /tmp/obtenu
+for f in "$1" "$1.comptes" "$1.sha256"; do
+  if [ -e "$f" ]; then echo "fichier $f : $(stat -c %s "$f") octets"; fi
+done
+echo "FORMAT $mode"'
 
 # Adresse MongoDB au format du fichier d'environnement : celui de la nouvelle API s'il existe,
 # sinon lue dans le conteneur blog-api (aucun fichier à créer pour sauvegarder)
@@ -357,11 +402,16 @@ backup_cleanup() {
   fi
 }
 
-# Restauration d'essai de l'archive $1 du dossier $2 (chemin vu par Docker)
+# Restauration d'essai de l'archive $1 du dossier $2 (chemin vu par Docker) ;
+# $3 : exiger-comptes ou auto ; $4 : totaux attendus « collections documents » (facultatif)
 restore_check() {
   if out=$(docker run --rm --name "$CHECK_CONTAINER" --network none --memory 1g --cpus 1 $NO_VOLUMES $HARDEN \
-      -v "$2:/backup:ro" "$MONGO_IMAGE" sh -c "$RESTORE_SCRIPT" sh "$1" 2>&1); then
-    printf '%s\n' "$out" | sed 's/^/  /'
+      -v "$2:/backup:ro" "$MONGO_IMAGE" sh -c "$RESTORE_SCRIPT" sh "$1" "$3" "${4:-}" 2>&1); then
+    printf '%s\n' "$out" | grep -v '^FORMAT ' | sed 's/^/  /'
+    if printf '%s\n' "$out" | grep -qx 'FORMAT anterieur'; then
+      warn "format antérieur, sans comptes : intégrité prouvée par l’empreinte, gzip, le CRC de chaque collection et la restauration complète"
+      [ -n "${4:-}" ] || warn "totaux non confrontés : NEXT_ATTENDU='<collections> <documents>' les compare à ceux annoncés lors de la sauvegarde"
+    fi
     ok "restauration d’essai complète et conforme"
   else
     printf '%s\n' "$out" | sed 's/^/  /'
@@ -395,26 +445,35 @@ cmd_sauvegarder_mongo() {
   # La restauration n'a besoin d'aucun réseau : le réseau temporaire est retiré dès maintenant
   docker network rm "$SAVE_NETWORK" >/dev/null 2>&1 || true
   expected=$(printf '%s\n' "$dump" | awk '$1 == "collection" { s += $3 } END { print s + 0 }')
-  echo "archive : $(printf '%s\n' "$dump" | awk '$1 == "archive" { print $2 }') octets ; collections : $(printf '%s\n' "$dump" | grep -c '^collection ') ; documents : $expected"
+  collections=$(printf '%s\n' "$dump" | grep -c '^collection ')
+  echo "archive : $(printf '%s\n' "$dump" | awk '$1 == "archive" { print $2 }') octets ; collections : $collections ; documents : $expected"
   printf '%s\n' "$dump" | awk '$1 == "collection" { printf "  %s : %s\n", $2, $3 }'
   section "Restauration d’essai dans un MongoDB jetable, sans réseau"
-  restore_check "$name" "$BACKUP_DIR"
-  echo "Fichiers (root 600) : $BACKUP_DIR/$name, $name.comptes, $name.sha256"
-  echo "À copier hors de la VM puis garder chiffrés : comptes du blog et commentaires"
+  # Sauvegarde neuve : les trois fichiers sont exigés et les totaux de mongodump doivent se retrouver
+  restore_check "$name" "$BACKUP_DIR" exiger-comptes "$collections $expected"
+  if [ "$BLOCKERS" -eq 0 ]; then
+    echo "SAUVEGARDE $name : 3 fichiers (archive, .comptes, .sha256), root 600, dans $BACKUP_DIR"
+    echo "Copie et vérification sur le poste : deploy/oracle/README.md, « Rapatriement »"
+  fi
   verdict
 }
 
 # ── verifier-archive : restauration d'essai d'une archive copiée (VM ou poste) ──
-#   NEXT_BACKUP_DIR=<dossier> sh deploy/oracle/next.sh verifier-archive <archive>
+#   NEXT_BACKUP_DIR=<dossier> [NEXT_ATTENDU='<collections> <documents>'] [NEXT_EXIGER_COMPTES=1] \
+#     sh deploy/oracle/next.sh verifier-archive <archive>
 # Sous Git Bash : MSYS_NO_PATHCONV=1 et un chemin Windows (D:/portfolio-sauvegardes).
 cmd_verifier_archive() {
-  [ -n "${1:-}" ] || die "usage : NEXT_BACKUP_DIR=<dossier> sh deploy/oracle/next.sh verifier-archive <archive>"
+  [ -n "${1:-}" ] || die "usage : NEXT_BACKUP_DIR=<dossier> [NEXT_ATTENDU='<collections> <documents>'] sh deploy/oracle/next.sh verifier-archive <archive>"
+  attendu=${NEXT_ATTENDU:-}
+  [ -z "$attendu" ] || printf '%s' "$attendu" | grep -Eqx '[0-9]+ [0-9]+' || die "NEXT_ATTENDU doit valoir « <collections> <documents> », par exemple '5 16'"
+  exigence=auto
+  [ "${NEXT_EXIGER_COMPTES:-0}" != 1 ] || exigence=exiger-comptes
   ! docker inspect "$CHECK_CONTAINER" >/dev/null 2>&1 || die "conteneur $CHECK_CONTAINER déjà présent : le vérifier, puis docker rm -f -v $CHECK_CONTAINER"
   BLOCKERS=0
   trap backup_cleanup EXIT
   trap 'exit 130' INT TERM HUP
   section "Vérification de $1 ($BACKUP_DIR) : MongoDB jetable, sans réseau"
-  restore_check "$1" "$BACKUP_DIR"
+  restore_check "$1" "$BACKUP_DIR" "$exigence" "$attendu"
   verdict
 }
 
