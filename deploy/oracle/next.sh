@@ -328,6 +328,12 @@ cmd_verifier() {
   if [ "$(uname -m)" = aarch64 ]; then ok "architecture ARM64"; else warn "architecture $(uname -m)"; fi
   if docker compose version >/dev/null 2>&1; then ok "$(docker compose version | head -1)"; else block "docker compose absent (paquet docker-compose-plugin)"; fi
   if [ -f "$COMPOSE_FILE" ]; then ok "$COMPOSE_FILE"; else block "fichier compose absent"; fi
+  # Une archive créée sous Windows sans « git -c core.autocrlf=false archive » contient des fins de
+  # ligne CRLF : les Dockerfile écriraient alors des \r dans la configuration de TeX
+  crlf=$(find "$ROOT/blog-api" "$ROOT/latex-runner" "$ROOT/cv-extractor" "$HERE" -type f -not -path '*/node_modules/*' \
+    \( -name Dockerfile -o -name '*.sh' -o -name '*.yml' -o -name '*.mjs' -o -name '*.ts' -o -name '*.json' \) \
+    -exec grep -l "$(printf '\r')" {} + 2>/dev/null | wc -l)
+  if [ "$crlf" -eq 0 ]; then ok "fins de ligne LF dans la copie"; else block "$crlf fichier(s) en CRLF : refaire l'archive avec git -c core.autocrlf=false archive"; fi
   for c in $CONTAINERS; do
     if ! docker inspect "$c" >/dev/null 2>&1; then ok "nom de conteneur $c libre"
     elif [ "$(label_of "$c")" = "$PROJECT" ]; then ok "conteneur $c déjà au projet $PROJECT"

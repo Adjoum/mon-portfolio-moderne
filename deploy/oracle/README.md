@@ -53,9 +53,11 @@ La nouvelle API démarre à côté, injoignable depuis Internet :
 ### Étapes (chacune après accord)
 
 ```bash
-# Poste : archive du commit validé, avec son identifiant ; aucun push
+# Poste : archive du commit validé, avec son identifiant ; aucun push.
+# core.autocrlf=false : sous Windows, l'archive aurait sinon des fins de ligne CRLF (Dockerfile compris),
+# que « next.sh verifier » refuse.
 c=$(git rev-parse --short=12 HEAD)
-git archive --format=tar.gz --prefix="portfolio-next-$c/" --add-virtual-file="portfolio-next-$c/.next-commit:$c" \
+git -c core.autocrlf=false archive --format=tar.gz --prefix="portfolio-next-$c/" --add-virtual-file="portfolio-next-$c/.next-commit:$c" \
   -o "portfolio-next-$c.tar.gz" "$c" blog-api latex-runner cv-extractor deploy/oracle
 scp "portfolio-next-$c.tar.gz" <utilisateur>@<vm>:
 
