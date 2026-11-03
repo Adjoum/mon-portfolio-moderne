@@ -1,66 +1,85 @@
-# Makefile — D:\adjoumani-portfolio\Makefile
-# Windows : installer make via  winget install GnuWin32.Make
-# Ou utiliser directement les commandes docker compose
+# Makefile — pile Docker du POSTE LOCAL (docker-compose.yml)
+# Windows : installer make via  winget install GnuWin32.Make, ou lancer les commandes docker compose directement
+#
+# JAMAIS sur la VM Oracle, qui héberge d'autres projets : y utiliser deploy/oracle/next.sh.
+# Garde-fous :
+#   - projet Compose nommé : les commandes ne visent que les conteneurs de ce projet ;
+#   - services listés explicitement : jamais le profil dev sans le demander (up-dev) ;
+#   - aucune commande Docker globale (prune, suppression de tous les conteneurs ou volumes) ;
+#   - volumes du projet supprimés seulement avec CONFIRM=supprimer-volumes-locaux ;
+#   - arrêt immédiat si un conteneur blog-api existe hors de ce projet (cas de la VM de production).
 
-up:
-	docker compose up -d
+PROJECT  := adjoumani-portfolio
+COMPOSE  := docker compose -p $(PROJECT) --env-file .env.docker
+SERVICES := api latex-runner cv-extractor frontend
+
+guard:
+	@owner=$$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' blog-api 2>/dev/null) \
+	  && [ "$$owner" != "$(PROJECT)" ] \
+	  && { echo "ARRET : un conteneur blog-api existe hors du projet $(PROJECT) (VM de production ?). Rien n'a ete lance."; exit 1; } \
+	  || true
+
+up: guard
+	$(COMPOSE) up -d $(SERVICES)
 	@echo ✅ Demarré — Frontend: http://localhost:8080  API: http://localhost:5000
 
-up-build:
-	docker compose up -d --build
+up-build: guard
+	$(COMPOSE) up -d --build $(SERVICES)
 	@echo ✅ Build et démarré
 
-up-dev:
-	docker compose --profile dev up -d
+up-dev: guard
+	$(COMPOSE) --profile dev up -d $(SERVICES) mongo mongo-express
 	@echo ✅ Dev — MongoDB UI: http://localhost:8081
 
-down:
-	docker compose down
+down: guard
+	$(COMPOSE) down
 
-down-clean:
-	docker compose down -v --remove-orphans
+# Supprime aussi les volumes de CE projet (MongoDB local, fichiers téléversés) : confirmation exigée
+down-clean: guard
+	@[ "$(CONFIRM)" = "supprimer-volumes-locaux" ] \
+	  || { echo "REFUS : make down-clean CONFIRM=supprimer-volumes-locaux (efface les volumes du projet $(PROJECT))"; exit 1; }
+	$(COMPOSE) --profile dev down -v
 
-build:
-	docker compose build --no-cache
+build: guard
+	$(COMPOSE) build --no-cache api latex-runner cv-extractor frontend
 
-build-api:
-	docker compose build --no-cache api
+build-api: guard
+	$(COMPOSE) build --no-cache api
 
-build-front:
-	docker compose build --no-cache frontend
+build-front: guard
+	$(COMPOSE) build --no-cache frontend
 
 logs:
-	docker compose logs -f
+	$(COMPOSE) logs -f
 
 logs-api:
-	docker compose logs -f api
+	$(COMPOSE) logs -f api
 
 logs-front:
-	docker compose logs -f frontend
+	$(COMPOSE) logs -f frontend
 
 status:
-	docker compose ps
+	$(COMPOSE) ps
 
-restart:
-	docker compose restart
+restart: guard
+	$(COMPOSE) restart $(SERVICES)
 
-restart-api:
-	docker compose restart api
+restart-api: guard
+	$(COMPOSE) restart api
 
 shell-api:
-	docker compose exec api sh
+	$(COMPOSE) exec api sh
 
 shell-mongo:
-	docker compose exec mongo mongosh -u "$$MONGO_USER" -p "$$MONGO_PASSWORD"
+	$(COMPOSE) exec mongo mongosh -u "$$MONGO_USER" -p "$$MONGO_PASSWORD"
 
 health:
 	curl -s http://localhost:5000/api/health
 
-clean:
-	docker compose down
-	docker image prune -f
-	docker volume prune -f
+# Arrête le projet et retire les images construites pour lui ; volumes et autres projets intacts
+clean: guard
+	$(COMPOSE) down --rmi local
 
-.PHONY: up up-build up-dev down down-clean build build-api build-front \
+.PHONY: guard up up-build up-dev down down-clean build build-api build-front \
         logs logs-api logs-front status restart restart-api \
         shell-api shell-mongo health clean
