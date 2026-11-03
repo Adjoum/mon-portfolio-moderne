@@ -1,6 +1,6 @@
 // P8.4 — Règles communes aux scènes 3D : appareils modestes, surveillance des images
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { FrameBudget, modestDevice, onTooSlow, reportTooSlow } from './scene3dRules'
+import { CALM_FRAME_MS, FrameBudget, createPacer, modestDevice, onTooSlow, reportTooSlow } from './scene3dRules'
 
 const feed = (budget: FrameBudget, ms: number, frames: number) => {
   const verdicts = []
@@ -46,10 +46,44 @@ describe('surveillance des images', () => {
     expect(feed(budget, 16.7, 300)).toEqual([])
   })
 
+  it('cadence posée à 30 images/s : jugée par rapport à cette cadence', () => {
+    const calm = new FrameBudget()
+    const verdicts = []
+    for (let i = 0; i < 600; i++) verdicts.push(calm.push(33.4, CALM_FRAME_MS))
+    expect(verdicts.filter(v => v !== 'keep')).toEqual([])
+    const slow = new FrameBudget()
+    const late = []
+    for (let i = 0; i < 300; i++) late.push(slow.push(70, CALM_FRAME_MS))
+    expect(late.filter(v => v !== 'keep')[0]).toBe('lower')
+  })
+
   it('une reprise après une pause n’est pas prise pour de la lenteur', () => {
     const budget = new FrameBudget()
     for (let i = 0; i < 100; i++) budget.push(i % 2 ? 5000 : 16)
     expect(feed(budget, 16.7, 100)).toEqual([])
+  })
+})
+
+describe('cadence des images', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('interaction : image suivante aussitôt ; rotation libre : à 30 images/s ; arrêt : plus rien', () => {
+    vi.useFakeTimers()
+    const invalidate = vi.fn()
+    const pacer = createPacer(invalidate)
+    pacer.next(false)
+    expect(invalidate).toHaveBeenCalledTimes(1)
+    expect(pacer.expectedMs).toBeCloseTo(1000 / 60)
+    pacer.next(true)
+    expect(pacer.expectedMs).toBeCloseTo(1000 / 30)
+    vi.advanceTimersByTime(12)
+    expect(invalidate).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(10)
+    expect(invalidate).toHaveBeenCalledTimes(2)
+    pacer.next(true)
+    pacer.stop()
+    vi.advanceTimersByTime(100)
+    expect(invalidate).toHaveBeenCalledTimes(2)
   })
 })
 

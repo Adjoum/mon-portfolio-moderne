@@ -6,13 +6,14 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { AdditiveBlending, BackSide, BufferAttribute, BufferGeometry, CatmullRomCurve3, Color, Group, SphereGeometry, TubeGeometry, Vector3 } from 'three'
 import Scene3d from './Scene3d'
 import { arcPoints, decodeBorders, decodeHomeOutline, decodeLand, hexToRgb, landDots, lineSegments, toVec3 } from './globeGeometry'
-import { easeSpeed, rotationAfter, rotationFacing } from './globeMotion'
+import { easeSpeed, rotationAfter, rotationFacing, speedValue } from './globeMotion'
 import { CONTINENT_COLORS, GLOBE_LABELS, HOME, HOME_COLOR, PLACES } from './globePlaces'
 import {
   ARC_FRAGMENT, ARC_VERTEX, ATMOSPHERE_FRAGMENT, BODY_FRAGMENT, BODY_VERTEX, DOTS_FRAGMENT, DOTS_VERTEX,
   HUBS_FRAGMENT, HUBS_VERTEX, LINE_FRAGMENT, LINE_VERTEX,
 } from './globeShaders'
-import { FrameBudget, reportTooSlow } from './scene3dRules'
+import { FrameBudget, createPacer, reportTooSlow } from './scene3dRules'
+import { useWarmScene } from './useWarmScene'
 
 /** Sphère de rayon 1 et halo logés dans le canevas, avec une marge */
 const CAMERA = { fov: 28, position: [0, 0, 5.1] as [number, number, number] }
@@ -20,6 +21,8 @@ const CAMERA = { fov: 28, position: [0, 0, 5.1] as [number, number, number] }
 const TILT = { x: 0.22, z: -0.14 }
 const ATMOSPHERE_SCALE = 1.14
 const LABEL_FADE = { from: 0.3, to: 0.52 }
+/** En dessous (Lent, Normal), la rotation est posée à 30 images par seconde */
+const CALM_SPEED = speedValue('normal') * 1.2
 
 export interface GlobeControl {
   /** Vitesse voulue, en rad/s ; 0 pour la pause */
@@ -57,6 +60,7 @@ function Arc({ to, color, phase, time, segments }: { to: [number, number, number
 }
 
 function Globe({ control, labels, stage, lite, onLive, onFail }: SceneProps) {
+  const rootRef = useRef<Group>(null)
   const spinRef = useRef<Group>(null)
   const speed = useRef(0)
   const rotation = useRef(rotationFacing(HOME.lon + 8))
@@ -68,6 +72,9 @@ function Globe({ control, labels, stage, lite, onLive, onFail }: SceneProps) {
   const dpr = useThree(s => s.viewport.dpr)
   const setDpr = useThree(s => s.setDpr)
   const invalidate = useThree(s => s.invalidate)
+  const pacer = useMemo(() => createPacer(invalidate), [invalidate])
+  useEffect(() => () => pacer.stop(), [pacer])
+  const warm = useWarmScene(rootRef)
 
   const scene = useMemo(() => {
     const land = decodeLand()
@@ -136,9 +143,9 @@ function Globe({ control, labels, stage, lite, onLive, onFail }: SceneProps) {
 
   useFrame(({ camera, size: view }, rawDelta) => {
     const spin = spinRef.current
-    if (!spin) return
+    if (!spin || !warm.current) return
     const dt = Math.min(rawDelta, 0.05)
-    const verdict = budget.current.push(rawDelta * 1000)
+    const verdict = budget.current.push(rawDelta * 1000, pacer.expectedMs)
     if (verdict === 'lower') {
       stage.dataset.quality = 'réduite'
       setDpr(1)
@@ -176,11 +183,16 @@ function Globe({ control, labels, stage, lite, onLive, onFail }: SceneProps) {
       shown.current = true
       onLive()
     }
-    if (!shown.current || speed.current > 0 || control.speed > 0) invalidate()
+    if (!shown.current || speed.current > 0 || control.speed > 0) {
+      const changing = Math.abs(speed.current - control.speed) > 0.01
+      pacer.next(shown.current && !changing && control.speed < CALM_SPEED)
+    } else {
+      pacer.stop()
+    }
   })
 
   return (
-    <group rotation={[TILT.x, 0, TILT.z]}>
+    <group ref={rootRef} rotation={[TILT.x, 0, TILT.z]} visible={false}>
       <mesh geometry={sphere} scale={ATMOSPHERE_SCALE} renderOrder={0}>
         <shaderMaterial vertexShader={BODY_VERTEX} fragmentShader={ATMOSPHERE_FRAGMENT} uniforms={uniforms.atmosphere} side={BackSide} transparent depthWrite={false} blending={AdditiveBlending} />
       </mesh>

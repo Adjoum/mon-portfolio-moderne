@@ -11,7 +11,8 @@ import Scene3d from './Scene3d'
 import { cardFontsReady, drawCard } from './cardTexture'
 import { CARD_STEP, atRest, flick, stepCylinder, type CylinderState } from './cylinderMotion'
 import { HOME_CARDS } from './homeCards'
-import { FrameBudget, reportTooSlow } from './scene3dRules'
+import { FrameBudget, createPacer, reportTooSlow } from './scene3dRules'
+import { useWarmScene } from './useWarmScene'
 
 const RADIUS = 3.1
 const CARD_HEIGHT = 2.34
@@ -57,6 +58,9 @@ function Scene({ control, stage, textures, segments, onLive, onFail, onNavigate 
   const budget = useRef(new FrameBudget())
   const setDpr = useThree(s => s.setDpr)
   const invalidate = useThree(s => s.invalidate)
+  const pacer = useMemo(() => createPacer(invalidate), [invalidate])
+  useEffect(() => () => pacer.stop(), [pacer])
+  const warm = useWarmScene(groupRef)
 
   const cardGeometry = useMemo(() => new CylinderGeometry(RADIUS + 0.014, RADIUS + 0.014, CARD_HEIGHT, Math.round(segments / 3.5), 1, true, -CARD_ARC / 2, CARD_ARC), [segments])
   const bodyGeometry = useMemo(() => new CylinderGeometry(RADIUS, RADIUS, BODY_HEIGHT, segments, 1, false), [segments])
@@ -139,8 +143,9 @@ function Scene({ control, stage, textures, segments, onLive, onFail, onNavigate 
   }
 
   useFrame((_, rawDelta) => {
+    if (!warm.current) return
     const dt = Math.min(rawDelta, 0.05)
-    const verdict = budget.current.push(rawDelta * 1000)
+    const verdict = budget.current.push(rawDelta * 1000, pacer.expectedMs)
     if (verdict === 'lower') {
       stage.dataset.quality = 'réduite'
       setDpr(1)
@@ -176,7 +181,9 @@ function Scene({ control, stage, textures, segments, onLive, onFail, onNavigate 
       shown.current = true
       onLive()
     }
-    if (!shown.current || dragging.current || settling || !atRest(motion.current, input)) invalidate()
+    const busy = !shown.current || dragging.current || settling || input.target !== null
+    if (busy || !atRest(motion.current, input)) pacer.next(!busy && !input.hold)
+    else pacer.stop()
   })
 
   const stop = (e: ThreeEvent<PointerEvent | MouseEvent>) => e.stopPropagation()
@@ -188,7 +195,7 @@ function Scene({ control, stage, textures, segments, onLive, onFail, onNavigate 
       <directionalLight position={[-7, 1.5, 1.5]} intensity={2.2} color="#8b5cf6" />
       <directionalLight position={[7, -0.5, 1]} intensity={1.8} color="#ec4899" />
 
-      <group ref={groupRef}>
+      <group ref={groupRef} visible={false}>
         {/* Le corps arrête les pointeurs : une carte du dos n'est jamais atteinte à travers lui */}
         <mesh geometry={bodyGeometry} onPointerOver={stop} onPointerMove={stop} onClick={stop}>
           <meshStandardMaterial color="#10163a" metalness={0.72} roughness={0.36} />

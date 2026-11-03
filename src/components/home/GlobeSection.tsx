@@ -17,8 +17,10 @@ const SMALL_QUERY = '(max-width: 767.98px)'
 
 export default function GlobeSection() {
   const sectionRef = useRef<HTMLElement>(null)
-  const [stage, setStage] = useState<HTMLDivElement | null>(null)
-  const [labels, setLabels] = useState<HTMLDivElement | null>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
+  const labelsRef = useRef<HTMLDivElement>(null)
+  /** Éléments transmis au démarrage de la 3D seulement : aucun rendu de plus à l'affichage de la section */
+  const [nodes, setNodes] = useState<{ stage: HTMLDivElement; labels: HTMLDivElement } | null>(null)
   const reduceMotion = useMediaQuery(REDUCED_MOTION_QUERY)
   const small = useMediaQuery(SMALL_QUERY)
   const modest = useModestDevice()
@@ -31,6 +33,9 @@ export default function GlobeSection() {
   const want3d = !reduceMotion && (!modest || live) && !failed
   const { near, visible } = useViewport(sectionRef, '500px')
   const started = useIdleStart(want3d && near)
+  useEffect(() => {
+    if (started && stageRef.current && labelsRef.current) setNodes({ stage: stageRef.current, labels: labelsRef.current })
+  }, [started])
   const mode = !want3d ? 'static' : live ? 'live' : 'loading'
 
   const control = useRef<GlobeControl>({ speed: speedValue(DEFAULT_GLOBE_SPEED), wake: () => {} })
@@ -63,23 +68,23 @@ export default function GlobeSection() {
         </div>
 
         <div
-          ref={setStage}
+          ref={stageRef}
           className="gl-stage"
           role="img"
           aria-label="Globe terrestre sombre, couvert de points lumineux sur les continents ; des arcs relient la Côte d’Ivoire à des pays de chaque continent."
         >
           <img className="gl-poster" src={poster} alt="" width={900} height={900} loading="lazy" decoding="async" draggable={false} />
-          <div ref={setLabels} className="gl-labels" aria-hidden="true">
+          <div ref={labelsRef} className="gl-labels" aria-hidden="true">
             {GLOBE_LABELS.map(l => (
               <span key={l.name} className={`gl-label gl-label-${l.kind}`} data-major={l.major}>{l.name}</span>
             ))}
           </div>
-          {started && stage && labels && (
+          {started && nodes && (
             <Suspense fallback={null}>
               <GlobeScene
                 control={control.current}
-                labels={labels}
-                stage={stage}
+                labels={nodes.labels}
+                stage={nodes.stage}
                 visible={visible}
                 lite={small}
                 onLive={() => setLive(true)}

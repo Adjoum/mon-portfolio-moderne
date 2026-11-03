@@ -44,22 +44,33 @@ export function useViewport(ref: RefObject<Element | null>, margin: string) {
   return state
 }
 
-/** Vrai une fois la page chargée et le navigateur au repos : le premier affichage n'attend jamais la 3D */
+/**
+ * Mesuré (banc alterné, desktop) : lancée dès le repos qui suit le chargement, l'analyse de three.js
+ * retardait la peinture du portrait, l'élément LCP, d'environ 70 ms. La page a donc d'abord le temps
+ * de peindre ses images.
+ */
+const SETTLE_AFTER_LOAD_MS = 1200
+
+/** Vrai une fois la page chargée, peinte et le navigateur au repos : le premier affichage n'attend jamais la 3D */
 export function useIdleStart(enabled: boolean): boolean {
   const [started, setStarted] = useState(false)
 
   useEffect(() => {
     if (!enabled || started) return
     const hasIdle = typeof window.requestIdleCallback === 'function'
+    let timer: number | undefined
     let handle: number | undefined
     const start = () => setStarted(true)
     const schedule = () => {
-      handle = hasIdle ? window.requestIdleCallback(start, { timeout: 2500 }) : window.setTimeout(start, 1200)
+      timer = window.setTimeout(() => {
+        handle = hasIdle ? window.requestIdleCallback(start, { timeout: 2500 }) : window.setTimeout(start, 200)
+      }, SETTLE_AFTER_LOAD_MS)
     }
     if (document.readyState === 'complete') schedule()
     else window.addEventListener('load', schedule, { once: true })
     return () => {
       window.removeEventListener('load', schedule)
+      window.clearTimeout(timer)
       if (handle === undefined) return
       if (hasIdle) window.cancelIdleCallback(handle)
       else window.clearTimeout(handle)

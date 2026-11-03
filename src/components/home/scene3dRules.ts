@@ -26,6 +26,33 @@ export function modestDevice(): boolean {
 
 export type BudgetVerdict = 'keep' | 'lower' | 'abandon'
 
+const FRAME_MS = 1000 / 60
+/** Rotation libre et lente : 30 images par seconde suffisent (moins d'un pixel par image), moitié moins de travail */
+export const CALM_FRAME_MS = 1000 / 30
+
+/**
+ * Cadence des images en mode « à la demande » : immédiate pendant une interaction ou une rotation
+ * rapide, posée à 30 images par seconde sinon. `expectedMs` : intervalle voulu avant l'image en cours.
+ */
+export function createPacer(invalidate: () => void) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let calm = false
+  return {
+    get expectedMs() { return calm ? CALM_FRAME_MS : FRAME_MS },
+    next(isCalm: boolean) {
+      clearTimeout(timer)
+      calm = isCalm
+      // Marge pour l'imprécision des minuteurs : l'image part au rafraîchissement d'écran suivant
+      if (isCalm) timer = setTimeout(invalidate, CALM_FRAME_MS - 14)
+      else invalidate()
+    },
+    stop() {
+      clearTimeout(timer)
+      calm = false
+    },
+  }
+}
+
 /** Mêmes seuils que la bulle du Hero (elasticBubble.ts) : qualité réduite, puis repli sans 3D */
 const LOWER_ABOVE_MS = 28
 const ABANDON_ABOVE_MS = 40
@@ -56,7 +83,9 @@ export class FrameBudget {
   /** Premier bilan passé : la scène peut s'afficher sans risquer une apparition suivie d'un retrait */
   verified = false
 
-  push(ms: number): BudgetVerdict {
+  /** `expectedMs` : intervalle voulu (cadence posée) ; la mesure y est ramenée à l'échelle de 60 images/s */
+  push(measured: number, expectedMs = FRAME_MS): BudgetVerdict {
+    const ms = (measured * FRAME_MS) / expectedMs
     if (ms <= 0) return 'keep'
     if (ms > GAP_MS) return ++this.gaps >= GAP_STREAK ? 'abandon' : 'keep'
     this.gaps = 0

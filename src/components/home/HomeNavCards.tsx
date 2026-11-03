@@ -27,6 +27,8 @@ const RELEASE_MS = 900
 export default function HomeNavCards() {
   const navigate = useNavigate()
   const rootRef = useRef<HTMLElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
+  /** Élément de la scène, transmis au démarrage de la 3D seulement : aucun rendu de plus au premier affichage */
   const [stage, setStage] = useState<HTMLElement | null>(null)
   const roomy = useMediaQuery(STAGE_QUERY)
   const desktop = useMediaQuery(DESKTOP_QUERY)
@@ -42,6 +44,9 @@ export default function HomeNavCards() {
   const want3d = roomy && !reduceMotion && (!modest || live) && failedHeight === null
   const { near, visible } = useViewport(rootRef, '320px')
   const started = useIdleStart(want3d && near)
+  useEffect(() => {
+    if (started) setStage(stageRef.current)
+  }, [started])
   const mode = !want3d ? 'cards' : live ? 'live' : 'poster'
 
   const control = useRef<CylinderControl>({ target: null, paused: false, wake: () => {} })
@@ -98,7 +103,7 @@ export default function HomeNavCards() {
       style={failedHeight === null ? undefined : { minHeight: failedHeight }}
     >
       {want3d && (
-        <div ref={setStage} className="hc-stage" data-cursor="native" aria-hidden="true">
+        <div ref={stageRef} className="hc-stage" data-cursor="native" aria-hidden="true">
           <span className="hc-poster" />
           {started && stage && (
             <Suspense fallback={null}>
