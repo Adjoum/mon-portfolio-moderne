@@ -1,434 +1,301 @@
-# React + TypeScript + Vite :  🚀 Portfolio Moderne & Innovant
+# Portfolio d'Adjoumani Koffi Wilfried
 
+Portfolio personnel, blog et outils assistés par IA : [www.adjoumani-koffi.com](https://www.adjoumani-koffi.com).
 
-
-<div align="center">
-
-![Portfolio Banner](https://img.shields.io/badge/Portfolio-Moderne-00f0ff?style=for-the-badge&logo=react&logoColor=white)
-[![React](https://img.shields.io/badge/React-18.3-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://reactjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Vite](https://img.shields.io/badge/Vite-6.0-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
-
-**Un portfolio ultra-moderne avec animations de dernière génération et gestion dynamique de contenu**
-
-[🌐 Démo Live](#) • [📖 Documentation](#documentation) • [🚀 Installation](#installation) • [💡 Fonctionnalités](#fonctionnalités)
-
-</div>
+Le dépôt réunit le site React (déployé sur Vercel), l'API `blog-api` et deux services isolés
+(`latex-runner`, `cv-extractor`) hébergés sur une VM Oracle avec Docker, ainsi que les migrations
+Supabase, les outils de recette et les procédures de mise en production.
 
 ---
 
-## ✨ Fonctionnalités Principales
+## Sommaire
 
-### 🎨 Design & UX
-- ✅ **Interface ultra-moderne** avec thème sombre et accents néon (cyan, rose, violet)
-- ✅ **Animations fluides** avec Framer Motion (scroll, hover, transitions)
-- ✅ **Particules interactives** en arrière-plan avec Canvas API
-- ✅ **Navigation smooth** entre sections avec scroll automatique
-- ✅ **100% Responsive** - Mobile, tablette et desktop
-- ✅ **Effets de glassmorphism** et dégradés dynamiques
-
-### 💼 Gestion de Contenu
-- ✅ **Dashboard Admin** sécurisé avec authentification Supabase
-- ✅ **CRUD complet** pour projets et compétences
-- ✅ **Upload de CV** en PDF avec prévisualisation
-- ✅ **Filtrage dynamique** des projets par catégorie
-- ✅ **Système de projets "Featured"**
-- ✅ **Gestion des technologies** par projet
-
-### 🔐 Sécurité
-- ✅ **Authentification** avec Supabase Auth
-- ✅ **Row Level Security (RLS)** sur la base de données
-- ✅ **Protection des routes** admin
-- ✅ **Variables d'environnement** pour les clés sensibles
-
-### ⚡ Performance
-- ✅ **Build optimisé** avec Vite
-- ✅ **Lazy loading** des composants
-- ✅ **Code splitting** automatique
-- ✅ **Images optimisées**
+1. [Fonctionnalités](#fonctionnalités)
+2. [Architecture](#architecture)
+3. [Pile technique](#pile-technique)
+4. [Structure du dépôt](#structure-du-dépôt)
+5. [Démarrage local](#démarrage-local)
+6. [Variables d'environnement](#variables-denvironnement)
+7. [Administration](#administration)
+8. [Tests et recettes](#tests-et-recettes)
+9. [Règles de sécurité](#règles-de-sécurité)
+10. [Branches et mise en production](#branches-et-mise-en-production)
+11. [Licence et auteur](#licence-et-auteur)
 
 ---
 
-## 🛠️ Technologies Utilisées
+## Fonctionnalités
 
-### Frontend
-- **React 18.3** - Bibliothèque UI
-- **TypeScript 5.5** - Typage statique
-- **Vite 6.0** - Build tool ultra-rapide
-- **Framer Motion 11.15** - Animations fluides
-- **Lucide React** - Icônes modernes
+**Site public**
+- Accueil : portrait derrière une bulle élastique en WebGL natif, salutation selon l'heure locale,
+  cylindre 3D des accès directs (carrousel sur mobile), globe 3D juste avant le pied de page.
+  Les scènes 3D sont chargées à la demande et remplacées par des replis statiques sur les appareils
+  trop lents ou avec `prefers-reduced-motion`.
+- À propos, projets, compétences, contact, CV en ligne (`/cv`), plan du site, mentions légales.
+- Blog : articles, commentaires et réactions (MongoDB, via `blog-api`).
+- Outils : espace de travail, Pomodoro, Code Vault, convertisseur de fichiers, AI Lab, playground.
 
-### Backend & Base de données
-- **Supabase** - Backend as a Service
-  - PostgreSQL Database
-  - Authentication
-  - Row Level Security
-  - Real-time subscriptions
+**Fonctionnalités IA** (toujours via `blog-api`, jamais d'appel direct du navigateur à un fournisseur)
+- Assistant Clone : widget de discussion, réponses appuyées sur une base de connaissances (Pinecone).
+- NovaMind : génération de diagrammes.
+- InkSpace : tableau blanc (application statique `public/inkspace`) avec génération assistée.
+- Générateur de CV (`/cv-generator`) : génération, relecture, import d'un CV existant (PDF, DOCX,
+  TXT, RTF, image par OCR), modèles et réglages de design.
+- Studio CV LaTeX (`/latex-cv-editor`) : génération, correction, réécriture, aperçu PDF compilé par
+  `latex-runner`, historique privé « Mes CV ».
 
-### Styling
-- **CSS3** avec variables CSS
-- **Glassmorphism effects**
-- **Gradients dynamiques**
-- **Responsive design**
+**Administration** (chemin non publié, mot de passe et TOTP obligatoires)
+- Projets, compétences, CV PDF public, base de connaissances de l'assistant.
+- Centre d'administration IA : six fournisseurs (OpenAI, Anthropic, Google Gemini, Groq, xAI,
+  OpenRouter), catalogue de modèles, affectation par fonctionnalité, quotas, budgets, coupe-circuits,
+  statistiques d'usage et de coût. Les clés sont saisies dans le dashboard et stockées dans Supabase Vault.
+- Verrouillage après 10 minutes d'inactivité, appliqué aussi côté serveur.
 
 ---
 
-## 📦 Installation
+## Architecture
+
+```
+Navigateur
+  │
+  ├─► www.adjoumani-koffi.com ── Vercel : build statique React/Vite
+  │
+  ├─► Supabase (projet portfolio-perso)
+  │      Auth (mot de passe + TOTP), Postgres avec RLS, Storage (images, CV)
+  │
+  └─► api.adjoumani-koffi.com ── nginx (VM Oracle) ──► blog-api (127.0.0.1:5000)
+                                                          ├─► latex-runner  réseau interne latex-net, sans sortie
+                                                          ├─► cv-extractor  réseau interne extract-net, sans sortie
+                                                          ├─► MongoDB       articles, commentaires, comptes du blog
+                                                          ├─► Supabase      rôle restreint ai_backend : centre IA, Vault
+                                                          └─► Pinecone, Cloudinary, fournisseurs IA
+```
+
+- Le frontend ne contient que des variables publiques ; tout secret reste côté API ou dans Supabase Vault.
+- `latex-runner` et `cv-extractor` n'ont ni secret, ni port publié, ni accès Internet : seule l'API
+  les joint, chacun sur son propre réseau Docker interne.
+- Sur la VM, les ports Docker sont liés à `127.0.0.1` ; nginx est le seul frontal exposé.
+
+---
+
+## Pile technique
+
+| Partie | Technologies |
+|---|---|
+| Frontend | React 19, TypeScript 5.9, Vite 7 (React Compiler), Tailwind CSS 3.4, Framer Motion 12, React Router 7, three 0.187 et @react-three/fiber 9.8 (chunk à la demande), supabase-js 2 |
+| API `blog-api` | Node.js 24, Express 5, Mongoose 9, pg 8, Multer, express-rate-limit |
+| `latex-runner` | Node.js 24 sans dépendance npm, TeX Live de Debian, pdflatex sans shell-escape |
+| `cv-extractor` | Node.js 24, pdfjs-dist, mammoth, jszip |
+| Données | Supabase (Postgres, Auth, Storage, Vault), MongoDB, Pinecone, Cloudinary |
+| Tests | Vitest, Supertest, bancs SQL sur Supabase local jetable, Playwright (Chromium et WebKit) |
+| Hébergement | Vercel (frontend), VM Oracle Ubuntu avec Docker et nginx (API et services) |
+
+---
+
+## Structure du dépôt
+
+```
+.
+├── src/                      application React (pages, composants, features/ai-admin, features/latex-studio)
+├── public/                   fichiers statiques, InkSpace, miniatures des modèles LaTeX
+├── vite-plugins/             variables publiques, confidentialité des pages d'admin, configuration d'InkSpace
+├── blog-api/                 API Express (voir blog-api/README.md)
+├── latex-runner/             compilation LaTeX isolée (voir latex-runner/README.md)
+├── cv-extractor/             extraction isolée du texte des CV (voir cv-extractor/README.md)
+├── supabase/                 migrations, retours arrière, sauvegarde, contrôles, bancs (voir supabase/README.md)
+├── deploy/oracle/            inventaire de la VM et fragment nginx (voir deploy/oracle/README.md)
+├── env/recette/              configuration de la recette locale isolée
+├── scripts/                  recettes, chemin d'administration, contrôle du bundle, données du globe
+├── tests/                    sécurité, infrastructure, extraction, LaTeX, e2e navigateur, performance
+├── docker-compose.yml        API, latex-runner, cv-extractor, frontend nginx ; MongoDB en profil dev
+├── Dockerfile.frontend       image nginx du frontend (hors Vercel)
+├── vercel.json               réécritures SPA et en-têtes de sécurité
+└── .env.example              modèle des variables publiques du frontend
+```
+
+Les rapports internes d'audit et de mise en production (`docs/cv-generator-audit/`) restent en
+local : ils décrivent l'état de la production et ne sont pas versionnés.
+
+---
+
+## Démarrage local
 
 ### Prérequis
-- Node.js 18+ 
-- npm ou yarn
-- Compte Supabase (gratuit)
 
-### 1. Cloner le projet
+- Node.js 24 (la version des images Docker) et npm.
+- Docker Desktop pour l'API en conteneur, la recette locale et les bancs Supabase.
 
-```bash
-git clone https://github.com/votre-username/portfolio-moderne.git
-cd portfolio-moderne
-```
-
-### 2. Installer les dépendances
+### Frontend
 
 ```bash
-npm install
+npm ci
+cp .env.example .env.local     # compléter : voir « Variables d'environnement »
+npm run dev                    # http://localhost:5173
 ```
 
-### 3. Configuration Supabase
+En mode `development` et `production`, Vite lit `.env` et `.env.local` à la racine. Si ces fichiers
+pointent vers la production, le site local agit sur la production (visites, comptes, contenus).
+Pour travailler sans risque, utiliser la recette locale ci-dessous.
 
-#### a. Créer un projet Supabase
-1. Allez sur [supabase.com](https://supabase.com)
-2. Créez un nouveau projet
-3. Notez votre URL et votre clé anon
+### Recette locale isolée (recommandée)
 
-#### b. Créer les tables
-
-Exécutez ce SQL dans l'éditeur SQL de Supabase :
-
-```sql
--- Table Projects
-CREATE TABLE projects (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  title TEXT NOT NULL,
-  description TEXT NOT NULL,
-  technologies TEXT[] NOT NULL DEFAULT '{}',
-  imageurl TEXT,
-  githuburl TEXT,
-  liveurl TEXT,
-  category TEXT NOT NULL CHECK (category IN ('web', 'mobile', 'ai', 'data')),
-  featured BOOLEAN DEFAULT FALSE,
-  createdat TIMESTAMPTZ DEFAULT NOW(),
-  updatedat TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Table Skills
-CREATE TABLE skills (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name TEXT NOT NULL,
-  category TEXT NOT NULL CHECK (category IN ('frontend', 'backend', 'mobile', 'ai', 'data', 'tools')),
-  level INTEGER NOT NULL CHECK (level >= 0 AND level <= 100),
-  createdat TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Row Level Security
-ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
-ALTER TABLE skills ENABLE ROW LEVEL SECURITY;
-
--- Politiques : Lecture publique
-CREATE POLICY "Allow public read" ON projects FOR SELECT USING (true);
-CREATE POLICY "Allow public read" ON skills FOR SELECT USING (true);
-
--- Politiques : Écriture authentifiée
-CREATE POLICY "Allow authenticated insert" ON projects 
-  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "Allow authenticated update" ON projects 
-  FOR UPDATE USING (auth.role() = 'authenticated');
-CREATE POLICY "Allow authenticated delete" ON projects 
-  FOR DELETE USING (auth.role() = 'authenticated');
-
-CREATE POLICY "Allow authenticated insert" ON skills 
-  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "Allow authenticated update" ON skills 
-  FOR UPDATE USING (auth.role() = 'authenticated');
-CREATE POLICY "Allow authenticated delete" ON skills 
-  FOR DELETE USING (auth.role() = 'authenticated');
-
--- Fonction de mise à jour auto
-CREATE OR REPLACE FUNCTION update_updatedat_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updatedat = NOW();
-  RETURN NEW;
-END;
-$$ language 'plpgsql';
-
--- Trigger
-CREATE TRIGGER update_projects_updatedat 
-  BEFORE UPDATE ON projects
-  FOR EACH ROW 
-  EXECUTE FUNCTION update_updatedat_column();
-```
-
-#### c. Créer un utilisateur admin
-
-1. Dans Supabase : **Authentication** > **Users**
-2. Cliquez sur **Add user** > **Create new user**
-3. Entrez email et mot de passe
-
-### 4. Variables d'environnement
-
-Créez un fichier `.env` à la racine :
-
-```env
-VITE_SUPABASE_URL=votre_url_supabase
-VITE_SUPABASE_ANON_KEY=votre_cle_anon_supabase
-```
-
-Trouvez ces valeurs dans : **Settings** > **API**
-
-### 5. Lancer le projet
+Supabase local jetable, API dans Docker et Vite en mode `recette`. Aucune valeur de production
+n'est lue : Vite refuse de démarrer si l'URL Supabase de production apparaît dans `env/recette/`.
 
 ```bash
-npm run dev
+npm run recette:up       # prépare et démarre tout (réexécutable, données conservées)
+npm run recette:verify   # contrôle l'environnement, sans aucun appel à un fournisseur IA
+npm run recette:down     # arrête tout, données conservées
+node scripts/recette.mjs reset   # arrête tout et efface la base de recette
 ```
 
-Votre portfolio sera accessible sur `http://localhost:5173` 🎉
+Les secrets jetables de la recette (compte administrateur, clés de test, chemin d'administration de
+recette) sont générés dans `secrets/recette/`, ignoré par Git. Le compte est créé sans TOTP : on
+l'enrôle dans le dashboard.
 
----
-
-## 📁 Structure du Projet
-
-```
-portfolio-moderne/
-├── src/
-│   ├── components/
-│   │   ├── Navbar.tsx              # Barre de navigation
-│   │   ├── ParticlesBackground.tsx # Particules animées
-│   │   └── AdminLogin.tsx          # Formulaire de connexion admin
-│   ├── sections/
-│   │   ├── Hero.tsx                # Section d'accueil
-│   │   ├── Skills.tsx              # Section compétences
-│   │   ├── Projects.tsx            # Section projets
-│   │   ├── Contact.tsx             # Section contact
-│   │   └── AdminDashboard.tsx      # Dashboard admin
-│   ├── lib/
-│   │   └── supabase.ts             # Configuration Supabase
-│   ├── types/
-│   │   └── index.ts                # Types TypeScript
-│   ├── App.tsx                     # Composant principal
-│   ├── main.tsx                    # Point d'entrée
-│   └── index.css                   # Styles globaux
-├── public/                         # Assets statiques
-├── .env.example                    # Template variables d'environnement
-├── .gitignore                      # Fichiers ignorés par Git
-├── package.json                    # Dépendances du projet
-├── tsconfig.json                   # Configuration TypeScript
-├── vite.config.ts                  # Configuration Vite
-└── README.md                       # Documentation
-```
-
----
-
-## 🎯 Utilisation
-
-### Ajouter un projet
-
-#### Via le Dashboard Admin
-
-1. Accédez à `/admin`
-2. Connectez-vous avec vos identifiants
-3. Cliquez sur **Nouveau Projet**
-4. Remplissez le formulaire :
-   - Titre du projet
-   - Description
-   - Catégorie (Web, Mobile, IA, Data)
-   - Technologies utilisées
-   - URLs (image, GitHub, live demo)
-   - Featured (oui/non)
-5. Cliquez sur **Enregistrer**
-
-#### Via Supabase (alternative)
-
-```sql
-INSERT INTO projects (title, description, category, technologies, imageurl, githuburl, liveurl, featured)
-VALUES (
-  'Mon Super Projet',
-  'Description détaillée du projet',
-  'web',
-  ARRAY['React', 'TypeScript', 'Node.js'],
-  'https://example.com/image.jpg',
-  'https://github.com/username/project',
-  'https://demo.example.com',
-  true
-);
-```
-
-### Ajouter une compétence
-
-1. Dans le dashboard, cliquez sur **Compétences**
-2. Cliquez sur **Nouvelle Compétence**
-3. Entrez :
-   - Nom de la compétence
-   - Catégorie
-   - Niveau (0-100%)
-4. Enregistrez
-
-### Uploader un CV
-
-1. Dans le dashboard, cliquez sur **CV PDF**
-2. Glissez-déposez ou sélectionnez votre CV
-3. Prévisualisez et téléchargez
-
----
-
-## 🎨 Personnalisation
-
-### Modifier les couleurs
-
-Dans `src/index.css`, changez les variables CSS :
-
-```css
-:root {
-  --primary: #00f0ff;      /* Cyan */
-  --secondary: #ff006e;    /* Rose */
-  --accent: #8338ec;       /* Violet */
-  --bg-dark: #0a0a0a;      /* Fond sombre */
-  --bg-card: #1a1a2e;      /* Fond des cartes */
-}
-```
-
-### Modifier vos informations
-
-Dans `src/sections/Contact.tsx`, ligne 32-62 :
-
-```typescript
-const contactInfo = [
-  {
-    icon: Mail,
-    label: 'Email',
-    value: 'votre@email.com',
-    link: 'mailto:votre@email.com',
-  },
-  // ... autres infos
-];
-```
-
-### Modifier les compétences fixes
-
-Dans `src/sections/Skills.tsx`, ligne 10-60 :
-
-```typescript
-const skillsData = [
-  {
-    category: 'Frontend Development',
-    skills: [
-      { name: 'React / Next.js', level: 95, color: '#00f0ff' },
-      // ... vos compétences
-    ],
-  },
-];
-```
-
----
-
-## 🚀 Déploiement
-
-### Vercel (Recommandé)
+### API seule
 
 ```bash
-# Installer Vercel CLI
-npm i -g vercel
-
-# Déployer
-vercel
-
-# Ajouter les variables d'environnement dans le dashboard Vercel
+cd blog-api
+npm ci
+cp .env.example .env    # compléter : voir blog-api/README.md
+npm run dev             # http://localhost:5000/api/health
 ```
 
-### Netlify
+### Pile Docker complète
 
 ```bash
-# Build le projet
-npm run build
-
-# Glissez-déposez le dossier dist sur app.netlify.com/drop
+cp .env.docker.example .env.docker                  # compléter
+docker compose --env-file .env.docker up -d --build # API, latex-runner, cv-extractor, frontend (http://localhost:8080)
+docker compose --env-file .env.docker --profile dev up -d   # ajoute MongoDB local et Mongo Express (http://localhost:8081)
 ```
-
-### Variables d'environnement en production
-
-N'oubliez pas d'ajouter vos variables dans le dashboard :
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
 
 ---
 
-## 📊 Scripts Disponibles
+## Variables d'environnement
+
+Noms uniquement : les valeurs ne vont jamais dans Git. Les fichiers `*.example` servent de modèles.
+
+| Fichier | Rôle | Variables |
+|---|---|---|
+| `.env.example` → `.env.local` | Frontend, intégrées au bundle donc **publiques** | `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_ADMIN_ROUTE_HASH` |
+| `blog-api/.env.example` → `blog-api/.env` | API lancée hors Docker | voir [blog-api/README.md](blog-api/README.md) |
+| `.env.docker.example` → `.env.docker` | `docker compose` : API, build du frontend, MongoDB du profil dev | mêmes noms que l'API, plus `VITE_*`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_UI_USER`, `MONGO_UI_PASSWORD` |
+| `env/recette/.env.recette.example` | Recette locale (`.env.recette.local` généré par `recette:up`) | `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` |
+
+- Seules ces quatre variables `VITE_*` atteignent le navigateur (`vite-plugins/publicEnv.ts`) :
+  une clé privée nommée `VITE_…` dans un `.env` n'est jamais intégrée au bundle.
+- `VITE_SUPABASE_ANON_KEY` est la clé publique « anon », protégée par la RLS ; jamais la clé `service_role`.
+- Les clés des fournisseurs IA ne figurent dans aucun fichier : elles sont saisies dans le dashboard
+  et stockées dans Supabase Vault.
+- Sur Vercel, définir les variables `VITE_*` dans Production et Preview, et aucune autre.
+
+---
+
+## Administration
+
+Le dashboard n'a pas d'adresse fixe : `/admin` affiche la page 404. Le bundle ne contient que
+l'empreinte SHA-256 du chemin (`VITE_ADMIN_ROUTE_HASH`), jamais le chemin lui-même.
 
 ```bash
-npm run dev          # Lancer le serveur de développement
-npm run build        # Build pour production
-npm run preview      # Prévisualiser le build
-npm run lint         # Linter le code
+node scripts/admin-route.mjs generate --name production   # crée secrets/admin-route/production.txt, affiche l'empreinte
+node scripts/admin-route.mjs hash --name production       # réaffiche l'empreinte pour VITE_ADMIN_ROUTE_HASH
+node scripts/admin-route.mjs check --env <fichier> --name production
 ```
 
----
-
-## 🤝 Contribution
-
-Les contributions sont les bienvenues ! Pour contribuer :
-
-1. Fork le projet
-2. Créez votre branche (`git checkout -b feature/AmazingFeature`)
-3. Committez vos changements (`git commit -m 'Add: Amazing feature'`)
-4. Push vers la branche (`git push origin feature/AmazingFeature`)
-5. Ouvrez une Pull Request
+- Le chemin se range dans un gestionnaire de mots de passe. Il ne s'écrit nulle part ailleurs :
+  ni dans un rapport, ni dans un journal, ni dans un test, ni dans un ticket.
+- Sans `VITE_ADMIN_ROUTE_HASH`, le site fonctionne mais le dashboard est inaccessible ; une valeur
+  qui n'est pas une empreinte (le chemin collé par erreur) fait échouer le build.
+- Le chemin n'est qu'une protection d'appoint : l'accès repose sur le mot de passe, le TOTP (aal2),
+  la liste `admin_users` en base et la session serveur verrouillée après 10 minutes d'inactivité.
+- Chemin compromis : en générer un autre (`generate --force`), mettre à jour la variable, redéployer.
 
 ---
 
-## 📝 Roadmap
+## Tests et recettes
 
-- [ ] Mode clair/sombre
-- [ ] Internationalisation (FR/EN)
-- [ ] Blog avec articles
-- [ ] Système de commentaires
-- [ ] Analytics intégré
-- [ ] PWA (Progressive Web App)
-- [ ] Mode offline
+| Commande | Contenu | Besoin |
+|---|---|---|
+| `npm test` | Vitest racine : sécurité (bundle, XSS des modèles, absence d'appel IA direct, chemin d'admin), infrastructure, extraction, LaTeX | — |
+| `npm run build && npm run check:bundle` | build de production puis recherche de secrets, d'hôtes de fournisseurs IA et du chemin d'administration dans `dist/` | — |
+| `cd blog-api && npm test && npm run typecheck` | routes, droits, IA simulée, limites de débit ; aucun appel réseau sortant | — |
+| `bash supabase/tests/rls/run.sh` | RLS P0.A1 : preuve de la faille, migrations (×2), assertions, retour arrière | Docker |
+| `bash supabase/tests/ai/run.sh` | centre IA en SQL | Docker |
+| `bash supabase/tests/session/run.sh` | sessions administrateur et verrouillage d'inactivité | Docker |
+| `node supabase/tests/rehearsal/run.mjs` | répétition complète de la mise en production, dans l'ordre réel des migrations, retour arrière compris | Docker |
+| `npm run test:stack` | pile Supabase locale réelle, TOTP réel, blog-api démarrée | Docker, `PLAYWRIGHT_CORE_DIR` pour le parcours navigateur |
+| `npm run recette:latex`, `recette:modeles`, `recette:mes-cv`, `recette:studio` | aperçu PDF, modèles LaTeX, droits de « Mes CV », parcours du studio | recette démarrée |
+| `node tests/e2e/premium.e2e.mjs [scénario…]` | `accueil`, `session`, `clone`, `cvgen`, `cvbaseline`, `cvpublic`, `regression`, `curseur`, `p8` ; Chromium et WebKit, IA simulée | recette démarrée, `PLAYWRIGHT_CORE_DIR` |
+| `node tests/perf/accueil-ab-mobile.mjs <réf> <courant>` | premier affichage mesuré en A/B alterné (390 px, CPU ×4 ; `PROFILE=desktop`) | `PLAYWRIGHT_CORE_DIR` |
 
----
-
-## 📄 Licence
-
-Ce projet est sous licence MIT - voir le fichier [LICENSE](LICENSE) pour plus de détails.
-
----
-
-## 👤 Auteur
-
-**Adjoumani**
-- Portfolio: [votreportfolio.com](#)
-- GitHub: [@votre-username](https://github.com/votre-username)
-- LinkedIn: [Votre Profil](https://linkedin.com/in/votre-profil)
-- Email: votre@email.com
+Captures et rapports des recettes : `secrets/recette/` (ignoré par Git). Aucun test ne fait d'appel
+IA facturé ; les réponses des fournisseurs sont simulées.
 
 ---
 
-## 🙏 Remerciements
+## Règles de sécurité
 
-- [React](https://reactjs.org/) - Framework UI
-- [Supabase](https://supabase.com/) - Backend as a Service
-- [Framer Motion](https://www.framer.com/motion/) - Animations
-- [Lucide](https://lucide.dev/) - Icônes
-- [Vite](https://vitejs.dev/) - Build tool
+- Aucun secret dans Git : `.env*` (hors modèles), `secrets/`, sauvegardes, inventaires et `*.dump`
+  sont ignorés. Indexer fichier par fichier et relire `git status` avant chaque commit.
+- `.vercelignore` exclut les mêmes fichiers d'un déploiement par le CLI Vercel, qui ne lit pas `.gitignore`.
+- Aucune clé privée dans une variable `VITE_*`, et `npm run check:bundle` avant chaque déploiement.
+- Le navigateur n'appelle que `blog-api` et Supabase : un test échoue si un hôte de fournisseur IA
+  apparaît dans le code client.
+- Réponses du Clone IA rendues sans HTML brut, sous liste blanche (rehype-sanitize) ; aucune valeur
+  d'un CV ne peut sortir de son contexte HTML dans les modèles (test dédié). Le rendu Markdown des
+  articles du blog n'est pas encore assaini.
+- En-têtes de sécurité dans `vercel.json` ; la CSP est encore en *Report-Only*.
+- Services isolés : utilisateur non root, racine en lecture seule, aucune capacité Linux,
+  `no-new-privileges`, mémoire, CPU et processus bornés, réseau interne sans sortie.
+- Images Docker épinglées par empreinte.
 
 ---
 
-<div align="center">
+## Branches et mise en production
 
-**⭐ Si ce projet vous a aidé, n'hésitez pas à lui donner une étoile !**
+| Branche | Rôle |
+|---|---|
+| `main` (GitLab `origin`) | **production** : Vercel déploie chaque push |
+| `feature/*`, `security/*` | développement |
+| `backup/*` | points de retour locaux |
 
-Made with ❤️ by Adjoumani
+Le dépôt GitHub (remote `github`) est public : les rapports internes n'y sont jamais poussés.
 
-</div>
-#   U p d a t e d  
- 
+La mise en production se fait par phases, chacune après un feu vert explicite, et s'arrête au
+premier contrôle en échec.
+
+1. **Préparation, en lecture seule** : inventaire Supabase, sauvegarde vérifiée par restauration
+   isolée, répétition des migrations sur une copie, inventaire de la VM (`deploy/oracle/discover.sh`).
+   Rapport unique : `node supabase/checks/go-no-go.mjs`.
+2. **Frontend sur Vercel, déploiement *Staged*** : désactiver *Auto-assign Custom Production Domains*
+   (Settings → Environments → Production), définir les variables `VITE_*` dont `VITE_ADMIN_ROUTE_HASH`,
+   pousser sur `main`, contrôler le déploiement sur son adresse `*.vercel.app`, puis *Promote*, sans
+   reconstruction. Le nouveau frontend précède les migrations : il tolère l'ancienne base.
+3. **Migrations Supabase**, dans l'ordre et avec leur retour arrière : [supabase/README.md](supabase/README.md).
+4. **API et services sur Oracle**, sans toucher aux autres projets de la VM : la nouvelle API démarre
+   d'abord en parallèle de l'actuelle (`blog-api-next` sur `127.0.0.1:5001`, hors nginx), puis nginx
+   bascule après accord : [deploy/oracle/README.md](deploy/oracle/README.md).
+5. **Configuration IA dans le dashboard** : clés, catalogue, affectations. Chaque série de tests
+   facturés est annoncée avec son coût estimé et attend un accord.
+6. **Suivi** : nouvel inventaire, journaux pendant 48 h, rapports CSP avant de l'imposer.
+
+### Retour arrière
+
+| Partie | Procédure |
+|---|---|
+| Frontend | Vercel *Instant Rollback* vers le déploiement précédent (offre Hobby : le précédent uniquement). Après les migrations, l'ancien frontend n'est plus compatible : il ne revient qu'avec le retour arrière de la base. |
+| Base | scripts `supabase/rollback/*.down.sql` en ordre inverse, puis `restauration.sql` généré depuis l'inventaire pris avant les migrations ; sauvegarde complète en dernier recours |
+| API et services | selon le mode d'exécution relevé par `discover.sh` : image précédente réétiquetée (Docker) ou commit précédent reconstruit (pm2, systemd) ; seuls les processus du portfolio sont relancés |
+| Code | `git revert` des commits concernés, ou retour à une branche `backup/*` |
+
+---
+
+## Licence et auteur
+
+Code sous licence MIT : voir [LICENSE](LICENSE).
+
+**Adjoumani Koffi Wilfried**
+- Site : [www.adjoumani-koffi.com](https://www.adjoumani-koffi.com)
+- GitHub : [@Adjoum](https://github.com/Adjoum)
+- LinkedIn : [koffi-wilfried-adjoumani](https://www.linkedin.com/in/koffi-wilfried-adjoumani/)
