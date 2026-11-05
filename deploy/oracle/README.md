@@ -7,12 +7,12 @@ d'autres projets : toute intervention se limite aux conteneurs du portfolio.
 |---|---|
 | `discover.sh` | inventaire général de la VM, en **lecture seule** |
 | `discover-canary-test.sh` | preuve que `discover.sh` n'affiche aucun secret (VM simulée, jamais sur une vraie machine) |
-| `next.sh` | nouvelle API **en parallèle** de l'actuelle : inventaire, sauvegarde MongoDB, préparation, lancement, contrôle, retour arrière |
+| `next.sh` | nouvelle API **en parallèle** de l'actuelle : copie depuis GitLab, inventaire, sauvegarde MongoDB, préparation, lancement, contrôle, retour arrière |
 | `compose.next.yml` | les trois conteneurs de la nouvelle API, et rien d'autre |
 | `nginx-api-locations.conf.example` | blocs `location` à fusionner plus tard dans le `server` de `api.adjoumani-koffi.com` |
 
-Tests : `tests/infra/oracle-next.test.ts` (`npm test`, sans Docker) et
-`tests/oracle/sauvegarde-mongo.bench.sh` (exécution réelle, Docker Desktop).
+Tests : `tests/infra/oracle-next.test.ts` (`npm test`, sans Docker), et exécution réelle sous Docker
+Desktop : `tests/oracle/sauvegarde-mongo.bench.sh`, `tests/oracle/recuperer.bench.sh`.
 
 **Toujours exécuter sur la VM la version d'un commit précis**, jamais la copie de travail : un
 fichier en cours de modification serait envoyé tel quel. Toutes les commandes ci-dessous partent de
@@ -113,27 +113,14 @@ La nouvelle API démarre à côté, injoignable depuis Internet :
 | Images | celle de l'ancien déploiement | `portfolio-next/*:<commit>` |
 | Réseaux | existants | `portfolio-next_egress` (sortie Internet, API seule), `_latex` et `_extract` (internes) |
 | Volumes | existants | aucun |
-| Code | dépôt de l'ancien déploiement | copie séparée du commit validé |
+| Code | dépôt de l'ancien déploiement | copie séparée du commit validé, tirée de GitLab (§4) |
 
 ### Étapes (chacune après accord)
 
 ```bash
-# Poste : archive du commit validé, avec son identifiant et son empreinte ; aucun push.
-# core.autocrlf=false : sous Windows, l'archive aurait sinon des fins de ligne CRLF (Dockerfile compris),
-# que « next.sh verifier » refuse.
-# Chemin de sortie absolu : avec git -C, un chemin relatif serait résolu depuis le dépôt.
-cd /d/portfolio-sauvegardes
-git -C /d/adjoumani-portfolio -c core.autocrlf=false archive --format=tar.gz --prefix="portfolio-next-$c/" \
-  --add-virtual-file="portfolio-next-$c/.next-commit:$c" -o "$PWD/portfolio-next-$c.tar.gz" "$c" \
-  blog-api latex-runner cv-extractor deploy/oracle
-sha256sum "portfolio-next-$c.tar.gz" > "portfolio-next-$c.tar.gz.sha256"
-scp "portfolio-next-$c.tar.gz" "portfolio-next-$c.tar.gz.sha256" "$V":
-
-# VM : empreinte vérifiée, copie séparée, jamais dans le dépôt de l'ancien déploiement
-sha256sum -c ~/portfolio-next-<c>.tar.gz.sha256
-mkdir -p ~/portfolio-next && tar -xzf ~/portfolio-next-<c>.tar.gz -C ~/portfolio-next
+# VM : copie du commit obtenue par « next.sh recuperer » (§4), jamais dans le dépôt de l'ancien déploiement
 cd ~/portfolio-next/portfolio-next-<c>
-sudo sh deploy/oracle/next.sh env          # /etc/portfolio-next/api.env, root 600, depuis le conteneur blog-api
+sudo sh deploy/oracle/next.sh env          # une fois : /etc/portfolio-next/api.env, root 600, depuis le conteneur blog-api
 sudo sh deploy/oracle/next.sh verifier     # lecture seule ; code 1 si un point bloque
 sudo sh deploy/oracle/next.sh construire   # images portfolio-next/*:<commit>
 sudo sh deploy/oracle/next.sh demarrer     # démarrage, attente de santé, puis contrôle complet
@@ -157,6 +144,21 @@ sudo sh deploy/oracle/next.sh controler    # à relancer à volonté, lecture se
 
 ### Retour arrière
 
+Vers le commit précédent, sans rien reconstruire (ses images sont gardées) :
+
+```bash
+sudo sh deploy/oracle/next.sh historique   # version en service, journal, copies et images présentes
+cd ~/portfolio-next/portfolio-next-<précédent>
+sudo sh deploy/oracle/next.sh demarrer     # remplace les trois conteneurs par ceux de ce commit, puis contrôle
+```
+
+Même projet, mêmes noms, même port : `demarrer` depuis une autre copie remplace les trois conteneurs,
+et eux seuls. Chaque `demarrer` et `arreter` s'inscrit dans `/var/lib/portfolio-next/deploiements.log`
+(date, action, commit, résultat, copie). Garder les images du commit précédent tant que le suivant
+n'est pas validé (environ 1,2 Go par commit). `/etc/portfolio-next/api.env` est commun aux copies.
+
+Retrait complet :
+
 ```bash
 sudo sh deploy/oracle/next.sh arreter
 ```
@@ -166,7 +168,87 @@ que l'ancienne API répond toujours. Les images restent pour un nouvel essai ; l
 retire, sans viser aucune autre image, est affichée. Le fichier `/etc/portfolio-next/api.env` se
 supprime à la main.
 
-## 4. Règles sur une VM partagée
+## 4. Livraison depuis GitLab (méthode officielle)
+
+GitLab est la source : le poste pousse la branche `release/portfolio-next`, la VM en tire un commit
+précis. Ni archive ni `scp`. La VM ne fait jamais `git pull` ni `git push`, et n'écrit rien dans le
+dépôt de l'ancien déploiement (`/home/ubuntu/adjoumani-portfolio`).
+
+| Où | Quoi |
+|---|---|
+| GitLab | branche `release/portfolio-next`, protégée : push réservé aux mainteneurs, force push interdit |
+| Vercel | `vercel.json` : `git.deploymentEnabled` à `false` pour `release/*` ; aucun déploiement, ni Preview ni production. `main` reste la seule branche déployée |
+| GitHub | miroir public de la même branche ; aucun workflow ni déploiement branché |
+| VM | `~/portfolio-next/depot.git` : dépôt nu, lecture seule (clé de déploiement sans droit d'écriture) |
+| VM | `~/portfolio-next/portfolio-next-<12 premiers caractères>/` : contenu exact du commit, plus `.next-commit` |
+
+### Une seule fois (VM, utilisateur `ubuntu`, sans sudo)
+
+```bash
+ssh-keygen -t ed25519 -N '' -C 'portfolio-next lecture seule' -f ~/.ssh/portfolio_next_lecture
+cat ~/.ssh/portfolio_next_lecture.pub
+# GitLab : Settings > Repository > Deploy keys > Add new key ; coller la clé publique,
+# « Grant write permissions to this key » DÉCOCHÉ
+ssh-keygen -l -F gitlab.com    # empreinte ED25519 attendue : SHA256:eUXGGm1YGsMAS7vkcx6JOJdOGHPem5gQp4taiCfCLB8
+git init --bare -q ~/portfolio-next/depot.git
+git -C ~/portfolio-next/depot.git remote add origin "$(git -C /home/ubuntu/adjoumani-portfolio remote get-url origin)"
+git -C ~/portfolio-next/depot.git config core.sshCommand \
+  'ssh -i ~/.ssh/portfolio_next_lecture -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes'
+```
+
+`remote get-url` lit seulement la configuration de l'ancien dépôt. Si `ssh-keygen -F` ne trouve rien,
+`ssh-keyscan -t ed25519 gitlab.com >> ~/.ssh/known_hosts`, puis la même vérification d'empreinte.
+
+### À chaque livraison
+
+Poste (Git Bash), arbre propre :
+
+```bash
+git switch release/portfolio-next
+git status --short                                   # doit être vide
+c=$(git rev-parse HEAD); echo "$c"
+git push -o ci.skip origin release/portfolio-next    # GitLab, sans pipeline
+git push github release/portfolio-next               # miroir public
+```
+
+VM (`ubuntu`), avec le commit complet affiché par le poste :
+
+```bash
+c=<commit complet>
+cd ~/portfolio-next
+git -C depot.git fetch --quiet --no-tags origin '+refs/heads/release/portfolio-next:refs/remotes/origin/release/portfolio-next'
+git -C depot.git show "$c":deploy/oracle/next.sh | sh -s recuperer "$c"
+cd "portfolio-next-$(printf %s "$c" | cut -c1-12)"
+sudo sh deploy/oracle/next.sh verifier
+sudo sh deploy/oracle/next.sh construire
+sudo sh deploy/oracle/next.sh demarrer
+```
+
+Le script exécuté est celui du commit livré, lu dans le dépôt nu. `recuperer` refuse un commit absent
+de la branche de release publiée et une copie existante qui diffère du commit (rien n'est remplacé) ;
+une copie existante identique est seulement constatée. Le fichier d'environnement reste celui de
+`env` : une variable nouvelle (par exemple `SUPABASE_*`) s'y ajoute à la main, root 600.
+
+### Secours sans accès à GitLab
+
+```bash
+# Poste. core.autocrlf=false : sous Windows, l'archive aurait sinon des fins de ligne CRLF, que
+# « next.sh verifier » refuse. Chemin de sortie absolu : avec git -C, un chemin relatif serait
+# résolu depuis le dépôt.
+cd /d/portfolio-sauvegardes
+git -C /d/adjoumani-portfolio -c core.autocrlf=false archive --format=tar.gz --prefix="portfolio-next-$c/" \
+  --add-virtual-file="portfolio-next-$c/.next-commit:$c" -o "$PWD/portfolio-next-$c.tar.gz" "$c"
+sha256sum "portfolio-next-$c.tar.gz" > "portfolio-next-$c.tar.gz.sha256"
+scp "portfolio-next-$c.tar.gz" "portfolio-next-$c.tar.gz.sha256" "$V":
+# VM
+sha256sum -c ~/portfolio-next-<c>.tar.gz.sha256
+mkdir -p ~/portfolio-next && tar -xzf ~/portfolio-next-<c>.tar.gz -C ~/portfolio-next
+```
+
+Ici `c` doit compter 12 caractères (`git rev-parse --short=12`), comme le nom des copies. Une copie
+venue par archive se compare ensuite à GitLab avec `recuperer`, sans être remplacée.
+
+## 5. Règles sur une VM partagée
 
 À ne jamais lancer sur la VM :
 - `docker compose down`, `restart` ou `up` hors `next.sh` ;

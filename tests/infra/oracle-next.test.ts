@@ -155,10 +155,75 @@ describe('documentation alignée sur les fichiers produits', () => {
   })
 })
 
+describe('livraison depuis GitLab : récupération par commit exact', () => {
+  const fetch = body('cmd_recuperer')
+
+  it('sans root, commit hexadécimal d’au moins 12 caractères, dépôt nu déjà créé', () => {
+    expect(fetch).toContain('[ "$(id -u)" != 0 ] || die')
+    expect(fetch).toContain("grep -Eq '^[0-9a-f]{12,40}$'")
+    expect(fetch).toContain('[ -d "$DEPOT" ] || die')
+  })
+
+  it('lit seulement la branche de release, sans étiquette, et exige le commit dans son historique publié', () => {
+    expect(fetch).toContain('fetch --quiet --no-tags origin "+refs/heads/$BRANCH:$ref" </dev/null')
+    const ancestor = fetch.indexOf('merge-base --is-ancestor "$full" "$ref" || die')
+    expect(ancestor).toBeGreaterThan(0)
+    expect(fetch.indexOf('archive --format=tar')).toBeGreaterThan(ancestor)
+    expect(script).toMatch(/^BRANCH=\$\{NEXT_BRANCHE:-release\/portfolio-next\}$/m)
+  })
+
+  it('extrait sans conversion de fins de ligne et refuse une copie en CRLF', () => {
+    expect(fetch).toContain('git -C "$DEPOT" -c core.autocrlf=false')
+    expect(fetch).toContain('block "$crlf fichier(s) en CRLF dans le commit"')
+  })
+
+  it('ne remplace jamais une copie existante : comparaison fichier par fichier', () => {
+    expect(fetch).toContain('diff -rq -x .next-commit "$tmp" "$dest"')
+    const replace = fetch.indexOf('mv "$tmp" "$dest"')
+    expect(fetch.lastIndexOf('elif [ "$BLOCKERS" -eq 0 ]; then', replace)).toBeGreaterThan(fetch.indexOf('if [ -e "$dest" ]; then'))
+    expect(fetch.match(/mv "\$tmp"/g)).toHaveLength(1)
+  })
+
+  it('jamais de git pull, push ni clone, ni de lecture du dépôt de l’ancien déploiement', () => {
+    const code = script.split('\n').filter(line => !line.trim().startsWith('#')).join('\n')
+    expect(code).not.toMatch(/\bgit\b[^\n]*\b(pull|push|clone)\b/)
+    expect(fetch).not.toContain('LEGACY')
+  })
+
+  it('journal de chaque démarrage et arrêt, historique en lecture seule', () => {
+    expect(body('cmd_demarrer')).toContain('journal demarrer "$rc"')
+    expect(body('cmd_arreter')).toContain('journal arreter "$rc"')
+    expect(body('journal')).toContain('>> "$STATE_DIR/deploiements.log"')
+    const history = body('cmd_historique').replace(/2>\/dev\/null/g, '')
+    expect(history).not.toMatch(/docker (rm|stop|run|start|compose|image rm|network)|\bdc\b|>/)
+  })
+
+  it('le README livre par GitLab : sans pipeline, script du commit livré, clé sans droit d’écriture', () => {
+    expect(readme).toContain('git push -o ci.skip origin release/portfolio-next')
+    expect(readme).toMatch(/git -C depot\.git show "\$c":deploy\/oracle\/next\.sh \| sh -s recuperer "\$c"/)
+    expect(readme).toContain('« Grant write permissions to this key » DÉCOCHÉ')
+    expect(readme).toContain('SHA256:eUXGGm1YGsMAS7vkcx6JOJdOGHPem5gQp4taiCfCLB8')
+    expect(readme).not.toMatch(/^\s*git( -C \S+)? pull\b/m)
+  })
+})
+
+describe('Vercel : une branche de release ne déclenche aucun déploiement', () => {
+  const vercel = JSON.parse(read('vercel.json'))
+  const enabled = vercel.git?.deploymentEnabled
+
+  it('release/* désactivée, main toujours déployée', () => {
+    expect(enabled).toBeTypeOf('object')
+    expect(enabled['release/*']).toBe(false)
+    for (const [pattern, value] of Object.entries(enabled)) {
+      if (value === false) expect(pattern, pattern).toMatch(/^release\//)
+    }
+  })
+})
+
 describe('syntaxe POSIX', () => {
   const sh = spawnSync('sh', ['-c', 'exit 0'])
-  it.skipIf(sh.error !== undefined)('next.sh et le banc passent sh -n', () => {
-    for (const file of ['deploy/oracle/next.sh', 'tests/oracle/sauvegarde-mongo.bench.sh']) {
+  it.skipIf(sh.error !== undefined)('next.sh et les bancs passent sh -n', () => {
+    for (const file of ['deploy/oracle/next.sh', 'tests/oracle/sauvegarde-mongo.bench.sh', 'tests/oracle/recuperer.bench.sh']) {
       const result = spawnSync('sh', ['-n', path.join(ROOT, file)], { encoding: 'utf8' })
       expect(result.status, `${file} : ${result.stderr}`).toBe(0)
     }

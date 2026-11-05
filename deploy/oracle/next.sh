@@ -1,6 +1,7 @@
 #!/bin/sh
 # deploy/oracle/next.sh — nouvelle API du portfolio EN PARALLÈLE de l'actuelle, sur la VM Oracle.
 #
+#   sh deploy/oracle/next.sh recuperer <commit>   SANS sudo : copie du commit, publié sur la branche de release GitLab
 #   sudo sh deploy/oracle/next.sh inventaire   LECTURE SEULE : état de la VM à transmettre avant le GO
 #   sudo sh deploy/oracle/next.sh env          crée le fichier d'environnement depuis le conteneur blog-api
 #   sudo sh deploy/oracle/next.sh sauvegarder-mongo   mongodump (lecture seule) puis restauration d'essai isolée
@@ -10,9 +11,11 @@
 #   sudo sh deploy/oracle/next.sh demarrer     démarre les trois conteneurs, blog-api-next sur 127.0.0.1:5001
 #   sudo sh deploy/oracle/next.sh controler    LECTURE SEULE : santé, isolement, blog-api et autres conteneurs intacts
 #   sudo sh deploy/oracle/next.sh arreter      retour arrière : retire les trois conteneurs et leurs réseaux
+#   sudo sh deploy/oracle/next.sh historique   LECTURE SEULE : version en service, journal, copies et images disponibles
 #
 # À lancer depuis une copie du commit validé (deploy/oracle/README.md), jamais depuis le dépôt de
 # l'ancien déploiement. Commit : variable NEXT_TAG ou fichier .next-commit à la racine de la copie.
+# Les copies viennent de GitLab par « recuperer » (dépôt nu en lecture seule, jamais de git pull).
 # Ne touche jamais : le conteneur blog-api ni son image, le port 5000, nginx, les autres projets,
 # aucun volume. Aucune commande Docker globale. Aucune valeur secrète affichée ni passée en argument.
 set -u
@@ -37,6 +40,10 @@ REQUIRED="MONGODB_URI JWT_SECRET FRONTEND_URL"
 FORCED="ADMIN_BOOTSTRAP_ENABLED KNOWLEDGE_WRITE_ENABLED AI_ENABLED"
 MIN_DISK_GIB=6
 MIN_MEM_GIB=3
+# Livraison depuis GitLab : dépôt nu qui ne fait que lire la branche de release, copies à côté de lui
+NEXT_HOME=${NEXT_HOME:-$HOME/portfolio-next}
+DEPOT="$NEXT_HOME/depot.git"
+BRANCH=${NEXT_BRANCHE:-release/portfolio-next}
 
 HERE=$(cd "$(dirname "$0")" && pwd -P)
 ROOT=$(cd "$HERE/../.." && pwd -P)
@@ -94,6 +101,19 @@ states() {
     while read -r n; do
       docker inspect --format '{{.Name}} {{.Id}} {{.Image}} {{.State.StartedAt}} {{.RestartCount}} {{.State.Status}}' "$n" 2>/dev/null
     done | sort
+}
+# Nombre de fichiers en CRLF : une archive créée sous Windows sans « git -c core.autocrlf=false
+# archive » en contient, et les Dockerfile écriraient alors des \r dans la configuration de TeX
+crlf_files() {
+  find "$@" -type f -not -path '*/node_modules/*' \
+    \( -name Dockerfile -o -name '*.sh' -o -name '*.yml' -o -name '*.mjs' -o -name '*.ts' -o -name '*.json' \) \
+    -exec grep -l "$(printf '\r')" {} + 2>/dev/null | wc -l
+}
+# Journal des démarrages et arrêts (date, action, commit, résultat, copie) : sert au retour arrière
+journal() {
+  mkdir -p "$STATE_DIR" && chmod 700 "$STATE_DIR" || return 0
+  if [ "$2" -eq 0 ]; then r=ok; else r=bloquant; fi
+  printf '%s %s %s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$TAG" "$r" "$ROOT" >> "$STATE_DIR/deploiements.log"
 }
 
 # ── inventaire : lecture seule ───────────────────────────────────────────────
@@ -477,6 +497,56 @@ cmd_verifier_archive() {
   verdict
 }
 
+# ── recuperer : copie d'un commit publié sur GitLab, sans sudo ───────────────
+# Le dépôt nu $DEPOT (créé une fois, deploy/oracle/README.md §4) ne fait que lire la branche de
+# release : ni copie de travail, ni push, ni git pull. Le dépôt de l'ancien déploiement n'est pas lu.
+# Une copie existante n'est jamais remplacée : elle est comparée au commit, fichier par fichier.
+cmd_recuperer() {
+  [ "$(id -u)" != 0 ] || die "sans sudo : le dépôt et les copies appartiennent à l'utilisateur, pas à root"
+  want=${1:-}
+  printf '%s' "$want" | grep -Eq '^[0-9a-f]{12,40}$' || die "commit attendu : 12 à 40 caractères hexadécimaux"
+  [ -d "$DEPOT" ] || die "$DEPOT absent : le créer une fois (deploy/oracle/README.md §4)"
+  depot() { git -C "$DEPOT" -c core.autocrlf=false "$@"; }
+  ref="refs/remotes/origin/$BRANCH"
+  depot fetch --quiet --no-tags origin "+refs/heads/$BRANCH:$ref" </dev/null || die "lecture de $BRANCH sur GitLab impossible (clé de déploiement, réseau ?)"
+  full=$(depot rev-parse --verify --quiet "$want^{commit}") || die "commit $want introuvable"
+  depot merge-base --is-ancestor "$full" "$ref" || die "commit $full absent de la branche $BRANCH publiée"
+  short=$(printf '%s' "$full" | cut -c1-12)
+  dest="$NEXT_HOME/$PROJECT-$short"
+  tmp=$(mktemp -d "$NEXT_HOME/.recuperation-XXXXXX") || die "dossier temporaire impossible dans $NEXT_HOME"
+  # Commit entier, comme l'archive transférée le 05/11 : la copie d'un même commit est identique
+  if ! depot archive --format=tar -o "$tmp.tar" "$full" ||
+     ! tar -xf "$tmp.tar" -C "$tmp"; then
+    rm -rf "$tmp" "$tmp.tar"; die "extraction du commit $full impossible"
+  fi
+  rm -f "$tmp.tar"
+  printf '%s\n' "$short" > "$tmp/.next-commit"
+  BLOCKERS=0
+  section "Commit $full ($BRANCH)"
+  echo "  $(depot log -1 --format='%ci  %s' "$full")"
+  echo "  $(find "$tmp" -type f | wc -l) fichiers"
+  crlf=$(crlf_files "$tmp/blog-api" "$tmp/latex-runner" "$tmp/cv-extractor" "$tmp/deploy/oracle")
+  if [ "$crlf" -eq 0 ]; then ok "fins de ligne LF"; else block "$crlf fichier(s) en CRLF dans le commit"; fi
+  if [ -e "$dest" ]; then
+    if diff -rq -x .next-commit "$tmp" "$dest" >/dev/null 2>&1; then
+      ok "copie existante $dest identique au commit (rien n'est remplacé)"
+      if [ "$(cat "$dest/.next-commit" 2>/dev/null)" = "$short" ]; then ok ".next-commit : $short"
+      else block "$dest/.next-commit absent ou différent : printf '%s\\n' $short > $dest/.next-commit"; fi
+    else
+      block "copie existante $dest différente du commit (rien n'est remplacé) :"
+      diff -rq -x .next-commit "$tmp" "$dest" 2>&1 | head -20 | sed "s#$tmp#<commit>#g; s/^/    /"
+    fi
+    rm -rf "$tmp"
+  elif [ "$BLOCKERS" -eq 0 ]; then
+    chmod 755 "$tmp" && mv "$tmp" "$dest" || { rm -rf "$tmp"; die "écriture de $dest impossible"; }
+    ok "copie créée : $dest"
+  else
+    rm -rf "$tmp"
+  fi
+  verdict || return 1
+  echo "Suite, depuis la copie : cd $dest && sudo sh deploy/oracle/next.sh verifier"
+}
+
 # ── verifier : lecture seule ─────────────────────────────────────────────────
 cmd_verifier() {
   need_root; need_tag; not_legacy_dir
@@ -485,11 +555,7 @@ cmd_verifier() {
   if [ "$(uname -m)" = aarch64 ]; then ok "architecture ARM64"; else warn "architecture $(uname -m)"; fi
   if docker compose version >/dev/null 2>&1; then ok "$(docker compose version | head -1)"; else block "docker compose absent (paquet docker-compose-plugin)"; fi
   if [ -f "$COMPOSE_FILE" ]; then ok "$COMPOSE_FILE"; else block "fichier compose absent"; fi
-  # Une archive créée sous Windows sans « git -c core.autocrlf=false archive » contient des fins de
-  # ligne CRLF : les Dockerfile écriraient alors des \r dans la configuration de TeX
-  crlf=$(find "$ROOT/blog-api" "$ROOT/latex-runner" "$ROOT/cv-extractor" "$HERE" -type f -not -path '*/node_modules/*' \
-    \( -name Dockerfile -o -name '*.sh' -o -name '*.yml' -o -name '*.mjs' -o -name '*.ts' -o -name '*.json' \) \
-    -exec grep -l "$(printf '\r')" {} + 2>/dev/null | wc -l)
+  crlf=$(crlf_files "$ROOT/blog-api" "$ROOT/latex-runner" "$ROOT/cv-extractor" "$HERE")
   if [ "$crlf" -eq 0 ]; then ok "fins de ligne LF dans la copie"; else block "$crlf fichier(s) en CRLF : refaire l'archive avec git -c core.autocrlf=false archive"; fi
   for c in $CONTAINERS; do
     if ! docker inspect "$c" >/dev/null 2>&1; then ok "nom de conteneur $c libre"
@@ -558,7 +624,9 @@ cmd_demarrer() {
     [ "$healthy" -eq 3 ] && break
     sleep 5; waited=$((waited + 5))
   done
-  cmd_controler
+  cmd_controler; rc=$?
+  journal demarrer "$rc"
+  return "$rc"
 }
 
 # ── controler : lecture seule ────────────────────────────────────────────────
@@ -642,10 +710,29 @@ cmd_arreter() {
   fi
   echo "Images conservées pour un nouvel essai. Pour les retirer, sans viser aucune autre image :"
   echo "  sudo docker image rm portfolio-next/blog-api:$TAG portfolio-next/latex-runner:$TAG portfolio-next/cv-extractor:$TAG"
-  verdict
+  verdict; rc=$?
+  journal arreter "$rc"
+  return "$rc"
+}
+
+# ── historique : lecture seule, pour choisir le commit d'un retour arrière ──
+cmd_historique() {
+  need_root
+  section "Version en service"
+  docker inspect --format '{{.Config.Image}} ; {{.State.Status}} {{with index .State "Health"}}{{.Status}}{{end}} ; démarré {{.State.StartedAt}}' blog-api-next 2>/dev/null ||
+    echo "blog-api-next absent"
+  section "Journal ($STATE_DIR/deploiements.log : date, action, commit, résultat, copie)"
+  tail -n 20 "$STATE_DIR/deploiements.log" 2>/dev/null || echo "vide"
+  section "Copies présentes à côté de celle-ci ($(dirname "$ROOT"))"
+  for d in "$(dirname "$ROOT")/$PROJECT"-*; do
+    [ -d "$d" ] && echo "$(basename "$d") : commit $(cat "$d/.next-commit" 2>/dev/null || echo inconnu)"
+  done
+  section "Images construites (un retour arrière vers ces commits ne reconstruit rien)"
+  docker image ls --format '{{.Repository}}:{{.Tag}} {{.CreatedSince}} {{.Size}}' | grep '^portfolio-next/' || echo "aucune"
 }
 
 case "${1:-}" in
+  recuperer)  shift; cmd_recuperer "$@" ;;
   inventaire) cmd_inventaire ;;
   env)        cmd_env ;;
   sauvegarder-mongo) cmd_sauvegarder_mongo ;;
@@ -655,5 +742,6 @@ case "${1:-}" in
   demarrer)   cmd_demarrer ;;
   controler)  cmd_controler ;;
   arreter)    cmd_arreter ;;
-  *)          sed -n '3,12p' "$0"; exit 2 ;;
+  historique) cmd_historique ;;
+  *)          sed -n '3,14p' "$0"; exit 2 ;;
 esac
