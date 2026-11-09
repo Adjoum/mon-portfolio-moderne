@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Article, Tag } from '../types/blog';
 import { getArticles, getTags } from '../lib/api';
+import { deleteArticleAsAdmin } from '../lib/blogAdminApi';
+import { useAdminReady } from '../components/admin/useAdminReady';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -53,14 +55,10 @@ const ArticleCard: React.FC<{
     e.stopPropagation();
     if (!confirm(`Supprimer "${article.title}" ?`)) return;
     try {
-      const token = localStorage.getItem('blog_token');
-      await fetch(`${import.meta.env.VITE_API_URL}/articles/${article._id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await deleteArticleAsAdmin(article._id);
       onDeleteSuccess?.(article._id);
-    } catch {
-      alert('Erreur lors de la suppression');
+    } catch (err) {
+      alert((err as Error).message || 'Erreur lors de la suppression');
     }
   };
 
@@ -253,14 +251,8 @@ const ArticleCard: React.FC<{
 const BlogPage: React.FC = () => {
   //const navigate = useNavigate();
   const [articles, setArticles] = useState<Article[]>([]);
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  useEffect(() => {
-    try {
-      const user = JSON.parse(localStorage.getItem('blog_user') || '{}');
-      setIsAdmin(user?.role === 'admin');
-    } catch { setIsAdmin(false); }
-  }, []);
+  // Boutons d'édition : administrateur du portfolio connecté avec MFA (revérifié par blog-api)
+  const isAdmin = useAdminReady() === 'ready';
 
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);

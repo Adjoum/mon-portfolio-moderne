@@ -2,9 +2,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import MarkdownRenderer from '../components/MarkdownRenderer';
-import { apiFetch, getTags, getArticleById } from '../lib/api';
+import { getTags } from '../lib/api';
+import { getArticleForEdit, saveArticle, uploadBlogImage } from '../lib/blogAdminApi';
 import type { Tag, Article } from '../types/blog';
 import { useNoIndex } from '../hooks/useNoIndex';
+import { useAdminReady } from '../components/admin/useAdminReady';
+import { lockMessage, useAdminSession } from '../components/admin/adminSessionContext';
 
 function toSlug(t: string) {
   return t.toLowerCase().replace(/[éèêë]/g,'e').replace(/[àâä]/g,'a').replace(/[ùûü]/g,'u').replace(/[ôö]/g,'o').replace(/[îï]/g,'i').replace(/[^a-z0-9\s-]/g,'').trim().replace(/\s+/g,'-').replace(/-+/g,'-');
@@ -47,27 +50,25 @@ const AdminBlogEditor: React.FC = () => {
   const [activeSection, setActiveSection] = useState<'content'|'meta'|'seo'>('content');
   const taRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auth protection
-  useEffect(() => {
-    const token = localStorage.getItem('blog_token');
-    const user  = JSON.parse(localStorage.getItem('blog_user') || '{}');
-    if (!token || user?.role !== 'admin') navigate('/blog');
-  }, [navigate]);
+  // Accès vérifié avant le montage (AdminBlogPage) ; verrouillage pendant l'édition : le texte reste
+  // dans la page, le serveur refuse toute écriture jusqu'à une nouvelle connexion
+  const session = useAdminSession();
+  const locked = session.status === 'locked';
 
-  const handleLogout = () => { localStorage.removeItem('blog_token'); localStorage.removeItem('blog_user'); navigate('/blog'); };
+  const handleLogout = () => { void session.logout(); navigate('/blog'); };
 
   useEffect(() => { getTags().then((t: Tag[]) => setAllTags(t)).catch(() => {}); }, []);
 
   useEffect(() => {
     if (!isEdit || !id) return;
-    getArticleById(id).then((a: Article) => {
+    getArticleForEdit(id).then((a: Article) => {
       setTitle(a.title); setSlug(a.slug); setSlugManual(true); setExcerpt(a.excerpt); setContent(a.content);
       setCoverImage(a.coverImage ?? ''); setStatus(a.status); setFeatured(a.featured);
       setSeries(a.series ?? ''); setSeriesOrder(a.seriesOrder ?? '');
       setSeoTitle(a.seo?.title ?? ''); setSeoDesc(a.seo?.description ?? '');
       setSeoKeywords((a.seo?.keywords ?? []).join(', '));
       setSelectedTags(a.tags.map((t: Tag) => t._id));
-    }).catch(() => setError('Article introuvable'));
+    }).catch((e: Error) => setError(e.message || 'Article introuvable'));
   }, [id, isEdit]);
 
   useEffect(() => { if (!slugManual && title) setSlug(toSlug(title)); }, [title, slugManual]);
@@ -96,12 +97,9 @@ const AdminBlogEditor: React.FC = () => {
   const handleUpload = async (file: File) => {
     setUploadingImg(true);
     try {
-      const form = new FormData(); form.append('image', file);
-      const token = localStorage.getItem('blog_token');
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/upload`, { method:'POST', headers: token ? { Authorization:`Bearer ${token}` } : {}, body: form });
-      const d = await res.json();
+      const d = await uploadBlogImage(file);
       if (d.url) ins(`![Image](${d.url})`, '', '');
-    } catch { setError('Erreur upload'); } finally { setUploadingImg(false); }
+    } catch (e) { setError((e as Error).message || 'Erreur upload'); } finally { setUploadingImg(false); }
   };
 
   const doSave = async (s: 'draft'|'published') => {
@@ -110,11 +108,10 @@ const AdminBlogEditor: React.FC = () => {
     setSaving(true); setError('');
     try {
       const payload = { title, slug, excerpt, content, coverImage, status: s, featured, series: series||undefined, seriesOrder: seriesOrder||undefined, tags: selectedTags, seo: { title: seoTitle||undefined, description: seoDesc||undefined, keywords: seoKeywords.split(',').map(k => k.trim()).filter(Boolean) } };
-      if (isEdit && id) await apiFetch(`/articles/${id}`, { method:'PUT', body:JSON.stringify(payload) });
-      else await apiFetch('/articles', { method:'POST', body:JSON.stringify(payload) });
+      await saveArticle(payload, isEdit && id ? id : undefined);
       setStatus(s); setSaved(true); setTimeout(() => setSaved(false), 3000);
       if (s === 'published') navigate('/blog');
-    } catch (e: any) { setError(e?.error || 'Erreur sauvegarde'); } finally { setSaving(false); }
+    } catch (e) { setError((e as Error).message || 'Erreur sauvegarde'); } finally { setSaving(false); }
   };
 
   //const fi = (s: TemplateStringsArray | string, ...v: any[]) => typeof s === 'string' ? s : String.raw({ raw: s }, ...v);
@@ -175,6 +172,12 @@ const AdminBlogEditor: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {locked && (
+          <div role="alert" style={{ background:'rgba(255,190,60,.1)', border:'1px solid rgba(255,190,60,.3)', margin:'16px 24px', borderRadius:8, padding:'10px 16px', fontSize:12, color:'rgba(255,215,140,.95)' }}>
+            {lockMessage(session.lock?.reason) ?? 'Session administrateur fermée.'} Votre texte reste dans cette page : reconnectez-vous dans un autre onglet, puis enregistrez.
+          </div>
+        )}
 
         {error && (
           <div style={{ background:'rgba(255,60,60,.1)', border:'1px solid rgba(255,60,60,.3)', margin:'16px 24px', borderRadius:8, padding:'10px 16px', fontSize:12, color:'rgba(255,120,120,.9)', display:'flex', justifyContent:'space-between' }}>
@@ -272,7 +275,7 @@ const AdminBlogEditor: React.FC = () => {
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
                   <div>
                     <span className="fl">Statut</span>
-                    <select value={status} onChange={e => setStatus(e.target.value as any)} className="fi" style={{ cursor:'pointer' }}>
+                    <select value={status} onChange={e => setStatus(e.target.value as 'draft' | 'published')} className="fi" style={{ cursor:'pointer' }}>
                       <option value="draft">Brouillon</option>
                       <option value="published">Publié</option>
                     </select>
@@ -391,14 +394,14 @@ const AdminBlogEditor: React.FC = () => {
   );
 };
 
-// Éditeur réservé à l'administrateur du blog (jeton vérifié aussi par blog-api) : sans session,
-// retour au blog avant tout affichage, jamais vers une page de connexion.
+// Éditeur réservé à l'administrateur du portfolio : session Supabase, MFA (aal2), session serveur
+// (vérifiées aussi par blog-api à chaque écriture). Sans accès, retour au blog avant tout
+// affichage, jamais vers une page de connexion : celle-ci reste à l'adresse d'administration.
 const AdminBlogPage: React.FC = () => {
   useNoIndex();
-  const token = localStorage.getItem('blog_token');
-  let role: unknown;
-  try { role = JSON.parse(localStorage.getItem('blog_user') || '{}')?.role; } catch { role = undefined; }
-  if (!token || role !== 'admin') return <Navigate to="/blog" replace />;
+  const access = useAdminReady();
+  if (access === 'checking') return null;
+  if (access !== 'ready') return <Navigate to="/blog" replace />;
   return <AdminBlogEditor />;
 };
 

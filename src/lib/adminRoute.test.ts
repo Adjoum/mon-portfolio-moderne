@@ -77,7 +77,7 @@ describe('forme des adresses', () => {
   })
 
   it('aucun lien interne vers une adresse d’administration fixe', () => {
-    const files = ['src/hooks/AdminDashboard.tsx', 'src/pages/KnowledgeAdmin.tsx', 'src/pages/AdminBlogPage.tsx', 'src/pages/AdminLoginPage.tsx', 'src/components/Navigation.tsx', 'src/components/Footer.tsx']
+    const files = ['src/hooks/AdminDashboard.tsx', 'src/pages/KnowledgeAdmin.tsx', 'src/pages/AdminBlogPage.tsx', 'src/pages/BlogPage.tsx', 'src/lib/blogAdminApi.ts', 'src/components/Navigation.tsx', 'src/components/Footer.tsx']
     for (const file of files) {
       const code = fs.readFileSync(file, 'utf8').split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n')
       expect(code, file).not.toMatch(/['"`]\/admin(\/|['"`])/)
