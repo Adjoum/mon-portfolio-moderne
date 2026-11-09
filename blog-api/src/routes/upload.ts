@@ -2,7 +2,7 @@
 import { v2 as cloudinary, type UploadApiResponse } from 'cloudinary';
 import { Router, type Response } from 'express';
 import multer from 'multer';
-import { requireAdmin, authMiddleware } from '../middleware/auth';
+import { auditBlog, blogAdminGuards } from '../middleware/blogAdmin';
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml']);
 
@@ -39,11 +39,12 @@ function uploadFailed(res: Response, err: unknown) {
 
 const uploadRouter = Router();
 
-// POST /api/upload — upload une image
-uploadRouter.post('/', authMiddleware, requireAdmin, upload.single('image'), async (req, res) => {
+// POST /api/upload — upload une image (admin Supabase + MFA, vérifié avant toute lecture du fichier)
+uploadRouter.post('/', ...blogAdminGuards, upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Aucune image' });
   try {
     const stored = await storeImage(req.file);
+    auditBlog(req, 'blog.image.upload', 'success', stored.public_id);
     res.json({ url: stored.secure_url, public_id: stored.public_id });
   } catch (err) {
     uploadFailed(res, err);
@@ -51,11 +52,12 @@ uploadRouter.post('/', authMiddleware, requireAdmin, upload.single('image'), asy
 });
 
 // POST /api/upload/multiple — upload plusieurs images
-uploadRouter.post('/multiple', authMiddleware, requireAdmin, upload.array('images', 10), async (req, res) => {
+uploadRouter.post('/multiple', ...blogAdminGuards, upload.array('images', 10), async (req, res) => {
   const files = (req.files ?? []) as Express.Multer.File[];
   if (!files.length) return res.status(400).json({ error: 'Aucune image' });
   try {
     const stored = await Promise.all(files.map(storeImage));
+    auditBlog(req, 'blog.image.upload', 'success', `${stored.length} images`);
     res.json({ urls: stored.map(image => image.secure_url) });
   } catch (err) {
     uploadFailed(res, err);

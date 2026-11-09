@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { Article } from '../models/Article';
 import { Tag } from '../models/Tag';
-import { requireAdmin, authMiddleware, type AuthRequest } from '../middleware/auth';
+import { auditBlog, blogAdminGuards, blogAuthorId } from '../middleware/blogAdmin';
 
 const router = Router();
 
@@ -36,9 +36,9 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ── NOUVEAU — GET /api/articles/id/:id — par _id (admin éditeur) ──
+// GET /api/articles/id/:id — par _id, brouillons compris : éditeur (admin Supabase + MFA)
 // ⚠️ Doit être AVANT /:slug sinon "id" est capturé comme slug
-router.get('/id/:id', async (req, res) => {
+router.get('/id/:id', ...blogAdminGuards, async (req, res) => {
   try {
     const article = await Article.findById(req.params.id)
       .populate('author', 'username avatar bio role')
@@ -69,9 +69,13 @@ router.get('/:slug', async (req, res) => {
   }
 });
 
-// POST /api/articles — créer (admin)
-router.post('/', authMiddleware, requireAdmin, async (req, res) => {
+// POST /api/articles — créer (admin Supabase + MFA)
+router.post('/', ...blogAdminGuards, async (req, res) => {
   try {
+    const author = await blogAuthorId();
+    if (!author) {
+      return res.status(503).json({ error: 'Aucun compte auteur du blog', code: 'BLOG_AUTHOR_MISSING' });
+    }
     const { title, content, excerpt, tags, coverImage, images, seo, series, seriesOrder } = req.body;
     const baseSlug = title.toLowerCase()
       .replace(/[éèêë]/g, 'e').replace(/[àâä]/g, 'a')
@@ -82,21 +86,22 @@ router.post('/', authMiddleware, requireAdmin, async (req, res) => {
     const readTime = Math.ceil((content || '').split(/\s+/).length / 250) || 1;
     const article = new Article({
       title, slug, excerpt, content, tags, coverImage, images, seo, series, seriesOrder, readTime,
-      author: (req as AuthRequest).user!._id,
+      author,
       status: req.body.status || 'draft',
       publishedAt: req.body.status === 'published' ? new Date() : undefined,
       featured: req.body.featured || false,
     });
     await article.save();
     if (tags?.length) await Tag.updateMany({ _id: { $in: tags } }, { $inc: { count: 1 } });
+    auditBlog(req, 'blog.article.create', 'success', String(article._id));
     res.status(201).json(await article.populate([{ path: 'author', select: AUTHOR_FIELDS }, 'tags']));
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// PUT /api/articles/:id — modifier (admin)
-router.put('/:id', authMiddleware, requireAdmin, async (req, res) => {
+// PUT /api/articles/:id — modifier (admin Supabase + MFA)
+router.put('/:id', ...blogAdminGuards, async (req, res) => {
   try {
     const update = { ...req.body, updatedAt: new Date() };
     if (req.body.status === 'published' && !req.body.publishedAt) {
@@ -107,14 +112,15 @@ router.put('/:id', authMiddleware, requireAdmin, async (req, res) => {
       { returnDocument: 'after', runValidators: true }
     ).populate([{ path: 'author', select: AUTHOR_FIELDS }, 'tags']);
     if (!article) return res.status(404).json({ error: 'Introuvable' });
+    auditBlog(req, 'blog.article.update', 'success', String(req.params.id));
     res.json(article);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// ── CORRIGÉ — DELETE /api/articles/:id — vraie suppression MongoDB ──
-router.delete('/:id', authMiddleware, requireAdmin, async (req, res) => {
+// DELETE /api/articles/:id — vraie suppression MongoDB (admin Supabase + MFA)
+router.delete('/:id', ...blogAdminGuards, async (req, res) => {
   try {
     const article = await Article.findByIdAndDelete(req.params.id);
     if (!article) return res.status(404).json({ error: 'Article introuvable' });
@@ -122,6 +128,7 @@ router.delete('/:id', authMiddleware, requireAdmin, async (req, res) => {
     if (article.tags?.length) {
       await Tag.updateMany({ _id: { $in: article.tags } }, { $inc: { count: -1 } });
     }
+    auditBlog(req, 'blog.article.delete', 'success', String(req.params.id));
     res.json({ success: true, deleted: article.title });
   } catch {
     res.status(500).json({ error: 'Erreur serveur' });

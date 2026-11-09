@@ -1,14 +1,32 @@
 // === routes/comments.ts ===
-import { Router } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import { Comment } from '../models/Comment';
 import mongoose from 'mongoose';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
+import { auditBlog, runBlogAdminGuards } from '../middleware/blogAdmin';
 import { Article } from '../models/Article';
 import { toPublicComment, reactionCounts } from '../lib/publicComment';
 
 
 
 const commentsRouter = Router();
+
+// Auteur du commentaire (jeton du blog) : autorisé. Sinon, modération : administrateur Supabase +
+// MFA. Le rôle « admin » du jeton du blog n'ouvre plus la modération des commentaires d'autrui.
+async function ownerOrModerator(req: Request, res: Response, next: NextFunction) {
+  try {
+    const comment = await Comment.findById(req.params.id);
+    if (!comment) return res.status(404).json({ error: 'Introuvable' });
+    res.locals.comment = comment;
+    const userId = (req as AuthRequest).user?._id;
+    // Un visiteur anonyme n'est jamais propriétaire (commentaires invités : authorId absent)
+    if (userId && comment.authorId?.toString() === userId) return next();
+    res.locals.moderation = true;
+    runBlogAdminGuards(req, res, next);
+  } catch {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+}
  
 // GET /api/comments/:articleId — arbre de commentaires
 commentsRouter.get('/:articleId', async (req, res) => {
@@ -106,25 +124,15 @@ commentsRouter.post('/', authMiddleware, async (req, res) => {
   }
 });
  
-// PUT /api/comments/:id — modifier (auteur ou admin)
-commentsRouter.put('/:id', authMiddleware, async (req, res) => {
+// PUT /api/comments/:id — modifier (auteur, ou administrateur Supabase + MFA)
+commentsRouter.put('/:id', authMiddleware, ownerOrModerator, async (req, res) => {
   try {
-    const comment = await Comment.findById(req.params.id);
-    if (!comment) return res.status(404).json({ error: 'Introuvable' });
- 
-    const userId = (req as AuthRequest).user?._id;
-    const isAdmin = (req as AuthRequest).user?.role === 'admin';
-    // Un visiteur anonyme n'est jamais propriétaire (commentaires invités : authorId absent)
-    const isOwner = !!userId && comment.authorId?.toString() === userId;
-
-    if (!isAdmin && !isOwner) {
-      return res.status(403).json({ error: 'Non autorisé' });
-    }
-
+    const comment = res.locals.comment;
     comment.content  = req.body.content;
     comment.isEdited = true;
     comment.editedAt = new Date();
     await comment.save();
+    if (res.locals.moderation) auditBlog(req, 'blog.comment.moderate', 'success', String(comment._id));
     await comment.populate('authorId', 'username avatar role');
     res.json(toPublicComment(comment.toObject()));
   } catch (err) {
@@ -132,25 +140,15 @@ commentsRouter.put('/:id', authMiddleware, async (req, res) => {
   }
 });
  
-// DELETE /api/comments/:id — soft delete (auteur ou admin)
-commentsRouter.delete('/:id', authMiddleware, async (req, res) => {
+// DELETE /api/comments/:id — soft delete (auteur, ou administrateur Supabase + MFA)
+commentsRouter.delete('/:id', authMiddleware, ownerOrModerator, async (req, res) => {
   try {
-    const comment = await Comment.findById(req.params.id);
-    if (!comment) return res.status(404).json({ error: 'Introuvable' });
- 
-    const userId = (req as AuthRequest).user?._id;
-    const isAdmin = (req as AuthRequest).user?.role === 'admin';
-    // Un visiteur anonyme n'est jamais propriétaire (commentaires invités : authorId absent)
-    const isOwner = !!userId && comment.authorId?.toString() === userId;
-
-    if (!isAdmin && !isOwner) {
-      return res.status(403).json({ error: 'Non autorisé' });
-    }
-
+    const comment = res.locals.comment;
     // Soft delete — le contenu reste mais marqué supprimé
     comment.isDeleted = true;
     comment.content   = '';
     await comment.save();
+    if (res.locals.moderation) auditBlog(req, 'blog.comment.delete', 'success', String(comment._id));
  
     await Article.findByIdAndUpdate(comment.articleId, { $inc: { commentsCount: -1 } });
  

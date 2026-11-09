@@ -6,6 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { toPublicComment } from '../src/lib/publicComment';
+import { resetSupabaseAdminCaches } from '../src/middleware/supabaseAdmin';
+import { startFakeSupabase, ADMIN_ID, ANON_KEY } from './helpers/fakeSupabase';
 
 const GUEST_EMAIL   = 'invite.prive@example.test';
 const SESSION_IDS   = ['session-secret-aaa', 'session-secret-bbb'];
@@ -97,10 +99,27 @@ describe('autres réponses publiques', () => {
     expect(JSON.stringify(res.body)).not.toContain('session-new');
   });
 
-  it('PUT /api/comments/:id (admin) ne renvoie pas l’e-mail de l’invité', async () => {
+  it('PUT /api/comments/:id (modération, admin Supabase + MFA) ne renvoie pas l’e-mail de l’invité', async () => {
+    const supabase = await startFakeSupabase();
+    try {
+      process.env.SUPABASE_URL = supabase.url;
+      process.env.SUPABASE_ANON_KEY = ANON_KEY;
+      supabase.admins.add(ADMIN_ID);
+      resetSupabaseAdminCaches();
+      const res = await request(app).put('/api/comments/c1')
+        .set('Authorization', `Bearer ${supabase.token({ aal: 'aal2' })}`).send({ content: 'Modéré' });
+      expect(res.status).toBe(200);
+      expectNoPrivateData(res.body);
+    } finally {
+      delete process.env.SUPABASE_URL;
+      await supabase.close();
+    }
+  });
+
+  it('le jeton admin du blog ne modère plus le commentaire d’un invité', async () => {
     const token = jwt.sign({ _id: 'admin1', role: 'admin' }, process.env.JWT_SECRET!, { algorithm: 'HS256' });
     const res = await request(app).put('/api/comments/c1').set('Authorization', `Bearer ${token}`).send({ content: 'Modéré' });
-    expect(res.status).toBe(200);
+    expect([401, 503]).toContain(res.status);
     expectNoPrivateData(res.body);
   });
 });

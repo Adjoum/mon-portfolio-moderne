@@ -1,9 +1,10 @@
 // P0.A3 — Durcissements hors IA : hash de mot de passe, envoi d'images, limites de corps, CORS.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
-import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
+import { resetSupabaseAdminCaches } from '../src/middleware/supabaseAdmin';
+import { startFakeSupabase, ADMIN_ID, ANON_KEY, type FakeSupabase } from './helpers/fakeSupabase';
 
 const admin = { _id: 'admin1', username: 'admin', email: 'a@x.test', role: 'admin' as const };
 
@@ -14,6 +15,8 @@ vi.mock('../src/models/User', async (original) => {
   const User: any = Object.create(actual.User);
   User.schema = actual.User.schema;
   User.findById = (id: string) => ({ select: () => ({ lean: async () => (id === 'admin1' ? admin : null) }) });
+  // Auteur MongoDB des articles créés par l'administrateur du portfolio
+  User.findOne = () => ({ sort: () => ({ select: () => ({ lean: async () => ({ _id: 'admin1' }) }) }) });
   return { User };
 });
 
@@ -36,16 +39,27 @@ vi.mock('cloudinary', () => ({ v2: { config: vi.fn(), uploader: { upload_stream:
 const { createApp } = await import('../src/app');
 const { User } = await import('../src/models/User');
 
-const adminToken = () => jwt.sign({ _id: 'admin1', role: 'admin' }, process.env.JWT_SECRET!, { algorithm: 'HS256', expiresIn: '1h' });
+// Écritures du blog : administrateur Supabase avec MFA (test/blog.admin-mfa.test.ts pour les refus)
+let supabase: FakeSupabase;
+const adminToken = () => supabase.token({ aal: 'aal2' });
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 function cloudinaryAnswers(result: object | null, error: Error | null = null) {
   uploadStream.mockImplementation((_options, callback) => ({ end: () => callback(error, result) }));
 }
 
+beforeAll(async () => { supabase = await startFakeSupabase(); });
+afterAll(async () => {
+  delete process.env.SUPABASE_URL;
+  await supabase.close();
+});
 beforeEach(() => {
   populate.mockClear();
   uploadStream.mockReset();
+  process.env.SUPABASE_URL = supabase.url;
+  process.env.SUPABASE_ANON_KEY = ANON_KEY;
+  supabase.admins.add(ADMIN_ID);
+  resetSupabaseAdminCaches();
 });
 
 describe('hash du mot de passe', () => {
