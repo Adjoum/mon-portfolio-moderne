@@ -198,12 +198,84 @@ describe('livraison depuis GitLab : récupération par commit exact', () => {
     expect(history).not.toMatch(/docker (rm|stop|run|start|compose|image rm|network)|\bdc\b|>/)
   })
 
-  it('le README livre par GitLab : sans pipeline, script du commit livré, clé sans droit d’écriture', () => {
-    expect(readme).toContain('git push -o ci.skip origin release/portfolio-next')
+  it('le README livre par GitHub : HTTPS sans clé, script du commit livré, jamais de force push', () => {
+    expect(readme).toContain('git push github release/portfolio-next')
+    expect(readme).toContain('remote set-url origin https://github.com/Adjoum/mon-portfolio-moderne.git')
     expect(readme).toMatch(/git -C depot\.git show "\$c":deploy\/oracle\/next\.sh \| sh -s recuperer "\$c"/)
-    expect(readme).toContain('« Grant write permissions to this key » DÉCOCHÉ')
-    expect(readme).toContain('SHA256:eUXGGm1YGsMAS7vkcx6JOJdOGHPem5gQp4taiCfCLB8')
     expect(readme).not.toMatch(/^\s*git( -C \S+)? pull\b/m)
+    const pushes = readme.split('\n').filter(l => /^\s*git push/.test(l)).map(l => l.split('#')[0])
+    expect(pushes.length).toBeGreaterThan(0)
+    for (const push of pushes) expect(push).not.toMatch(/--force|\s-f\b|\s\+\S/)
+  })
+})
+
+describe('certificat Supabase et connexion TLS', () => {
+  const compose = read('deploy/oracle/compose.next.yml')
+
+  it('certificat monté en lecture seule, jamais créé par Docker, utilisé par la connexion IA', () => {
+    expect(compose).toMatch(/source: \$\{NEXT_SUPABASE_CA:-\/etc\/portfolio-next\/supabase-ca\.crt\}\n\s+target: \/run\/certs\/supabase-ca\.crt\n\s+read_only: true\n\s+bind:\n\s+create_host_path: false/)
+    expect(compose).toContain('- AI_DATABASE_CA_FILE=/run/certs/supabase-ca.crt')
+    expect(script).toContain('NEXT_SUPABASE_CA="$CA_FILE" docker compose')
+  })
+
+  it('verifier bloque sans certificat PEM valide et lisible', () => {
+    const verify = body('cmd_verifier')
+    expect(verify).toContain('block "$CA_FILE absent')
+    expect(verify).toContain('openssl x509 -in "$CA_FILE" -noout -subject')
+    expect(verify).toContain('-checkend 2592000')
+    expect(verify).toMatch(/stat -c '%a' "\$CA_FILE"\)" != 644/)
+  })
+
+  it('verifier-tls : poignée de main vérifiée (certificat et nom), sans lire l’URL secrète', () => {
+    const tls = body('cmd_verifier_tls')
+    expect(tls).toContain('-starttls postgres')
+    expect(tls).toContain('-verify_hostname "$host" -verify_return_error')
+    expect(tls).toContain('tls -CAfile "$CA_FILE"')
+    expect(tls).toContain('timeout 20 openssl s_client')
+    expect(tls).not.toMatch(/AI_DATABASE_URL|ENV_FILE/)
+  })
+})
+
+describe('variables : env-definir et activation progressive', () => {
+  it('valeur jamais en argument ni affichée : saisie sans écho ou tube, transmise par l’entrée standard', () => {
+    const set = body('cmd_env_definir')
+    expect(set).toContain("grep -Eq '^[A-Z][A-Z0-9_]*$'")
+    expect(set).toContain('stty -echo')
+    expect(set).toContain("trap 'stty echo 2>/dev/null' EXIT INT TERM")
+    expect(set).toMatch(/printf '%s' "\$value" \| NEXT_ENV_FILE="\$ENV_FILE" NEXT_COMPOSE_FILE="\$COMPOSE_FILE" NEXT_SUPABASE_CA="\$CA_FILE" \\\n\s+python3 "\$HERE\/env_definir\.py" "\$name"/)
+    expect(set).not.toMatch(/echo "\$value"|\$value"?\s*$/m)
+  })
+
+  it('env_definir.py : erreurs de Compose masquées, remplacement atomique après relecture', () => {
+    const py = read('deploy/oracle/env_definir.py')
+    expect(py).toContain('stderr=subprocess.DEVNULL')
+    expect(py).toContain('os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600')
+    const check = py.indexOf("if after.get(key) != expected")
+    expect(check).toBeGreaterThan(0)
+    expect(py.indexOf('os.replace(TMP, F)')).toBeGreaterThan(check)
+    expect(py).not.toMatch(/print\([^)]*\bvalue\b/)
+  })
+
+  it('verifier : amorçage toujours fermé ; administration, connaissances et IA activables avec leurs variables', () => {
+    const verify = body('cmd_verifier')
+    expect(verify).toContain('if value ADMIN_BOOTSTRAP_ENABLED false; then ok')
+    expect(verify).toContain('block "SUPABASE_URL et SUPABASE_ANON_KEY vont ensemble"')
+    expect(verify).toContain('block "IA active sans $v"')
+    expect(verify).not.toContain('doit valoir false pour le lancement isolé')
+  })
+})
+
+describe('bascule nginx préparée, jamais exécutée par les scripts', () => {
+  it('README : copie, nginx -t, rechargement, restauration si le test échoue, retour sur 5000', () => {
+    expect(readme).toContain('sudo cp -p "$S" /var/lib/portfolio-next/nginx-blog-api.avant-5001')
+    expect(readme).toContain('sudo nginx -t && sudo systemctl reload nginx || sudo cp -p /var/lib/portfolio-next/nginx-blog-api.avant-5001 "$S"')
+    expect(readme).toContain("sudo sed -i 's#proxy_pass http://127.0.0.1:5001/;#proxy_pass http://127.0.0.1:5000/;#'")
+    expect(readme).not.toMatch(/^\s*sudo systemctl restart nginx/m)
+  })
+
+  it('aucun script ne touche nginx', () => {
+    const code = script.split('\n').filter(line => !line.trim().startsWith('#')).join('\n')
+    expect(code).not.toMatch(/systemctl (reload|restart) nginx|nginx -s|sites-available/)
   })
 })
 
@@ -224,6 +296,7 @@ describe('syntaxe POSIX', () => {
   const sh = spawnSync('sh', ['-c', 'exit 0'])
   it.skipIf(sh.error !== undefined)('next.sh et les bancs passent sh -n', () => {
     for (const file of ['deploy/oracle/next.sh', 'tests/oracle/sauvegarde-mongo.bench.sh', 'tests/oracle/recuperer.bench.sh']) {
+
       const result = spawnSync('sh', ['-n', path.join(ROOT, file)], { encoding: 'utf8' })
       expect(result.status, `${file} : ${result.stderr}`).toBe(0)
     }

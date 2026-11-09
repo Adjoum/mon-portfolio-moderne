@@ -1,12 +1,14 @@
 #!/bin/sh
 # deploy/oracle/next.sh — nouvelle API du portfolio EN PARALLÈLE de l'actuelle, sur la VM Oracle.
 #
-#   sh deploy/oracle/next.sh recuperer <commit>   SANS sudo : copie du commit, publié sur la branche de release GitLab
+#   sh deploy/oracle/next.sh recuperer <commit>   SANS sudo : copie du commit, publié sur la branche de release (GitHub)
 #   sudo sh deploy/oracle/next.sh inventaire   LECTURE SEULE : état de la VM à transmettre avant le GO
 #   sudo sh deploy/oracle/next.sh env          crée le fichier d'environnement depuis le conteneur blog-api
+#   sudo sh deploy/oracle/next.sh env-definir <NOM>   ajoute ou remplace une variable, saisie sans écho, relue par Compose
 #   sudo sh deploy/oracle/next.sh sauvegarder-mongo   mongodump (lecture seule) puis restauration d'essai isolée
 #   sh deploy/oracle/next.sh verifier-archive <archive>   restauration d'essai d'une archive copiée (NEXT_BACKUP_DIR)
 #   sudo sh deploy/oracle/next.sh verifier     LECTURE SEULE : prérequis du lancement (code 1 si bloquant)
+#   sudo sh deploy/oracle/next.sh verifier-tls [hôte]   LECTURE SEULE : TLS du pooler Supabase vérifié avec le certificat
 #   sudo sh deploy/oracle/next.sh construire   construit portfolio-next/{blog-api,latex-runner,cv-extractor}:<commit>
 #   sudo sh deploy/oracle/next.sh demarrer     démarre les trois conteneurs, blog-api-next sur 127.0.0.1:5001
 #   sudo sh deploy/oracle/next.sh controler    LECTURE SEULE : santé, isolement, blog-api et autres conteneurs intacts
@@ -15,7 +17,7 @@
 #
 # À lancer depuis une copie du commit validé (deploy/oracle/README.md), jamais depuis le dépôt de
 # l'ancien déploiement. Commit : variable NEXT_TAG ou fichier .next-commit à la racine de la copie.
-# Les copies viennent de GitLab par « recuperer » (dépôt nu en lecture seule, jamais de git pull).
+# Les copies viennent du dépôt de livraison par « recuperer » (dépôt nu en lecture seule, jamais de git pull).
 # Ne touche jamais : le conteneur blog-api ni son image, le port 5000, nginx, les autres projets,
 # aucun volume. Aucune commande Docker globale. Aucune valeur secrète affichée ni passée en argument.
 set -u
@@ -28,6 +30,8 @@ NETWORKS="portfolio-next_egress portfolio-next_latex portfolio-next_extract"
 IMAGES="blog-api latex-runner cv-extractor"
 PORT=${NEXT_PORT:-5001}
 ENV_FILE=${NEXT_ENV_FILE:-/etc/portfolio-next/api.env}
+# Certificat racine public de Supabase (Database > SSL), monté en lecture seule dans blog-api-next
+CA_FILE=${NEXT_SUPABASE_CA:-/etc/portfolio-next/supabase-ca.crt}
 STATE_DIR=${NEXT_STATE_DIR:-/var/lib/portfolio-next}
 BACKUP_DIR=${NEXT_BACKUP_DIR:-/var/backups/portfolio-next}
 # Épinglée par empreinte (index multi-architecture) : aucune étiquette mongo:* n'est créée ni
@@ -40,7 +44,7 @@ REQUIRED="MONGODB_URI JWT_SECRET FRONTEND_URL"
 FORCED="ADMIN_BOOTSTRAP_ENABLED KNOWLEDGE_WRITE_ENABLED AI_ENABLED"
 MIN_DISK_GIB=6
 MIN_MEM_GIB=3
-# Livraison depuis GitLab : dépôt nu qui ne fait que lire la branche de release, copies à côté de lui
+# Livraison : dépôt nu qui ne fait que lire la branche de release, copies à côté de lui
 NEXT_HOME=${NEXT_HOME:-$HOME/portfolio-next}
 DEPOT="$NEXT_HOME/depot.git"
 BRANCH=${NEXT_BRANCHE:-release/portfolio-next}
@@ -68,7 +72,7 @@ not_legacy_dir() {
   [ "$ROOT" != "$legacy" ] || die "copie de l'ancien déploiement ($LEGACY_DIR) : utiliser une copie séparée du commit validé"
 }
 
-dc()       { NEXT_TAG="$TAG" NEXT_ENV_FILE="$ENV_FILE" NEXT_PORT="$PORT" docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"; }
+dc()       { NEXT_TAG="$TAG" NEXT_ENV_FILE="$ENV_FILE" NEXT_PORT="$PORT" NEXT_SUPABASE_CA="$CA_FILE" docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"; }
 http()     { curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$@" || true; }
 label_of() { docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$1" 2>/dev/null; }
 # État de santé, vide si le conteneur n'a pas de contrôle de santé
@@ -497,7 +501,7 @@ cmd_verifier_archive() {
   verdict
 }
 
-# ── recuperer : copie d'un commit publié sur GitLab, sans sudo ───────────────
+# ── recuperer : copie d'un commit publié sur le dépôt de livraison, sans sudo ──
 # Le dépôt nu $DEPOT (créé une fois, deploy/oracle/README.md §4) ne fait que lire la branche de
 # release : ni copie de travail, ni push, ni git pull. Le dépôt de l'ancien déploiement n'est pas lu.
 # Une copie existante n'est jamais remplacée : elle est comparée au commit, fichier par fichier.
@@ -508,7 +512,7 @@ cmd_recuperer() {
   [ -d "$DEPOT" ] || die "$DEPOT absent : le créer une fois (deploy/oracle/README.md §4)"
   depot() { git -C "$DEPOT" -c core.autocrlf=false "$@"; }
   ref="refs/remotes/origin/$BRANCH"
-  depot fetch --quiet --no-tags origin "+refs/heads/$BRANCH:$ref" </dev/null || die "lecture de $BRANCH sur GitLab impossible (clé de déploiement, réseau ?)"
+  depot fetch --quiet --no-tags origin "+refs/heads/$BRANCH:$ref" </dev/null || die "lecture de $BRANCH impossible (adresse du dépôt, réseau ?)"
   full=$(depot rev-parse --verify --quiet "$want^{commit}") || die "commit $want introuvable"
   depot merge-base --is-ancestor "$full" "$ref" || die "commit $full absent de la branche $BRANCH publiée"
   short=$(printf '%s' "$full" | cut -c1-12)
@@ -547,6 +551,59 @@ cmd_recuperer() {
   echo "Suite, depuis la copie : cd $dest && sudo sh deploy/oracle/next.sh verifier"
 }
 
+# ── env-definir : une variable du fichier d'environnement, jamais affichée ──
+# Valeur saisie sans écho (terminal) ou lue sur l'entrée standard (une ligne), jamais en argument.
+# Écrite entre guillemets doubles (\ " $ échappés : apostrophes, dollars et antislashs gardés tels
+# quels) ; fichier remplacé d'un coup après relecture par Compose : même valeur, autres variables
+# inchangées (env_definir.py). Les conteneurs en marche ne la voient qu'au prochain demarrer.
+cmd_env_definir() {
+  need_root
+  name=${1:-}
+  printf '%s' "$name" | grep -Eq '^[A-Z][A-Z0-9_]*$' || die "nom attendu en majuscules : env-definir NOM"
+  [ -f "$ENV_FILE" ] || die "$ENV_FILE absent : sudo sh deploy/oracle/next.sh env"
+  [ -f "$HERE/env_definir.py" ] || die "lancer depuis la copie du commit : sudo sh deploy/oracle/next.sh env-definir $name"
+  command -v python3 >/dev/null 2>&1 || die "python3 absent"
+  if [ -t 0 ]; then
+    printf 'Valeur de %s (rien ne s'\''affiche) : ' "$name" >&2
+    trap 'stty echo 2>/dev/null' EXIT INT TERM
+    stty -echo
+    IFS= read -r value; status=$?
+    stty echo; trap - EXIT INT TERM
+    printf '\n' >&2
+  else
+    IFS= read -r value; status=$?
+  fi
+  [ "$status" -eq 0 ] || [ -n "$value" ] || die "aucune valeur lue"
+  printf '%s' "$value" | NEXT_ENV_FILE="$ENV_FILE" NEXT_COMPOSE_FILE="$COMPOSE_FILE" NEXT_SUPABASE_CA="$CA_FILE" \
+    python3 "$HERE/env_definir.py" "$name"
+}
+
+# ── verifier-tls : lecture seule ─────────────────────────────────────────────
+# Poignée de main TLS avec le pooler Supabase (STARTTLS PostgreSQL), sans aucun identifiant : le
+# certificat présenté doit être signé par CA_FILE et porter le nom de l'hôte. L'hôte (« Session
+# pooler » du tableau de bord Supabase) est donné en argument : l'URL secrète n'est jamais lue.
+cmd_verifier_tls() {
+  need_root
+  BLOCKERS=0
+  target=${1:-}
+  [ -n "$target" ] || die "hôte du pooler attendu : sudo sh deploy/oracle/next.sh verifier-tls <hôte>[:port]"
+  host=${target%:*}; port=${target##*:}
+  [ "$port" != "$target" ] || port=5432
+  printf '%s' "$host" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9.-]*$' || die "hôte invalide"
+  printf '%s' "$port" | grep -Eq '^[0-9]{1,5}$' || die "port invalide"
+  [ -f "$CA_FILE" ] || die "$CA_FILE absent (deploy/oracle/README.md §6)"
+  section "TLS de $host:$port avec $CA_FILE (aucun identifiant envoyé)"
+  tls() { timeout 20 openssl s_client -starttls postgres -connect "$host:$port" -servername "$host" \
+            -verify_hostname "$host" -verify_return_error -brief "$@" </dev/null 2>&1; }
+  r=$(tls -CAfile "$CA_FILE")
+  if printf '%s\n' "$r" | grep -q '^Verification: OK'; then ok "certificat du pooler signé par le certificat du projet, nom $host vérifié"
+  else block "vérification refusée : $(printf '%s\n' "$r" | grep -iE 'verif|error|refused|timeout' | head -2 | tr '\n' ' ')"; fi
+  # Pour information : le certificat épinglé reste nécessaire si les autorités du système refusent
+  if tls -CApath /etc/ssl/certs | grep -q '^Verification: OK'; then echo "  info      autorités du système : acceptées aussi"
+  else echo "  info      autorités du système : refusées (le certificat du projet est nécessaire)"; fi
+  verdict
+}
+
 # ── verifier : lecture seule ─────────────────────────────────────────────────
 cmd_verifier() {
   need_root; need_tag; not_legacy_dir
@@ -575,13 +632,37 @@ cmd_verifier() {
   if [ -f "$ENV_FILE" ]; then
     if [ "$(stat -c '%U %a' "$ENV_FILE")" = "root 600" ]; then ok "$ENV_FILE : root, 600"; else block "$ENV_FILE : $(stat -c '%U %a' "$ENV_FILE") (attendu : root 600)"; fi
     for v in $REQUIRED; do if grep -q "^$v=" "$ENV_FILE"; then ok "$v présente"; else block "$v absente de $ENV_FILE"; fi; done
-    for v in $FORCED; do
-      if grep -Eq "^$v='?false'?$" "$ENV_FILE"; then ok "$v=false"; else block "$v doit valoir false pour le lancement isolé"; fi
-    done
+    # Valeurs entre apostrophes (env) ou guillemets doubles (env-definir)
+    has()   { grep -q "^$1=" "$ENV_FILE"; }
+    value() { grep -Eq "^$1=[\"']?$2[\"']?\$" "$ENV_FILE"; }
+    # Amorçage d'un compte : toujours fermé. Administration, base de connaissances, IA : activées
+    # l'une après l'autre (deploy/oracle/README.md §6), chacune avec ses variables
+    if value ADMIN_BOOTSTRAP_ENABLED false; then ok "ADMIN_BOOTSTRAP_ENABLED=false"; else block "ADMIN_BOOTSTRAP_ENABLED doit valoir false"; fi
+    if has SUPABASE_URL && has SUPABASE_ANON_KEY; then ok "administration : Supabase configuré (migration 12 exigée en production)"
+    elif has SUPABASE_URL || has SUPABASE_ANON_KEY; then block "SUPABASE_URL et SUPABASE_ANON_KEY vont ensemble"
+    else echo "  info      administration désactivée (503) : SUPABASE_URL et SUPABASE_ANON_KEY absentes"; fi
+    if value KNOWLEDGE_WRITE_ENABLED true; then echo "  info      écritures de la base de connaissances : activées"
+    else echo "  info      écritures de la base de connaissances : désactivées"; fi
+    # L'IA n'est coupée que par AI_ENABLED=false (blog-api/src/ai/services/gateway.ts)
+    if value AI_ENABLED false; then echo "  info      IA désactivée (AI_ENABLED=false)"
+    else
+      for v in AI_DATABASE_URL AI_LOG_HMAC_SECRET; do if has "$v"; then ok "IA : $v présente"; else block "IA active sans $v"; fi; done
+    fi
     if grep -Eq '^(OPENAI|GROQ|ANTHROPIC|GEMINI|XAI|OPENROUTER)_API_KEY=' "$ENV_FILE"; then warn "ancienne clé IA présente : inutile (clés dans Vault), à retirer"; fi
-    if grep -q '^AI_DATABASE_URL=' "$ENV_FILE"; then warn "AI_DATABASE_URL présente : le rôle ai_backend n'existe pas encore en production"; else ok "AI_DATABASE_URL absente : IA indisponible, voulu"; fi
   else
     block "$ENV_FILE absent : sudo sh deploy/oracle/next.sh env"
+  fi
+  # Certificat public, monté en lecture seule : sans lui, le conteneur ne démarre pas
+  if [ ! -f "$CA_FILE" ]; then
+    block "$CA_FILE absent : certificat Supabase à déposer (deploy/oracle/README.md §6)"
+  elif ! subject=$(openssl x509 -in "$CA_FILE" -noout -subject 2>/dev/null); then
+    block "$CA_FILE n'est pas un certificat PEM"
+  elif ! openssl x509 -in "$CA_FILE" -noout -checkend 2592000 >/dev/null 2>&1; then
+    block "$CA_FILE expire dans moins de 30 jours ($(openssl x509 -in "$CA_FILE" -noout -enddate))"
+  elif [ "$(stat -c '%a' "$CA_FILE")" != 644 ]; then
+    block "$CA_FILE : droits $(stat -c '%a' "$CA_FILE") (attendu : 644, lu par l'utilisateur du conteneur)"
+  else
+    ok "certificat Supabase : $subject"
   fi
   root_dir=$(docker_root)
   free_kib=$(df -Pk "$root_dir" | awk 'NR == 2 { print $4 }')
@@ -670,6 +751,16 @@ cmd_controler() {
     -H 'Content-Type: application/octet-stream' -H 'X-File-Type: text/plain' --data-binary @- "$base/cv/import" || true)
   if [ "$h" = 200 ] && grep -q 'Développeur' "$t"; then ok "import de CV par cv-extractor : texte extrait"; else block "import de CV : HTTP $h"; fi
   rm -f "$t"
+  # Écritures du blog : refusées avant tout accès à la base sans administrateur Supabase + MFA
+  for route in articles tags upload; do
+    h=$(http -X POST -H 'Content-Type: application/json' -d '{}' "$base/$route")
+    if [ "$h" = 401 ]; then ok "POST /api/$route sans jeton : 401"; else block "POST /api/$route sans jeton : HTTP $h"; fi
+  done
+  h=$(http -X POST -H 'Authorization: Bearer forge.jeton.test' -H 'Content-Type: application/json' -d '{}' "$base/articles")
+  case "$h" in
+    401|503) ok "POST /api/articles avec un jeton forgé : $h (refusé)" ;;
+    *)       block "POST /api/articles avec un jeton forgé : HTTP $h" ;;
+  esac
 
   section "Ancienne API et autres conteneurs"
   if docker inspect "$LEGACY" >/dev/null 2>&1; then
@@ -735,6 +826,8 @@ case "${1:-}" in
   recuperer)  shift; cmd_recuperer "$@" ;;
   inventaire) cmd_inventaire ;;
   env)        cmd_env ;;
+  env-definir) shift; cmd_env_definir "$@" ;;
+  verifier-tls) shift; cmd_verifier_tls "$@" ;;
   sauvegarder-mongo) cmd_sauvegarder_mongo ;;
   verifier-archive) shift; cmd_verifier_archive "$@" ;;
   verifier)   cmd_verifier ;;
@@ -743,5 +836,5 @@ case "${1:-}" in
   controler)  cmd_controler ;;
   arreter)    cmd_arreter ;;
   historique) cmd_historique ;;
-  *)          sed -n '3,14p' "$0"; exit 2 ;;
+  *)          sed -n '3,16p' "$0"; exit 2 ;;
 esac

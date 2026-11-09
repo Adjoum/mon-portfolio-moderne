@@ -1,11 +1,11 @@
 #!/bin/sh
-# Banc Docker de deploy/oracle/next.sh recuperer : livraison depuis GitLab, par commit exact.
+# Banc Docker de deploy/oracle/next.sh recuperer : livraison depuis le dépôt Git (GitHub), par commit exact.
 #
 #   sh tests/oracle/recuperer.bench.sh
 #   NEXT_ARCHIVE=/d/portfolio-sauvegardes/portfolio-next-d0fead7062a9.tar.gz sh tests/oracle/recuperer.bench.sh
 #
 # Comme sur la VM : Ubuntu 24.04, dash, utilisateur ubuntu, sudo réservé aux autres commandes.
-# GitLab est joué par un dépôt nu local (branche release/portfolio-next = commit d0fead7062a9) ;
+# Le dépôt de livraison est joué par un dépôt nu local (branche release/portfolio-next = commit d0fead7062a9) ;
 # le commit livré ajoute la version de travail de next.sh, du README et de vercel.json.
 # NEXT_ARCHIVE : archive réellement transférée sur la VM, comparée au commit sans être remplacée.
 # Aucun réseau, aucun volume, aucun accès à Docker depuis le conteneur ; dépôt monté en lecture seule.
@@ -51,7 +51,7 @@ tree_sum() { (cd "$1" && find . -printf '%p %m\n' | sort && find . -type f -exec
 leftovers() { find "$NH" -maxdepth 1 -name '.recuperation-*' | wc -l; }
 G="git -c safe.directory=* -c user.name=banc -c user.email=banc@exemple.invalid"
 
-section "Préparation : faux GitLab, ancien dépôt, dépôt nu de la VM (README §4)"
+section "Préparation : faux dépôt de livraison, ancien dépôt, dépôt nu de la VM (README §4)"
 # Conteneur jetable : root manipule les dépôts d'ubuntu (upload-pack ignore safe.directory passé par -c)
 git config --global safe.directory '*'
 $G clone -q --bare --no-local --single-branch --branch release/portfolio-next /srv/repo /srv/gitlab.git 2>&1 | tail -2
@@ -77,7 +77,7 @@ $G -C "$W" add -A && $G -C "$W" commit -qm "banc : next.sh recuperer"
 $G -C "$W" push -q origin HEAD:release/portfolio-next
 X=$($G -C "$W" rev-parse HEAD); XS=$(printf %s "$X" | cut -c1-12)
 [ "$($G -C /srv/gitlab.git rev-parse release/portfolio-next 2>/dev/null)" = "$X" ] && [ "$X" != "$BASE" ] ||
-  { echo "ARRÊT : préparation du faux GitLab"; exit 1; }
+  { echo "ARRÊT : préparation du faux dépôt de livraison"; exit 1; }
 BS=$(printf %s "$BASE" | cut -c1-12)
 echo "  commit livré : $XS ; candidat : $BS"
 
@@ -91,7 +91,7 @@ code "$RC" 1 "argument non hexadécimal : refusé"
 as_ubuntu "NEXT_HOME=/tmp/vide sh /srv/repo/deploy/oracle/next.sh recuperer $BASE"
 code "$RC" 1 "dépôt nu absent : refusé"; has "$OUT" "README.md §4" "renvoi vers la création du dépôt nu"
 as_ubuntu "sh /srv/repo/deploy/oracle/next.sh recuperer 0123456789abcdef0123"
-code "$RC" 1 "commit inconnu de GitLab : refusé"
+code "$RC" 1 "commit inconnu du dépôt de livraison : refusé"
 
 section "Commande du README sur la VM : script lu dans le commit livré"
 as_ubuntu "git -C depot.git fetch --quiet --no-tags origin '+refs/heads/release/portfolio-next:refs/remotes/origin/release/portfolio-next' &&
@@ -133,7 +133,7 @@ chown -R ubuntu:ubuntu "$C"
 SUM=$(tree_sum "$C")
 as_ubuntu "sh $D/deploy/oracle/next.sh recuperer $BASE"
 code "$RC" 1 "sans .next-commit : point bloquant"
-has "$OUT" "identique au commit" "contenu reconnu identique au commit GitLab"
+has "$OUT" "identique au commit" "contenu reconnu identique au commit livré"
 has "$OUT" "$BS > $C/.next-commit" "commande de correction affichée"
 code "$(tree_sum "$C")" "$SUM" "copie inchangée"
 printf '%s\n' "$BS" > "$C/.next-commit" && chown ubuntu:ubuntu "$C/.next-commit"

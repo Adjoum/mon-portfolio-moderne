@@ -7,12 +7,14 @@ d'autres projets : toute intervention se limite aux conteneurs du portfolio.
 |---|---|
 | `discover.sh` | inventaire général de la VM, en **lecture seule** |
 | `discover-canary-test.sh` | preuve que `discover.sh` n'affiche aucun secret (VM simulée, jamais sur une vraie machine) |
-| `next.sh` | nouvelle API **en parallèle** de l'actuelle : copie depuis GitLab, inventaire, sauvegarde MongoDB, préparation, lancement, contrôle, retour arrière |
+| `next.sh` | nouvelle API **en parallèle** de l'actuelle : copie depuis GitHub, inventaire, sauvegarde MongoDB, variables, TLS Supabase, lancement, contrôle, retour arrière |
+| `env_definir.py` | appelé par `next.sh env-definir` : écriture d'une variable relue par Compose avant remplacement du fichier |
 | `compose.next.yml` | les trois conteneurs de la nouvelle API, et rien d'autre |
 | `nginx-api-locations.conf.example` | blocs `location` à fusionner plus tard dans le `server` de `api.adjoumani-koffi.com` |
 
 Tests : `tests/infra/oracle-next.test.ts` (`npm test`, sans Docker), et exécution réelle sous Docker
-Desktop : `tests/oracle/sauvegarde-mongo.bench.sh`, `tests/oracle/recuperer.bench.sh`.
+Desktop : `tests/oracle/sauvegarde-mongo.bench.sh`, `tests/oracle/recuperer.bench.sh` ; avec le seul
+binaire Compose : `python tests/oracle/env-definir.bench.py`.
 
 **Toujours exécuter sur la VM la version d'un commit précis**, jamais la copie de travail : un
 fichier en cours de modification serait envoyé tel quel. Toutes les commandes ci-dessous partent de
@@ -130,7 +132,7 @@ sudo sh deploy/oracle/next.sh controler    # à relancer à volonté, lecture se
 - `env` reprend du conteneur `blog-api` les seules variables lues par la nouvelle API, sans jamais
   afficher une valeur, et force `ADMIN_BOOTSTRAP_ENABLED`, `KNOWLEDGE_WRITE_ENABLED` et `AI_ENABLED` à
   `false`. Les anciennes clés IA ne sont pas reprises. Une valeur contenant une apostrophe est signalée
-  et doit être saisie à la main.
+  et se dépose avec `env-definir` (§6).
 - Sans `SUPABASE_*` ni `AI_DATABASE_URL`, l'administration répond 503 et l'IA est indisponible :
   aucune migration n'est nécessaire, rien n'est écrit dans Supabase ni dans Pinecone.
 - `verifier` bloque si un nom, un réseau ou le port est pris par un autre projet, si le fichier
@@ -168,36 +170,30 @@ que l'ancienne API répond toujours. Les images restent pour un nouvel essai ; l
 retire, sans viser aucune autre image, est affichée. Le fichier `/etc/portfolio-next/api.env` se
 supprime à la main.
 
-## 4. Livraison depuis GitLab (méthode officielle)
+## 4. Livraison depuis GitHub (méthode officielle)
 
-GitLab est la source : le poste pousse la branche `release/portfolio-next`, la VM en tire un commit
-précis. Ni archive ni `scp`. La VM ne fait jamais `git pull` ni `git push`, et n'écrit rien dans le
-dépôt de l'ancien déploiement (`/home/ubuntu/adjoumani-portfolio`).
+Le dépôt public GitHub est la source des livraisons Oracle : le poste pousse la branche
+`release/portfolio-next`, la VM en tire un commit précis, en HTTPS et sans clé. Ni archive ni `scp`.
+La VM ne fait jamais `git pull` ni `git push`, et n'écrit rien dans le dépôt de l'ancien déploiement
+(`/home/ubuntu/adjoumani-portfolio`). GitLab reste la source de Vercel (`main`).
 
 | Où | Quoi |
 |---|---|
-| GitLab | branche `release/portfolio-next`, protégée : push réservé aux mainteneurs, force push interdit |
-| Vercel | `vercel.json` : `git.deploymentEnabled` à `false` pour `release/*` ; aucun déploiement, ni Preview ni production. `main` reste la seule branche déployée |
-| GitHub | miroir public de la même branche ; aucun workflow ni déploiement branché |
-| VM | `~/portfolio-next/depot.git` : dépôt nu, lecture seule (clé de déploiement sans droit d'écriture) |
+| GitHub | branche `release/portfolio-next`, règle de protection : ni force push ni suppression ; aucun workflow ni déploiement branché |
+| GitLab | `main` seulement, avancé par avance rapide au moment du frontend (Vercel) |
+| Vercel | `vercel.json` : `git.deploymentEnabled` à `false` pour `release/*` ; `main` reste la seule branche déployée |
+| VM | `~/portfolio-next/depot.git` : dépôt nu en lecture seule, origine GitHub en HTTPS |
 | VM | `~/portfolio-next/portfolio-next-<12 premiers caractères>/` : contenu exact du commit, plus `.next-commit` |
 
 ### Une seule fois (VM, utilisateur `ubuntu`, sans sudo)
 
 ```bash
-ssh-keygen -t ed25519 -N '' -C 'portfolio-next lecture seule' -f ~/.ssh/portfolio_next_lecture
-cat ~/.ssh/portfolio_next_lecture.pub
-# GitLab : Settings > Repository > Deploy keys > Add new key ; coller la clé publique,
-# « Grant write permissions to this key » DÉCOCHÉ
-ssh-keygen -l -F gitlab.com    # empreinte ED25519 attendue : SHA256:eUXGGm1YGsMAS7vkcx6JOJdOGHPem5gQp4taiCfCLB8
-git init --bare -q ~/portfolio-next/depot.git
-git -C ~/portfolio-next/depot.git remote add origin "$(git -C /home/ubuntu/adjoumani-portfolio remote get-url origin)"
-git -C ~/portfolio-next/depot.git config core.sshCommand \
-  'ssh -i ~/.ssh/portfolio_next_lecture -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes'
+D=~/portfolio-next/depot.git
+[ -d "$D" ] || git init --bare -q "$D"
+git -C "$D" remote add origin https://github.com/Adjoum/mon-portfolio-moderne.git 2>/dev/null ||
+  git -C "$D" remote set-url origin https://github.com/Adjoum/mon-portfolio-moderne.git
+git -C "$D" config --unset core.sshCommand 2>/dev/null; git -C "$D" remote get-url origin
 ```
-
-`remote get-url` lit seulement la configuration de l'ancien dépôt. Si `ssh-keygen -F` ne trouve rien,
-`ssh-keyscan -t ed25519 gitlab.com >> ~/.ssh/known_hosts`, puis la même vérification d'empreinte.
 
 ### À chaque livraison
 
@@ -205,10 +201,9 @@ Poste (Git Bash), arbre propre :
 
 ```bash
 git switch release/portfolio-next
-git status --short                                   # doit être vide
+git status --short                          # doit être vide
 c=$(git rev-parse HEAD); echo "$c"
-git push -o ci.skip origin release/portfolio-next    # GitLab, sans pipeline
-git push github release/portfolio-next               # miroir public
+git push github release/portfolio-next      # avance rapide seulement, jamais --force
 ```
 
 VM (`ubuntu`), avec le commit complet affiché par le poste :
@@ -226,10 +221,10 @@ sudo sh deploy/oracle/next.sh demarrer
 
 Le script exécuté est celui du commit livré, lu dans le dépôt nu. `recuperer` refuse un commit absent
 de la branche de release publiée et une copie existante qui diffère du commit (rien n'est remplacé) ;
-une copie existante identique est seulement constatée. Le fichier d'environnement reste celui de
-`env` : une variable nouvelle (par exemple `SUPABASE_*`) s'y ajoute à la main, root 600.
+une copie existante identique est seulement constatée. Le fichier d'environnement est commun aux
+copies ; une variable s'y ajoute avec `env-definir` (§6).
 
-### Secours sans accès à GitLab
+### Secours sans accès à GitHub
 
 ```bash
 # Poste. core.autocrlf=false : sous Windows, l'archive aurait sinon des fins de ligne CRLF, que
@@ -246,7 +241,7 @@ mkdir -p ~/portfolio-next && tar -xzf ~/portfolio-next-<c>.tar.gz -C ~/portfolio
 ```
 
 Ici `c` doit compter 12 caractères (`git rev-parse --short=12`), comme le nom des copies. Une copie
-venue par archive se compare ensuite à GitLab avec `recuperer`, sans être remplacée.
+venue par archive se compare ensuite au dépôt de livraison avec `recuperer`, sans être remplacée.
 
 ## 5. Règles sur une VM partagée
 
@@ -257,7 +252,61 @@ venue par archive se compare ensuite à GitLab avec `recuperer`, sans être remp
   `blog-api` créé hors de son projet ;
 - `systemctl restart nginx`, `systemctl restart docker`, ou toute modification d'un autre `server` nginx.
 
-La bascule de nginx vers la nouvelle API (port 5001) est une étape distincte : elle suppose les
-migrations Supabase de la phase 3 (la nouvelle API exige la migration de session pour
-l'administration) et un accord séparé. nginx se recharge (`sudo nginx -t` puis
-`sudo systemctl reload nginx`), il ne se redémarre pas.
+nginx se recharge (`sudo nginx -t` puis `sudo systemctl reload nginx`), il ne se redémarre pas.
+Seul le fichier `/etc/nginx/sites-available/blog-api` est modifié, et seulement sa ligne `proxy_pass` (§7).
+
+## 6. Certificat Supabase, variables et activation progressive
+
+**Certificat** (public, non secret) : Supabase > Project Settings > Database > SSL Configuration >
+*Download certificate*. Le même fichier sert à la sauvegarde sur le poste (`secrets/supabase-ca.crt`).
+
+```bash
+scp /d/adjoumani-portfolio/secrets/supabase-ca.crt "$V":supabase-ca.crt         # poste
+sudo install -o root -g root -m 644 ~/supabase-ca.crt /etc/portfolio-next/supabase-ca.crt && rm ~/supabase-ca.crt   # VM
+sudo sh deploy/oracle/next.sh verifier-tls <hôte-du-session-pooler>      # aucun identifiant envoyé
+```
+
+`verifier` bloque tant que le certificat manque (le conteneur ne démarrerait pas). `blog-api-next` le
+lit en lecture seule (`AI_DATABASE_CA_FILE`) : la connexion du rôle `ai_backend` exige TLS vérifié,
+certificat du projet épinglé et nom d'hôte contrôlé. `verifier-tls` le prouve avant toute activation.
+
+**Variables** : `sudo sh deploy/oracle/next.sh env-definir NOM` ajoute ou remplace une variable. La
+valeur est saisie sans écho, ou reçue par un tube (`openssl rand -hex 32 | sudo sh deploy/oracle/next.sh
+env-definir NOM`) : jamais en argument ni dans l'historique. Apostrophes, `$`, guillemets et antislashs
+sont gardés tels quels ; le fichier n'est remplacé qu'après relecture par Compose (valeur identique,
+autres variables inchangées). Elle s'applique au `demarrer` suivant.
+
+| Étape | Variables | Condition | Retour arrière |
+|---|---|---|---|
+| Administration (blog, CV, connaissances en lecture) | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | migrations de la phase 3, dont la 12 | `historique`, copie précédente, ou variables retirées (503) |
+| Écritures de la base de connaissances | `KNOWLEDGE_WRITE_ENABLED=true` | administration vérifiée | `false` |
+| IA | `AI_DATABASE_URL`, `AI_LOG_HMAC_SECRET`, puis `AI_ENABLED=true` | phase 4, rôle `ai_backend`, `verifier-tls` vert | `AI_ENABLED=false` |
+
+`ADMIN_BOOTSTRAP_ENABLED` reste `false` (`verifier` bloque sinon). Chaque fonctionnalité IA s'active
+ensuite dans le dashboard, une par une.
+
+## 7. Bascule nginx et retour immédiat sur l'ancienne API
+
+Après accord, et seulement si `controler` est vert. L'ancien conteneur `blog-api` reste en marche sur
+le port 5000 : le retour arrière est un simple rechargement de nginx.
+
+```bash
+S=/etc/nginx/sites-available/blog-api
+sudo sed -n '/location \/ {/,/}/p' "$S"                   # lecture : proxy_pass et en-têtes transmis
+sudo grep -c 'proxy_pass http://127.0.0.1:5000/;' "$S"    # attendu : 1
+sudo cp -p "$S" /var/lib/portfolio-next/nginx-blog-api.avant-5001
+sudo sed -i 's#proxy_pass http://127.0.0.1:5000/;#proxy_pass http://127.0.0.1:5001/;#' "$S"
+sudo nginx -t && sudo systemctl reload nginx || sudo cp -p /var/lib/portfolio-next/nginx-blog-api.avant-5001 "$S"
+curl -s -o /dev/null -w '%{http_code}\n' --resolve api.adjoumani-koffi.com:443:127.0.0.1 https://api.adjoumani-koffi.com/api/health/ready   # 200 : nouvelle API
+```
+
+Retour immédiat sur l'ancienne API :
+
+```bash
+sudo sed -i 's#proxy_pass http://127.0.0.1:5001/;#proxy_pass http://127.0.0.1:5000/;#' /etc/nginx/sites-available/blog-api &&
+  sudo nginx -t && sudo systemctl reload nginx
+```
+
+La nouvelle API lit l'adresse des visiteurs dans `X-Forwarded-For` (limites de débit par adresse) : la
+lecture du bloc `location /` doit montrer `proxy_set_header X-Forwarded-For`. Sinon, l'ajouter avant la
+bascule, avec la même procédure (copie, `nginx -t`, rechargement) et un accord séparé.

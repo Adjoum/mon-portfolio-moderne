@@ -10,7 +10,8 @@
 #   - noms de conteneurs : blog-api-next, portfolio-latex-runner, portfolio-cv-extractor ;
 #   - images : portfolio-next/* (l'image de l'API actuelle n'est ni reconstruite ni réétiquetée) ;
 #   - port : 127.0.0.1:5001 uniquement (NEXT_PORT pour un autre), jamais exposé par nginx à ce stade ;
-#   - réseaux propres au projet (portfolio-next_*) ; aucun volume.
+#   - réseaux propres au projet (portfolio-next_*) ; aucun volume, un seul fichier monté en
+#     lecture seule : le certificat racine public de Supabase (NEXT_SUPABASE_CA).
 # Secrets : uniquement dans NEXT_ENV_FILE (hors dépôt, root, chmod 600), jamais en argument.
 
 name: portfolio-next
@@ -37,6 +38,16 @@ services:
       - PORT=5000
       - LATEX_RUNNER_URL=http://latex-runner:3000
       - CV_EXTRACTOR_URL=http://cv-extractor:3100
+      # Connexion TLS vérifiée du rôle ai_backend (pooler Supabase) : certificat du projet épinglé
+      - AI_DATABASE_CA_FILE=/run/certs/supabase-ca.crt
+    volumes:
+      # Certificat public (non secret), déposé une fois sur la VM ; absent : next.sh verifier bloque
+      - type: bind
+        source: ${NEXT_SUPABASE_CA:-/etc/portfolio-next/supabase-ca.crt}
+        target: /run/certs/supabase-ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
     ports:
       - "127.0.0.1:${NEXT_PORT:-5001}:5000"
     # egress : seule sortie vers Internet (MongoDB, Supabase, Pinecone, Cloudinary, fournisseurs IA)
