@@ -48,13 +48,20 @@ export const authLimiter = rateLimit({
   skipSuccessfulRequests: true, // ne compte pas les connexions réussies
 });
 
-// ── 3. Limite commentaires — anti-spam ───────────────────────
-// 10 commentaires par heure par IP
-export const commentLimiter = rateLimit({
+// ── 3. Commentaires : lecture et écritures séparées ──────────
+// Lecture (GET, HEAD) : la page d'un article charge ses commentaires une fois. Les lectures ne
+// consomment plus le quota anti-spam des écritures : un visiteur qui ouvrait plus de 10 articles
+// dans l'heure ne voyait plus aucun commentaire (429).
+const isCommentRead = (req: Request) => req.method === 'GET' || req.method === 'HEAD';
+
+// 3a. Écritures — anti-spam : 10 par heure par compte du blog, sinon par IP
+// Création, réponse, modification, suppression, modération, réaction : même compteur qu'avant.
+export const commentWriteLimiter = rateLimit({
   windowMs:        60 * 60 * 1000, // 1 heure
   max:             10,
   standardHeaders: true,
   legacyHeaders:   false,
+  skip:            isCommentRead,
   handler:         (req, res) => {
     res.status(429).json({
       error:      'Vous avez posté trop de commentaires. Attendez 1h.',
@@ -68,6 +75,21 @@ export const commentLimiter = rateLimit({
     // ipKeyGenerator attend une string (req.ip), pas req lui-même
     return ipKeyGenerator(req.ip ?? '127.0.0.1');
   },
+});
+
+// 3b. Lecture publique — anti-surcharge, compteur indépendant : 300 par 15 minutes par IP.
+// Chaque lecture = une requête indexée (articleId) + les auteurs. 300 / 15 min laisse lire des
+// dizaines d'articles à plusieurs visiteurs derrière une même adresse (opérateur mobile, bureau),
+// et borne un client isolé à une lecture toutes les 3 s en moyenne. Le limiteur global ne compte
+// aucun GET en production : sans celui-ci, les lectures ne seraient pas bornées du tout.
+export const commentReadLimiter = rateLimit({
+  windowMs:        15 * 60 * 1000,
+  max:             Number(process.env.COMMENT_READ_RATE_LIMIT_MAX) || 300,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  skip:            (req) => !isCommentRead(req),
+  handler:         rateLimitHandler,
+  keyGenerator:    (req) => ipKeyGenerator(req.ip ?? '127.0.0.1'),
 });
 
 // ── 4. Limite réactions — anti-spam emoji ────────────────────

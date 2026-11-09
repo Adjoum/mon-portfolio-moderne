@@ -74,6 +74,9 @@ not_legacy_dir() {
 
 dc()       { NEXT_TAG="$TAG" NEXT_ENV_FILE="$ENV_FILE" NEXT_PORT="$PORT" NEXT_SUPABASE_CA="$CA_FILE" docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"; }
 http()     { curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$@" || true; }
+# En-tête RateLimit-<nom> d'une réponse (vide s'il manque) : ratelimit limit|remaining <arguments curl>
+ratelimit() { rl=$1; shift; curl -s -o /dev/null -D - --max-time 10 "$@" 2>/dev/null | tr -d '\r' | tr 'A-Z' 'a-z' | sed -n "s/^ratelimit-$rl: *//p" | head -n 1; }
+entier()   { case "$1" in ''|*[!0-9]*) return 1 ;; esac; }
 label_of() { docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$1" 2>/dev/null; }
 # État de santé, vide si le conteneur n'a pas de contrôle de santé
 health()   { docker inspect --format '{{with index .State "Health"}}{{.Status}}{{end}}' "$1" 2>/dev/null; }
@@ -751,6 +754,24 @@ cmd_controler() {
     -H 'Content-Type: application/octet-stream' -H 'X-File-Type: text/plain' --data-binary @- "$base/cv/import" || true)
   if [ "$h" = 200 ] && grep -q 'Développeur' "$t"; then ok "import de CV par cv-extractor : texte extrait"; else block "import de CV : HTTP $h"; fi
   rm -f "$t"
+  # Commentaires : la lecture a son propre compteur (300 / 15 min par adresse), le quota d'écriture
+  # (10 / h) ne la bloque plus. Identifiant valide et inexistant : liste vide, aucune écriture.
+  u="$base/comments/000000000000000000000000"
+  refus=0
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    [ "$(http -H 'X-Forwarded-For: 203.0.113.200' "$u")" = 200 ] || refus=$((refus + 1))
+  done
+  lim=$(ratelimit limit -H 'X-Forwarded-For: 203.0.113.200' "$u")
+  if [ "$refus" -eq 0 ] && [ "$lim" = 300 ]; then ok "commentaires : 13 lectures de suite sans refus, compteur de lecture distinct (limite 300)"
+  else block "commentaires : $refus refus sur 12 lectures, limite annoncée « $lim » (attendu 300)"; fi
+  # Adresse des visiteurs : le pair vu par l'API (passerelle Docker) doit être reconnu comme le proxy
+  # local. Sinon, une fois nginx basculé, tous les visiteurs partageraient un seul compteur.
+  a1=$(ratelimit remaining -H 'X-Forwarded-For: 203.0.113.201' "$u")
+  a2=$(ratelimit remaining -H 'X-Forwarded-For: 203.0.113.201' "$u")
+  b1=$(ratelimit remaining -H 'X-Forwarded-For: 203.0.113.202' "$u")
+  if entier "$a1" && entier "$a2" && entier "$b1" && [ "$a2" -eq $((a1 - 1)) ] && [ "$b1" -gt "$a2" ]
+  then ok "adresse transmise par le proxy local retenue : un compteur par visiteur"
+  else block "adresse des visiteurs : compteurs « $a1 $a2 $b1 » (attendu : deux compteurs distincts)"; fi
   # Écritures du blog : refusées avant tout accès à la base sans administrateur Supabase + MFA
   for route in articles tags upload; do
     h=$(http -X POST -H 'Content-Type: application/json' -d '{}' "$base/$route")

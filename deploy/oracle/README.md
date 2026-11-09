@@ -139,7 +139,9 @@ sudo sh deploy/oracle/next.sh controler    # à relancer à volonté, lecture se
   d'environnement n'est pas `root 600`, s'il manque une variable, si la copie contient des fins de
   ligne CRLF, ou s'il reste moins de 6 Gio de disque ou 3 Gio de mémoire disponibles.
 - `controler` vérifie la santé des trois conteneurs, l'absence de port publié et d'accès Internet
-  pour `latex-runner` et `cv-extractor`, MongoDB, un vrai PDF compilé, un import de CV, l'ancienne
+  pour `latex-runner` et `cv-extractor`, MongoDB, un vrai PDF compilé, un import de CV, 13 lectures
+  de commentaires sans refus (compteur de lecture distinct, limite 300), un compteur par visiteur
+  derrière le proxy local (deux adresses transmises → deux compteurs), l'ancienne
   API sur le port 5000, et compare l'état de **tous les autres conteneurs** à celui relevé juste
   avant le démarrage (identifiant, image, heure de démarrage, redémarrages).
 - Essai depuis le poste : `ssh -L 5001:127.0.0.1:5001 "$V"`, puis `http://localhost:5001/api/health`.
@@ -307,6 +309,43 @@ sudo sed -i 's#proxy_pass http://127.0.0.1:5001/;#proxy_pass http://127.0.0.1:50
   sudo nginx -t && sudo systemctl reload nginx
 ```
 
-La nouvelle API lit l'adresse des visiteurs dans `X-Forwarded-For` (limites de débit par adresse) : la
-lecture du bloc `location /` doit montrer `proxy_set_header X-Forwarded-For`. Sinon, l'ajouter avant la
-bascule, avec la même procédure (copie, `nginx -t`, rechargement) et un accord séparé.
+**Adresse des visiteurs** (limites de débit, quotas IA, journal d'audit). L'API ne croit
+`X-Forwarded-For` que de son pair direct, et seulement s'il est local (passerelle Docker) ; elle en
+retient la dernière adresse, celle que nginx ajoute. Elle ne lit jamais `X-Real-IP`. Condition : nginx
+fixe `X-Forwarded-For` dans chaque `location` qui transmet à l'API. Un seul `proxy_set_header` dans un
+`location` annule tous ceux hérités du `server` : lire tout le fichier, pas une ligne. Relevé en
+lecture seule, avant la bascule (VM) :
+
+```bash
+S=/etc/nginx/sites-available/blog-api
+masque='s/^([0-9]+:[[:space:]]*proxy_set_header[[:space:]]+[^[:space:]]*([Aa]uth|[Cc]ookie|[Tt]oken|[Kk]ey|[Ss]ecret)[^[:space:]]*)[[:space:]].*/\1 [valeur masquée]/'
+echo "== $S"
+sudo grep -nE '^[[:space:]]*(server|listen|server_name|location|proxy_pass|proxy_set_header|proxy_pass_request_headers|include|real_ip_header|set_real_ip_from|real_ip_recursive)([[:space:]{;]|$)|^[[:space:]]*\}' "$S" | sed -E "$masque"
+for f in $(sudo awk '$1 == "include" { sub(/;.*/, "", $2); print $2 }' "$S"); do
+  case "$f" in /*) ;; *) f="/etc/nginx/$f" ;; esac
+  echo "== include $f"; sudo grep -nE 'proxy_set_header|proxy_pass_request_headers|real_ip' $f 2>/dev/null | sed -E "$masque"
+done
+echo "== niveau http (commun à tous les sites)"
+sudo grep -nE '^[[:space:]]*(real_ip_header|set_real_ip_from|real_ip_recursive|proxy_set_header)[[:space:]]' /etc/nginx/nginx.conf | sed -E "$masque"
+sudo sh -c 'grep -nE "^[[:space:]]*(real_ip_header|set_real_ip_from)" /etc/nginx/conf.d/*.conf 2>/dev/null'
+echo "== clients vus par nginx (2 000 dernières lignes du journal, comptes seulement)"
+sudo tail -n 2000 /var/log/nginx/access.log | awk '{ print $1 }' | sort -u |
+  awk '/^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.|::1$|f[cd])/ { p++ } END { print NR " adresses distinctes, dont " p+0 " locales ou privées" }'
+```
+
+Attendu : dans `location /`, `X-Forwarded-For $proxy_add_x_forwarded_for` (ou `$remote_addr`), écrit
+dans le `location` lui-même, ou hérité du `server` ou d'un `include proxy_params` **si le `location` ne
+contient aucun `proxy_set_header`** ; aucune directive `real_ip_*` ouverte à des adresses publiques ;
+des adresses clientes nombreuses et presque toutes publiques (rien devant nginx). Sinon, corriger le
+seul `location /` de ce fichier avant la bascule, avec la même procédure (copie, `nginx -t`,
+rechargement) et un accord séparé. Aucune modification au niveau `http`, ni dans un autre `server`.
+
+Après la bascule (poste) : un en-tête falsifié ne doit pas ouvrir un nouveau compteur.
+
+```bash
+u=https://api.adjoumani-koffi.com/api/comments/000000000000000000000000
+for h in 'X-Forwarded-For: 203.0.113.9' 'X-Forwarded-For: 198.51.100.7' 'X-Real-IP: 203.0.113.10'; do
+  curl -s -o /dev/null -D - -H "$h" "$u" | tr -d '\r' | grep -i '^ratelimit-remaining'
+done
+# attendu : trois valeurs qui décroissent d'un en un ; des valeurs identiques = adresse falsifiable
+```

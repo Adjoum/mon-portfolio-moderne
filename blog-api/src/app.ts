@@ -14,11 +14,13 @@ import multer        from 'multer';
 import {
   globalLimiter,
   abuseLogger,
-  commentLimiter,
+  commentReadLimiter,
+  commentWriteLimiter,
   authLimiter,
   uploadLimiter,
 } from './middleware/rateLimit';
 import { authMiddleware } from './middleware/auth';
+import { trustLocalProxy } from './lib/trustProxy';
 
 // ── Routes ───────────────────────────────────────────────────
 import articlesRouter from './routes/articles';
@@ -45,7 +47,8 @@ export interface AppOptions {
 
 export function createApp(options: AppOptions = {}) {
   const app = express();
-  app.set('trust proxy', 1);
+  // Un seul proxy, et seulement local (nginx via la passerelle Docker) : src/lib/trustProxy.ts
+  app.set('trust proxy', trustLocalProxy);
   app.disable('x-powered-by');
   const aiStore = options.ai?.store ?? createAiStore();
   const aiGateway = createAiGateway({ ...options.ai, store: aiStore });
@@ -144,7 +147,8 @@ export function createApp(options: AppOptions = {}) {
 
   // ── Routes ───────────────────────────────────────────────────
   app.use('/api/articles', articlesRouter);
-  app.use('/api/comments', commentLimiter, commentsRouter);
+  // Lectures et écritures comptées séparément (chaque limiteur ignore les requêtes de l'autre)
+  app.use('/api/comments', commentReadLimiter, commentWriteLimiter, commentsRouter);
   app.use('/api/upload',   uploadLimiter,  uploadRouter);
   app.use('/api/auth',     authLimiter,    authRouter);
   app.use('/api/tags',     tagsRouter);

@@ -277,6 +277,32 @@ describe('bascule nginx préparée, jamais exécutée par les scripts', () => {
     const code = script.split('\n').filter(line => !line.trim().startsWith('#')).join('\n')
     expect(code).not.toMatch(/systemctl (reload|restart) nginx|nginx -s|sites-available/)
   })
+
+  it('README : relevé de la chaîne d’adresse en lecture seule, valeurs sensibles masquées, comptes seulement', () => {
+    const start = readme.indexOf('Relevé en\nlecture seule')
+    const releve = readme.slice(readme.indexOf('```bash', start), readme.indexOf('Attendu :', start))
+    expect(start).toBeGreaterThan(0)
+    expect(releve).toContain('proxy_set_header')
+    expect(releve).toContain('real_ip_header')
+    expect(releve).toContain('[valeur masquée]')
+    expect(releve).toContain('adresses distinctes')
+    // seule redirection admise : 2>/dev/null
+    expect(releve).not.toMatch(/sed -i|\btee\b|systemctl|nginx -[ts]|\b(cp|mv|rm|install) |(?<!2)>\s*\S/)
+  })
+})
+
+describe('commentaires et adresse des visiteurs (controler, lecture seule)', () => {
+  const controle = body('cmd_controler')
+  it('lectures de commentaires répétées sans refus, compteur de lecture distinct', () => {
+    expect(controle).toContain('u="$base/comments/000000000000000000000000"')
+    expect(controle).toContain('[ "$lim" = 300 ]')
+    expect(controle).not.toMatch(/-X (POST|PUT|DELETE)[^\n]*comments/)
+  })
+  it('un compteur par visiteur derrière le proxy local, sinon bloquant', () => {
+    expect(controle).toMatch(/a2=\$\(ratelimit remaining -H 'X-Forwarded-For: 203\.0\.113\.201'/)
+    expect(controle).toMatch(/b1=\$\(ratelimit remaining -H 'X-Forwarded-For: 203\.0\.113\.202'/)
+    expect(controle).toContain('block "adresse des visiteurs')
+  })
 })
 
 describe('Vercel : une branche de release ne déclenche aucun déploiement', () => {
