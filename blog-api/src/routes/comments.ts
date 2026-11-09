@@ -4,6 +4,7 @@ import { Comment } from '../models/Comment';
 import mongoose from 'mongoose';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { auditBlog, runBlogAdminGuards } from '../middleware/blogAdmin';
+import { commentWriteLimiter, reactionLimiter } from '../middleware/rateLimit';
 import { Article } from '../models/Article';
 import { toPublicComment, reactionCounts } from '../lib/publicComment';
 
@@ -11,8 +12,10 @@ import { toPublicComment, reactionCounts } from '../lib/publicComment';
 
 const commentsRouter = Router();
 
-// Auteur du commentaire (jeton du blog) : autorisé. Sinon, modération : administrateur Supabase +
-// MFA. Le rôle « admin » du jeton du blog n'ouvre plus la modération des commentaires d'autrui.
+// Auteur du commentaire (jeton du blog) : autorisé, dans le quota public des écritures (10 / h).
+// Sinon, modération : administrateur Supabase + MFA + session active, limiteur d'administration et
+// audit (runBlogAdminGuards), hors quota public. Le rôle « admin » du jeton du blog n'ouvre plus la
+// modération des commentaires d'autrui.
 async function ownerOrModerator(req: Request, res: Response, next: NextFunction) {
   try {
     const comment = await Comment.findById(req.params.id);
@@ -20,7 +23,7 @@ async function ownerOrModerator(req: Request, res: Response, next: NextFunction)
     res.locals.comment = comment;
     const userId = (req as AuthRequest).user?._id;
     // Un visiteur anonyme n'est jamais propriétaire (commentaires invités : authorId absent)
-    if (userId && comment.authorId?.toString() === userId) return next();
+    if (userId && comment.authorId?.toString() === userId) return commentWriteLimiter(req, res, next);
     res.locals.moderation = true;
     runBlogAdminGuards(req, res, next);
   } catch {
@@ -71,8 +74,8 @@ commentsRouter.get('/:articleId', async (req, res) => {
   }
 });
  
-// POST /api/comments — nouveau commentaire (connecté ou guest)
-commentsRouter.post('/', authMiddleware, async (req, res) => {
+// POST /api/comments — nouveau commentaire (connecté ou guest), quota public des écritures
+commentsRouter.post('/', commentWriteLimiter, authMiddleware, async (req, res) => {
   try {
     const { articleId, parentId, content, guestName, guestEmail } = req.body;
     const userId = (req as AuthRequest).user?._id;
@@ -158,10 +161,20 @@ commentsRouter.delete('/:id', authMiddleware, ownerOrModerator, async (req, res)
   }
 });
  
-// POST /api/comments/:id/react — réagir à un commentaire
-commentsRouter.post('/:id/react', async (req, res) => {
+// Réactions acceptées : les emojis proposés par la page d'article (src/pages/BlogPostPage.tsx,
+// REACTIONS), et un identifiant de session court. Sans ces bornes, une seule requête pouvait
+// ajouter des mégaoctets au commentaire ou une clé que MongoDB refuse.
+const REACTION_EMOJIS = new Set(['❤️', '🔥', '🤯', '💡', '👏', '😭', '🙏', '🚀']);
+const SESSION_ID = /^[A-Za-z0-9_-]{8,64}$/;
+
+// POST /api/comments/:id/react — réagir à un commentaire (compteur propre, hors quota des commentaires)
+commentsRouter.post('/:id/react', reactionLimiter, async (req, res) => {
   try {
-    const { emoji, sessionId } = req.body;
+    const { emoji, sessionId } = req.body ?? {};
+    if (typeof emoji !== 'string' || !REACTION_EMOJIS.has(emoji)
+      || typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) {
+      return res.status(400).json({ error: 'Réaction invalide', code: 'INVALID_REACTION' });
+    }
     const comment = await Comment.findById(req.params.id);
     if (!comment) return res.status(404).json({ error: 'Introuvable' });
  

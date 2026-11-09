@@ -15,7 +15,6 @@ import {
   globalLimiter,
   abuseLogger,
   commentReadLimiter,
-  commentWriteLimiter,
   authLimiter,
   uploadLimiter,
 } from './middleware/rateLimit';
@@ -147,8 +146,9 @@ export function createApp(options: AppOptions = {}) {
 
   // ── Routes ───────────────────────────────────────────────────
   app.use('/api/articles', articlesRouter);
-  // Lectures et écritures comptées séparément (chaque limiteur ignore les requêtes de l'autre)
-  app.use('/api/comments', commentReadLimiter, commentWriteLimiter, commentsRouter);
+  // Lectures : compteur propre ici. Écritures publiques, réactions et modération : chacune son
+  // limiteur, posé route par route (src/routes/comments.ts)
+  app.use('/api/comments', commentReadLimiter, commentsRouter);
   app.use('/api/upload',   uploadLimiter,  uploadRouter);
   app.use('/api/auth',     authLimiter,    authRouter);
   app.use('/api/tags',     tagsRouter);

@@ -54,8 +54,10 @@ export const authLimiter = rateLimit({
 // dans l'heure ne voyait plus aucun commentaire (429).
 const isCommentRead = (req: Request) => req.method === 'GET' || req.method === 'HEAD';
 
-// 3a. Écritures — anti-spam : 10 par heure par compte du blog, sinon par IP
-// Création, réponse, modification, suppression, modération, réaction : même compteur qu'avant.
+// 3a. Écritures publiques — anti-spam : 10 par heure par compte du blog, sinon par IP.
+// Monté route par route (src/routes/comments.ts) : création et réponse, modification ou suppression
+// de SON commentaire. Ni les réactions (4), ni la modération par un administrateur Supabase + MFA
+// (adminLimiter, session, audit : src/middleware/blogAdmin.ts) ne le consomment.
 export const commentWriteLimiter = rateLimit({
   windowMs:        60 * 60 * 1000, // 1 heure
   max:             10,
@@ -92,14 +94,28 @@ export const commentReadLimiter = rateLimit({
   keyGenerator:    (req) => ipKeyGenerator(req.ip ?? '127.0.0.1'),
 });
 
-// ── 4. Limite réactions — anti-spam emoji ────────────────────
-// 60 réactions par minute par IP/session
+// ── 4. Réactions aux commentaires — compteur propre ──────────
+// 30 par 10 minutes, par compte du blog si connecté, sinon par IP (l'identifiant de session est
+// choisi par le client : jamais une clé). Une réaction ajoute une entrée au commentaire : 30 / 10 min
+// laisse réagir et se raviser sans retenue, et borne une adresse à 180 écritures par heure.
+// Indépendant du quota des commentaires : réagir n'empêche plus de commenter.
 export const reactionLimiter = rateLimit({
-  windowMs:        60 * 1000, // 1 minute
-  max:             60,
+  windowMs:        10 * 60 * 1000,
+  max:             Number(process.env.REACTION_RATE_LIMIT_MAX) || 30,
   standardHeaders: true,
   legacyHeaders:   false,
-  handler:         rateLimitHandler,
+  handler:         (req, res) => {
+    res.status(429).json({
+      error:      'Trop de réactions. Patientez quelques minutes.',
+      code:       'REACTION_RATE_LIMIT',
+      retryAfter: res.getHeader('Retry-After'),
+    });
+  },
+  keyGenerator: (req) => {
+    const authReq = req as AuthRequest;
+    if (authReq.user?._id) return `user:${authReq.user._id}`;
+    return ipKeyGenerator(req.ip ?? '127.0.0.1');
+  },
 });
 
 // ── 5. Limite upload — images ─────────────────────────────────
